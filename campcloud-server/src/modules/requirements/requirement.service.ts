@@ -1,12 +1,31 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RequirementStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
+import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
 
 @Injectable()
 export class RequirementsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async ensureRequirementAccess(userId: bigint, requirementId: bigint, role: UserRole) {
+    const requirement = await this.prisma.requirement.findUnique({
+      where: { id: requirementId },
+      select: { id: true, userId: true },
+    });
+
+    if (!requirement) {
+      throw new NotFoundException('需求单不存在');
+    }
+
+    if (role !== UserRole.admin && requirement.userId !== userId) {
+      throw new ForbiddenException('无权访问该需求单');
+    }
+
+    return requirement;
+  }
 
   async create(userId: bigint, dto: CreateRequirementDto) {
     const requirement = await this.prisma.requirement.create({
@@ -115,7 +134,9 @@ export class RequirementsService {
   }
 
   async detail(userId: bigint, requirementId: bigint, role: UserRole) {
-    const requirement = await this.prisma.requirement.findUnique({
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const requirement = await this.prisma.requirement.findUniqueOrThrow({
       where: { id: requirementId },
       include: {
         user: {
@@ -129,14 +150,6 @@ export class RequirementsService {
         },
       },
     });
-
-    if (!requirement) {
-      throw new NotFoundException('需求单不存在');
-    }
-
-    if (role !== UserRole.admin && requirement.userId !== userId) {
-      throw new ForbiddenException('无权访问该需求单');
-    }
 
     const [patientCount, studyCount, seriesCount, latestMessage, latestDelivery] = await Promise.all([
       this.prisma.patient.count({ where: { requirementId } }),
@@ -212,18 +225,7 @@ export class RequirementsService {
   }
 
   async dataTree(userId: bigint, requirementId: bigint, role: UserRole) {
-    const requirement = await this.prisma.requirement.findUnique({
-      where: { id: requirementId },
-      select: { id: true, userId: true },
-    });
-
-    if (!requirement) {
-      throw new NotFoundException('需求单不存在');
-    }
-
-    if (role !== UserRole.admin && requirement.userId !== userId) {
-      throw new ForbiddenException('无权访问该需求单');
-    }
+    await this.ensureRequirementAccess(userId, requirementId, role);
 
     const patients = await this.prisma.patient.findMany({
       where: { requirementId },
@@ -286,6 +288,100 @@ export class RequirementsService {
           })),
         })),
       })),
+    };
+  }
+
+  async createDatasetBatch(
+    userId: bigint,
+    requirementId: bigint,
+    role: UserRole,
+    dto: CreateDatasetBatchDto,
+    files: Array<{ originalname: string }>,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const fileCount = files.length;
+    if (fileCount === 0 && !dto.sourceName?.trim()) {
+      throw new BadRequestException('请上传文件或填写批次来源说明');
+    }
+
+    const batch = await this.prisma.$transaction(async (tx) => {
+      const lastBatch = await tx.datasetBatch.findFirst({
+        where: { requirementId },
+        orderBy: { batchNo: 'desc' },
+        select: { batchNo: true },
+      });
+
+      return tx.datasetBatch.create({
+        data: {
+          requirementId,
+          uploadedBy: userId,
+          batchNo: (lastBatch?.batchNo ?? 0) + 1,
+          uploadType: dto.uploadType,
+          sourceName: dto.sourceName?.trim() || null,
+          remark: dto.remark?.trim() || null,
+          fileCount,
+        },
+      });
+    });
+
+    return {
+      datasetBatchId: batch.id.toString(),
+      batchNo: batch.batchNo,
+      status: batch.status,
+      fileCount: batch.fileCount,
+      uploadedAt: batch.uploadedAt,
+    };
+  }
+
+  async listDatasetBatches(
+    userId: bigint,
+    requirementId: bigint,
+    role: UserRole,
+    query: ListDatasetBatchesDto,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const where = { requirementId };
+
+    const [total, list] = await this.prisma.$transaction([
+      this.prisma.datasetBatch.count({ where }),
+      this.prisma.datasetBatch.findMany({
+        where,
+        orderBy: [{ batchNo: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          uploader: {
+            select: {
+              id: true,
+              username: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      list: list.map((item) => ({
+        id: item.id.toString(),
+        batchNo: item.batchNo,
+        uploadType: item.uploadType,
+        sourceName: item.sourceName,
+        fileCount: item.fileCount,
+        status: item.status,
+        remark: item.remark,
+        uploadedAt: item.uploadedAt,
+        uploader: {
+          id: item.uploader.id.toString(),
+          username: item.uploader.username,
+        },
+      })),
+      total,
+      page,
+      pageSize,
     };
   }
 }

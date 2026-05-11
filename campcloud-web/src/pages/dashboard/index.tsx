@@ -53,6 +53,7 @@ export function DashboardPage() {
   });
   const waitingUserCount = items.filter((item) => item.status === 'waiting_user').length;
   const pendingCount = items.filter((item) => item.status === 'pending').length;
+  const processingCount = items.filter((item) => item.status === 'processing').length;
   const unreadCount = items.reduce((sum, item) => sum + item.unreadNotificationCount, 0);
   const recentItems = items
     .slice()
@@ -80,12 +81,12 @@ export function DashboardPage() {
           <strong>{requirementsQuery.data?.total ?? 0}</strong>
         </div>
         <div className="dashboard-summary-card">
-          <p>待处理</p>
+          <p>待我响应</p>
           <strong>{pendingCount}</strong>
         </div>
         <div className="dashboard-summary-card">
-          <p>待我响应</p>
-          <strong>{waitingUserCount}</strong>
+          <p>受理中</p>
+          <strong>{processingCount}</strong>
         </div>
         <div className="dashboard-summary-card">
           <p>未读通知</p>
@@ -95,7 +96,7 @@ export function DashboardPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <Card title="待我处理" bordered={false}>
+          <Card title="待我响应">
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               {!profileCompleted ? (
                 <Alert
@@ -145,7 +146,7 @@ export function DashboardPage() {
           </Card>
         </Col>
         <Col xs={24} xl={14}>
-          <Card title="最近动态" bordered={false} loading={requirementsQuery.isLoading}>
+          <Card title="最近动态" loading={requirementsQuery.isLoading}>
             {recentItems.length === 0 ? (
               <Empty description="当前还没有可展示的需求动态" image={Empty.PRESENTED_IMAGE_SIMPLE}>
                 <Link to="/requirements">

@@ -16,6 +16,10 @@ export type RequirementStatus =
   | 'completed'
   | 'rejected';
 
+export type DatasetUploadType = 'initial' | 'supplement';
+
+export type DatasetBatchStatus = 'uploaded' | 'parsed' | 'failed';
+
 export interface CreateRequirementPayload {
   type: RequirementType;
   typeCustom: string | null;
@@ -118,4 +122,26 @@ export interface RequirementPatientNode {
 
 export interface RequirementDataTree {
   patients: RequirementPatientNode[];
+}
+
+export interface DatasetBatchItem {
+  id: string;
+  batchNo: number;
+  uploadType: DatasetUploadType;
+  sourceName: string | null;
+  fileCount: number;
+  status: DatasetBatchStatus;
+  remark: string | null;
+  uploadedAt: string;
+  uploader: {
+    id: string;
+    username: string;
+  };
+}
+
+export interface CreateDatasetBatchPayload {
+  uploadType: DatasetUploadType;
+  sourceName?: string;
+  remark?: string;
+  files: File[];
 }

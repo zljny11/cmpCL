@@ -15,8 +15,8 @@ const REQUIREMENT_TYPE_LABELS: Record<RequirementType, string> = {
 };
 
 const REQUIREMENT_STATUS_CONFIG: Record<RequirementStatus, { label: string; color: string }> = {
-  pending: { label: '待处理', color: 'default' },
-  processing: { label: '处理中', color: 'processing' },
+  pending: { label: '待我响应', color: 'default' },
+  processing: { label: '受理中', color: 'processing' },
   waiting_user: { label: '待用户确认', color: 'warning' },
   completed: { label: '已完成', color: 'success' },
   rejected: { label: '已拒绝', color: 'error' },

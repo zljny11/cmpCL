@@ -1606,20 +1606,41 @@ MVP 排期采用以下原则：
 
 目标：
 
-- 数据批次上传
-- 上传批次记录
-- `Requirement -> Patient -> Study -> Series` 三层结构展示
+- 围绕需求单打通上传批次记录链路
+- 上传页与 `DatasetBatch` 后端数据打通
+- 在页面中同时展示上传批次与 `Patient -> Study -> Series` 三层结构
+- 明确 legacy PACS 上传模块的复用边界，只复用交互经验与局部实现，不复用旧业务模型
 
 交付物：
 
-- `dataset-batches` 上传接口
+- `POST /api/v1/requirements/:id/dataset-batches`
+- `GET /api/v1/requirements/:id/dataset-batches`
 - `data-tree` 接口
+- 上传页可创建并查看需求单下的上传批次
 - 需求列表展开可看到三层结构
 - 需求详情页可展示完整三层数据
+- 序列明细中可标注来源批次，不把 `DatasetBatch` 作为页面第四层
 
 说明：
 
-- 如果文件上传解析复杂度较高，第 3 周期的重点是先把“批次记录 + 三层结构展示链路”跑通
+- 第 3 周期的页面主对象仍然是 `Requirement`
+- `DatasetBatch` 是上传行为记录对象，不直接作为 `Patient -> Study -> Series` 三层结构中的一层
+- 页面展示关系应保持为：`Requirement -> Patient -> Study -> Series`
+- 上传批次与三层结构的关系应通过序列来源信息、批次列表和需求详情共同体现，而不是改造成 `Requirement -> DatasetBatch -> Patient -> Study -> Series`
+- 如果文件上传解析复杂度较高，第 3 周期优先完成“批次记录 + 上传页联动 + 三层结构展示”
+- 第 3 周期默认不引入上传高级能力，不把完整 PACS 推送链路作为阻塞项
+
+推荐实施顺序：
+
+1. 固定 `patient_uid / study_uid / series_uid` 的归并口径、重复上传处理规则和 `batchNo` 生成规则
+2. 实现 `dataset-batches` 后端接口，先打通需求归属、权限校验、批次编号、状态记录
+3. 打通上传页与 `DatasetBatch`，支持围绕需求单创建批次、展示批次列表和状态
+4. 在需求列表展开区和需求详情页继续使用 `Patient -> Study -> Series` 结构，并在序列明细中标注来源批次
+
+legacy PACS 复用边界：
+
+- 可复用：文件夹/压缩包选择交互、上传前校验、上传过程中的页面反馈经验
+- 不复用：旧接口命名、旧的 `series` 中心模型、同步文件处理方式、全局进度状态、字符串拼 SQL 的实现方式
 
 #### 第 4 周：留言、通知、管理侧
 

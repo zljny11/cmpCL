@@ -43,11 +43,11 @@ export function RequirementListPage() {
             <strong>{summary.total}</strong>
           </div>
           <div className="requirement-list-summary-card">
-            <p>待处理</p>
+            <p>待我响应</p>
             <strong>{summary.pending}</strong>
           </div>
           <div className="requirement-list-summary-card">
-            <p>处理中</p>
+            <p>受理中</p>
             <strong>{summary.processing}</strong>
           </div>
           <div className="requirement-list-summary-card">
@@ -69,8 +69,8 @@ export function RequirementListPage() {
           value={statusInput}
           onChange={setStatusInput}
           options={[
-            { label: '待处理', value: 'pending' },
-            { label: '处理中', value: 'processing' },
+            { label: '待我响应', value: 'pending' },
+            { label: '受理中', value: 'processing' },
             { label: '待用户确认', value: 'waiting_user' },
             { label: '已完成', value: 'completed' },
             { label: '已拒绝', value: 'rejected' },
@@ -102,7 +102,7 @@ export function RequirementListPage() {
           <Button onClick={() => navigate('/requirements/create')}>新建需求</Button>
         </Space>
       </div>
-      <Card bordered={false}>
+      <Card>
         {items.length === 0 && !isLoading ? (
           <Empty
             description="当前没有符合条件的需求单"
