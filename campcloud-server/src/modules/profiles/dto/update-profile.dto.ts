@@ -24,6 +24,12 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
+  wechat?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
   department?: string;
 
   @ApiPropertyOptional()

@@ -27,9 +27,6 @@ export function RequirementDetailPage() {
             <Typography.Title level={3} style={{ marginBottom: 8 }}>
               需求详情
             </Typography.Title>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              这里展示第二周期范围内的基础信息、创建人资料、统计信息，以及最近沟通摘要。
-            </Typography.Paragraph>
           </div>
           <Space>
             <Button onClick={() => navigate('/requirements')}>返回列表</Button>
@@ -81,6 +78,7 @@ export function RequirementDetailPage() {
                   <Descriptions.Item label="职称">{data.creator?.profile?.title || '-'}</Descriptions.Item>
                   <Descriptions.Item label="邮箱">{data.creator?.profile?.email || '-'}</Descriptions.Item>
                   <Descriptions.Item label="电话">{data.creator?.profile?.phone || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="微信号">{data.creator?.profile?.wechat || '-'}</Descriptions.Item>
                 </Descriptions>
               </Card>
             </Col>

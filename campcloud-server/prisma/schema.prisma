@@ -63,6 +63,7 @@ model UserProfile {
   realName   String?  @map("real_name") @db.VarChar(64)
   email      String?  @db.VarChar(128)
   phone      String?  @db.VarChar(32)
+  wechat     String?  @db.VarChar(64)
   department String?  @db.VarChar(64)
   title      String?  @db.VarChar(64)
   remark     String?  @db.VarChar(255)

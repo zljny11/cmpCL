@@ -52,7 +52,7 @@ export function LoginPage() {
 
   return (
     <section className="campcloud-login">
-      <h1>CampCloud</h1>
+      <h1>Camp Cloud</h1>
       <div className="container">
         <div className="workinghny-form-grid">
           <div className="main-hotair">

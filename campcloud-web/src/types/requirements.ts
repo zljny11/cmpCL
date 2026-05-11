@@ -65,6 +65,7 @@ export interface RequirementDetail {
       title: string | null;
       email: string | null;
       phone: string | null;
+      wechat: string | null;
     } | null;
   } | null;
   stats: {

@@ -2,6 +2,7 @@ export interface UserProfileSummary {
   realName?: string | null;
   email?: string | null;
   phone?: string | null;
+  wechat?: string | null;
   department?: string | null;
   title?: string | null;
   remark?: string | null;

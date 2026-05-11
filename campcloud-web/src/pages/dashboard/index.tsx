@@ -13,6 +13,7 @@ function isProfileComplete(profile?: {
   realName?: string | null;
   email?: string | null;
   phone?: string | null;
+  wechat?: string | null;
   department?: string | null;
   title?: string | null;
   hospitalName?: string | null;
@@ -25,6 +26,7 @@ function isProfileComplete(profile?: {
     profile.realName &&
       profile.email &&
       profile.phone &&
+      profile.wechat &&
       profile.hospitalName &&
       profile.department &&
       profile.title,
@@ -66,9 +68,6 @@ export function DashboardPage() {
       <div className="dashboard-hero">
         <div>
           <Typography.Title level={3}>用户工作台</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            首页只回答两件事：哪些需求正在推进，以及你下一步需要处理什么。
-          </Typography.Paragraph>
         </div>
         <Link to="/requirements">
           <Button type="primary">进入需求列表</Button>
@@ -103,7 +102,7 @@ export function DashboardPage() {
                   type="warning"
                   showIcon
                   message="资料待完善"
-                  description="建议先补齐联系人、邮箱、电话、医院、科室和职称，便于后续需求沟通和交付。"
+                  description="建议先补齐联系人、邮箱、电话、微信号、医院、科室和职称，便于后续需求沟通和交付。"
                   action={
                     <Link to="/profile">
                       <Button size="small" type="primary">

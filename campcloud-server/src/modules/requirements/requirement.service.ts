@@ -177,6 +177,7 @@ export class RequirementsService {
               realName: requirement.user.profile.realName,
               email: requirement.user.profile.email,
               phone: requirement.user.profile.phone,
+              wechat: requirement.user.profile.wechat,
               department: requirement.user.profile.department,
               title: requirement.user.profile.title,
             }

@@ -1,4 +1,4 @@
-import { FileAddOutlined, FileSearchOutlined, HomeOutlined, LogoutOutlined, SettingOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, FileAddOutlined, FileSearchOutlined, HomeOutlined, LogoutOutlined, SettingOutlined } from '@ant-design/icons';
 import { Button, Image, Layout, Menu, Space, Typography } from 'antd';
 import { PropsWithChildren } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -16,6 +16,7 @@ export function AppShell({ children }: PropsWithChildren) {
     { key: '/', icon: <HomeOutlined />, label: 'Dashboard' },
     { key: '/requirements', icon: <FileSearchOutlined />, label: '需求列表' },
     { key: '/requirements/create', icon: <FileAddOutlined />, label: '新建需求' },
+    { key: '/uploads', icon: <CloudUploadOutlined />, label: '数据上传' },
     { key: '/profile', icon: <SettingOutlined />, label: '个人资料' },
   ];
 
@@ -72,7 +73,7 @@ export function AppShell({ children }: PropsWithChildren) {
                 fontFamily: '"Avenir Next", "Helvetica Neue", sans-serif',
               }}
             >
-              CampCloud
+              Camp Cloud
             </Typography.Title>
             <Typography.Text
               style={{

@@ -67,6 +67,7 @@ export class AuthService {
             realName: user.profile.realName,
             email: user.profile.email,
             phone: user.profile.phone,
+            wechat: user.profile.wechat,
             department: user.profile.department,
             title: user.profile.title,
             remark: user.profile.remark,

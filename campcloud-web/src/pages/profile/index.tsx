@@ -31,6 +31,7 @@ export function ProfilePage() {
     watchedValues?.realName &&
       watchedValues?.email &&
       watchedValues?.phone &&
+      watchedValues?.wechat &&
       user?.hospitalName &&
       watchedValues?.department &&
       watchedValues?.title,
@@ -41,9 +42,6 @@ export function ProfilePage() {
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
         <div>
           <Typography.Title level={3}>用户资料</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            第二周期内，资料完整度按姓名、邮箱、电话、医院、科室、职称六项判断。资料完整后再进入需求沟通和交付，会更顺畅。
-          </Typography.Paragraph>
         </div>
 
         {!profileCompleted ? (
@@ -51,7 +49,7 @@ export function ProfilePage() {
             type="warning"
             showIcon
             message="资料尚未完整"
-            description="请补齐姓名、邮箱、电话、医院、科室和职称，避免后续需求创建、状态确认和交付沟通出现信息缺口。"
+            description="请补齐姓名、邮箱、电话、微信号、医院、科室和职称，避免后续需求创建、状态确认和交付沟通出现信息缺口。"
           />
         ) : (
           <Alert type="success" showIcon message="资料已完整，可继续进行需求创建与沟通。" />
@@ -96,6 +94,18 @@ export function ProfilePage() {
                   ]}
                 >
                   <Input placeholder="请输入工作手机号或办公电话" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="微信号"
+                  name="wechat"
+                  rules={[
+                    { required: true, message: '请输入微信号' },
+                    { max: 64, message: '微信号最多 64 个字符' },
+                  ]}
+                >
+                  <Input placeholder="请输入用于日常沟通的微信号" />
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>

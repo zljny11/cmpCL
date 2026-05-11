@@ -31,9 +31,6 @@ export function RequirementCreatePage() {
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
         <div>
           <Typography.Title level={3}>新建科研需求</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            第二周期先收口需求单主链路。当前页面聚焦把需求讲清楚，不扩展上传、留言和交付之外的复杂字段。
-          </Typography.Paragraph>
         </div>
 
         <Card title="需求表单" size="small">

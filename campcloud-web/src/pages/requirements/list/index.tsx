@@ -36,9 +36,6 @@ export function RequirementListPage() {
       <div className="requirement-list-hero">
         <div>
           <Typography.Title level={3}>需求列表</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            第二周期先聚焦 Requirement 主链路。当前列表负责承接创建后的查询、筛选、详情跳转和三层结构预览。
-          </Typography.Paragraph>
         </div>
         <div className="requirement-list-summary">
           <div className="requirement-list-summary-card">
