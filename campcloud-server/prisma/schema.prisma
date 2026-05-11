@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  admin
+}
+
+enum UserStatus {
+  active
+  disabled
+}
+
+enum RequirementStatus {
+  pending
+  processing
+  waiting_user
+  completed
+  rejected
+}
+
+enum DatasetUploadType {
+  initial
+  supplement
+}
+
+enum DatasetBatchStatus {
+  uploaded
+  parsed
+  failed
+}
+
+model User {
+  id            BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  username      String         @unique @db.VarChar(64)
+  passwordHash  String         @map("password_hash") @db.VarChar(255)
+  role          UserRole       @default(user)
+  hospitalName  String         @map("hospital_name") @db.VarChar(128)
+  status        UserStatus     @default(active)
+  lastLoginAt   DateTime?      @map("last_login_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  profile       UserProfile?
+  requirements  Requirement[]
+  datasetBatches DatasetBatch[]
+  messages      Message[]
+  deliveries    Delivery[]
+  notifications Notification[]
+  statusLogs    RequirementStatusLog[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  userId     BigInt   @unique @map("user_id") @db.UnsignedBigInt
+  realName   String?  @map("real_name") @db.VarChar(64)
+  email      String?  @db.VarChar(128)
+  phone      String?  @db.VarChar(32)
+  department String?  @db.VarChar(64)
+  title      String?  @db.VarChar(64)
+  remark     String?  @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model Requirement {
+  id                      BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  userId                  BigInt                 @map("user_id") @db.UnsignedBigInt
+  type                    String                 @db.VarChar(64)
+  typeCustom              String?                @map("type_custom") @db.VarChar(128)
+  title                   String                 @db.VarChar(200)
+  description             String                 @db.Text
+  expectedGoal            String?                @map("expected_goal") @db.Text
+  remark                  String?                @db.Text
+  status                  RequirementStatus      @default(pending)
+  latestMessageAt         DateTime?              @map("latest_message_at")
+  latestDeliveryAt        DateTime?              @map("latest_delivery_at")
+  submittedAt             DateTime?              @map("submitted_at")
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
+  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  datasetBatches          DatasetBatch[]
+  patients                Patient[]
+  messages                Message[]
+  deliveries              Delivery[]
+  requirementStatusLogs   RequirementStatusLog[]
+  notifications           Notification[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("requirements")
+}
+
+model DatasetBatch {
+  id            BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId BigInt             @map("requirement_id") @db.UnsignedBigInt
+  uploadedBy    BigInt             @map("uploaded_by") @db.UnsignedBigInt
+  batchNo       Int                @map("batch_no")
+  uploadType    DatasetUploadType  @map("upload_type")
+  sourceName    String?            @map("source_name") @db.VarChar(255)
+  fileCount     Int                @default(0) @map("file_count")
+  status        DatasetBatchStatus @default(uploaded)
+  remark        String?            @db.VarChar(255)
+  uploadedAt    DateTime           @default(now()) @map("uploaded_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  requirement   Requirement        @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  uploader      User               @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  series        Series[]
+
+  @@index([requirementId])
+  @@map("dataset_batches")
+}
+
+model Patient {
+  id            BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId BigInt        @map("requirement_id") @db.UnsignedBigInt
+  patientUid    String        @map("patient_uid") @db.VarChar(128)
+  patientId     String?       @map("patient_id") @db.VarChar(64)
+  patientName   String?       @map("patient_name") @db.VarChar(64)
+  sex           String?       @db.VarChar(16)
+  birthday      DateTime?     @db.Date
+  imageCount    Int           @default(0) @map("image_count")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  requirement   Requirement   @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  studies       Study[]
+
+  @@unique([requirementId, patientUid])
+  @@map("patients")
+}
+
+model Study {
+  id               BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  patientId        BigInt    @map("patient_id") @db.UnsignedBigInt
+  studyUid         String    @map("study_uid") @db.VarChar(128)
+  studyId          String?   @map("study_id") @db.VarChar(64)
+  modality         String?   @db.VarChar(32)
+  studyDate        DateTime? @map("study_date")
+  studyDescription String?   @map("study_description") @db.VarChar(255)
+  seriesCount      Int       @default(0) @map("series_count")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  patient          Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  series           Series[]
+
+  @@unique([patientId, studyUid])
+  @@map("studies")
+}
+
+model Series {
+  id                BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  studyId           BigInt       @map("study_id") @db.UnsignedBigInt
+  datasetBatchId    BigInt       @map("dataset_batch_id") @db.UnsignedBigInt
+  seriesUid         String       @map("series_uid") @db.VarChar(128)
+  seriesDescription String?      @map("series_description") @db.VarChar(255)
+  hospitalName      String?      @map("hospital_name") @db.VarChar(128)
+  remark            String?      @db.VarChar(255)
+  uploadedAt        DateTime?    @map("uploaded_at")
+  imageCount        Int          @default(0) @map("image_count")
+  storagePath       String?      @map("storage_path") @db.VarChar(255)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  study             Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  datasetBatch      DatasetBatch @relation(fields: [datasetBatchId], references: [id], onDelete: Cascade)
+
+  @@unique([studyId, seriesUid, datasetBatchId])
+  @@map("series")
+}
+
+model Message {
+  id            BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId BigInt      @map("requirement_id") @db.UnsignedBigInt
+  senderId      BigInt      @map("sender_id") @db.UnsignedBigInt
+  senderRole    UserRole    @map("sender_role")
+  content       String      @db.Text
+  attachmentUrl String?     @map("attachment_url") @db.VarChar(255)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  sender        User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([requirementId])
+  @@map("messages")
+}
+
+model Delivery {
+  id            BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId BigInt      @map("requirement_id") @db.UnsignedBigInt
+  uploadedBy    BigInt      @map("uploaded_by") @db.UnsignedBigInt
+  title         String      @db.VarChar(200)
+  description   String?     @db.Text
+  fileUrl       String?     @map("file_url") @db.VarChar(255)
+  fileName      String?     @map("file_name") @db.VarChar(255)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  uploader      User        @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@index([requirementId])
+  @@map("deliveries")
+}
+
+model RequirementStatusLog {
+  id            BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId BigInt             @map("requirement_id") @db.UnsignedBigInt
+  fromStatus    RequirementStatus? @map("from_status")
+  toStatus      RequirementStatus  @map("to_status")
+  changedBy     BigInt             @map("changed_by") @db.UnsignedBigInt
+  changedRole   UserRole           @map("changed_role")
+  reason        String?            @db.VarChar(255)
+  createdAt     DateTime           @default(now()) @map("created_at")
+  requirement   Requirement        @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  changer       User               @relation(fields: [changedBy], references: [id], onDelete: Cascade)
+
+  @@map("requirement_status_logs")
+}
+
+model Notification {
+  id            BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  userId        BigInt       @map("user_id") @db.UnsignedBigInt
+  requirementId BigInt?      @map("requirement_id") @db.UnsignedBigInt
+  type          String       @db.VarChar(32)
+  title         String       @db.VarChar(200)
+  content       String       @db.VarChar(500)
+  isRead        Boolean      @default(false) @map("is_read")
+  readAt        DateTime?    @map("read_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requirement   Requirement? @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
