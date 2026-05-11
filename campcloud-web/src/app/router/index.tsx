@@ -9,6 +9,7 @@ import { RequirementCreatePage } from '../../pages/requirements/create';
 import { RequirementListPage } from '../../pages/requirements/list';
 import { RequirementDetailPage } from '../../pages/requirements/detail';
 import { UploadCenterPage } from '../../pages/uploads';
+import { NotificationPage } from '../../pages/notifications';
 import { AdminRequirementListPage } from '../../pages/admin/RequirementListPage';
 import { AdminRequirementDetailPage } from '../../pages/admin/RequirementDetailPage';
 
@@ -58,6 +59,7 @@ function RouterContainer() {
         { path: 'requirements/:id', element: <RequirementDetailPage /> },
         { path: 'requirements/:id/upload', element: <UploadCenterPage /> },
         { path: 'uploads', element: <UploadCenterPage /> },
+        { path: 'notifications', element: <NotificationPage /> },
         {
           path: 'admin',
           element: <AdminRoute />,

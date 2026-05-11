@@ -1,5 +1,5 @@
 import { CloudUploadOutlined, FileSearchOutlined, FolderOpenOutlined, InboxOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Row, Space, Table, Typography, message } from 'antd';
+import { Button, Card, Col, Empty, Row, Space, Typography, message } from 'antd';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 export function UploadCenterPage() {
@@ -7,33 +7,6 @@ export function UploadCenterPage() {
   const [searchParams] = useSearchParams();
   const requirementId = routeRequirementId || searchParams.get('requirementId');
   const handleDeveloping = () => message.info('正在开发');
-
-  const uploadColumns = [
-    { title: '批次编号', dataIndex: 'batchNo', key: 'batchNo' },
-    { title: '数据来源', dataIndex: 'sourceName', key: 'sourceName' },
-    { title: '上传类型', dataIndex: 'uploadType', key: 'uploadType' },
-    { title: '文件数', dataIndex: 'fileCount', key: 'fileCount' },
-    { title: '状态', dataIndex: 'status', key: 'status' },
-  ];
-
-  const uploadData = [
-    {
-      key: 'demo-1',
-      batchNo: 'BATCH-20260511-001',
-      sourceName: '胸部 CT 样例数据',
-      uploadType: '初始上传',
-      fileCount: '128',
-      status: '待上传',
-    },
-    {
-      key: 'demo-2',
-      batchNo: 'BATCH-20260511-002',
-      sourceName: 'PET 补充数据',
-      uploadType: '补充上传',
-      fileCount: '64',
-      status: '待上传',
-    },
-  ];
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
@@ -117,12 +90,7 @@ export function UploadCenterPage() {
       </Row>
 
       <Card title={requirementId ? `需求单 ${requirementId} 的影像批次` : '近期影像批次'}>
-        <Table
-          columns={uploadColumns}
-          dataSource={uploadData}
-          pagination={false}
-          size="middle"
-        />
+        <Empty description="暂无影像批次数据" />
       </Card>
     </Space>
   );
