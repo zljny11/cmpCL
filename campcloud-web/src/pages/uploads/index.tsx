@@ -28,7 +28,7 @@ import {
 } from 'antd';
 import type { RcFile, UploadFile } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { RequirementListItem } from '../../types/requirements';
 import { requirementsApi } from '../../services/api/requirements';
@@ -62,8 +62,25 @@ export function UploadCenterPage() {
   const requirementId = routeRequirementId || searchParams.get('requirementId') || '';
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [showAllSelectedFiles, setShowAllSelectedFiles] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [batchPage, setBatchPage] = useState(1);
   const [batchPageSize, setBatchPageSize] = useState(10);
+
+  const syncFilesToUploadList = (files: File[]) => {
+    setFileList(
+      files.map((file, index) => ({
+        uid: `${file.name}-${file.size}-${index}`,
+        name:
+          'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+            ? file.webkitRelativePath
+            : file.name,
+        status: 'done',
+        originFileObj: file as RcFile,
+      })),
+    );
+    setShowAllSelectedFiles(false);
+  };
 
   const { data: requirement, isLoading: isRequirementLoading, isError: isRequirementError } = useQuery({
     queryKey: ['requirement-detail', requirementId],
@@ -104,6 +121,10 @@ export function UploadCenterPage() {
       message.success(`已创建批次 #${result.batchNo}`);
       form.resetFields();
       setFileList([]);
+      setShowAllSelectedFiles(false);
+      if (folderInputRef.current) {
+        folderInputRef.current.value = '';
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'dataset-batches'] }),
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'data-tree'] }),
@@ -124,6 +145,7 @@ export function UploadCenterPage() {
   });
 
   const batchItems = batchData?.list ?? [];
+  const visibleSelectedFiles = showAllSelectedFiles ? fileList : fileList.slice(0, 8);
   const batchSummary = useMemo(
     () => ({
       total: batchData?.total ?? 0,
@@ -276,18 +298,98 @@ export function UploadCenterPage() {
                 />
               </Form.Item>
               <Form.Item label="上传文件">
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    syncFilesToUploadList(files);
+                  }}
+                />
+                <Space style={{ marginBottom: 12 }} wrap>
+                  <Button onClick={() => folderInputRef.current?.click()}>选择文件夹</Button>
+                  <Button
+                    onClick={() => {
+                      setFileList([]);
+                      setShowAllSelectedFiles(false);
+                      if (folderInputRef.current) {
+                        folderInputRef.current.value = '';
+                      }
+                    }}
+                  >
+                    清空已选文件
+                  </Button>
+                </Space>
                 <Upload.Dragger
                   multiple
+                  directory
                   beforeUpload={() => false}
                   fileList={fileList}
-                  onChange={({ fileList: nextFileList }) => setFileList(nextFileList)}
+                  showUploadList={false}
+                  onChange={({ fileList: nextFileList }) => {
+                    setFileList(nextFileList);
+                    setShowAllSelectedFiles(false);
+                    if (folderInputRef.current) {
+                      folderInputRef.current.value = '';
+                    }
+                  }}
                 >
                   <p className="ant-upload-drag-icon">
                     <InboxOutlined />
                   </p>
-                  <p className="ant-upload-text">选择文件或拖拽到这里</p>
-                  <p className="ant-upload-hint">第 3 周期先打通批次记录链路，文件数会写入 DatasetBatch。</p>
+                  <p className="ant-upload-text">选择文件夹、选择文件，或直接拖拽到这里</p>
+                  <p className="ant-upload-hint">
+                    macOS 下如果系统弹窗对文件夹选择不直观，优先使用上面的“选择文件夹”按钮。
+                  </p>
                 </Upload.Dragger>
+                {fileList.length > 0 ? (
+                  <Card size="small" style={{ marginTop: 12 }}>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                        <Typography.Text strong>已选择 {fileList.length} 个文件</Typography.Text>
+                        <Button type="link" onClick={() => setShowAllSelectedFiles((value) => !value)}>
+                          {showAllSelectedFiles ? '收起文件列表' : `展开全部文件 (${fileList.length})`}
+                        </Button>
+                      </Space>
+                      <List
+                        size="small"
+                        dataSource={visibleSelectedFiles}
+                        renderItem={(item) => (
+                          <List.Item style={{ padding: '6px 0' }}>
+                            <div
+                              style={{
+                                width: '100%',
+                                display: 'grid',
+                                gridTemplateColumns: 'minmax(0, 1fr) 72px',
+                                gap: 12,
+                                alignItems: 'center',
+                              }}
+                            >
+                              <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 13, lineHeight: '20px' }}>
+                                {item.name}
+                              </Typography.Text>
+                              <Typography.Text
+                                type="secondary"
+                                style={{ textAlign: 'right', fontSize: 12, whiteSpace: 'nowrap' }}
+                              >
+                                {item.size ? `${Math.max(item.size / 1024 / 1024, 0.01).toFixed(2)} MB` : '-'}
+                              </Typography.Text>
+                            </div>
+                          </List.Item>
+                        )}
+                      />
+                      {!showAllSelectedFiles && fileList.length > visibleSelectedFiles.length ? (
+                        <Typography.Text type="secondary">
+                          当前仅预览前 {visibleSelectedFiles.length} 个文件，其余 {fileList.length - visibleSelectedFiles.length}{' '}
+                          个文件已隐藏。
+                        </Typography.Text>
+                      ) : null}
+                    </Space>
+                  </Card>
+                ) : null}
               </Form.Item>
               <Space>
                 <Button type="primary" htmlType="submit" loading={createBatchMutation.isPending}>
@@ -297,6 +399,10 @@ export function UploadCenterPage() {
                   onClick={() => {
                     form.resetFields();
                     setFileList([]);
+                    setShowAllSelectedFiles(false);
+                    if (folderInputRef.current) {
+                      folderInputRef.current.value = '';
+                    }
                   }}
                 >
                   清空

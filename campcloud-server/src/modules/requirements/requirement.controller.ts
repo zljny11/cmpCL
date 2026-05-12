@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthUser } from '../../types/auth-user';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
@@ -36,12 +37,12 @@ export class RequirementsController {
   }
 
   @Post(':id/dataset-batches')
-  @UseInterceptors(FilesInterceptor('files'))
+  @UseInterceptors(FilesInterceptor('files', 2000, { storage: memoryStorage() }))
   createDatasetBatch(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreateDatasetBatchDto,
-    @UploadedFiles() files: Array<{ originalname: string }> = [],
+    @UploadedFiles() files: Array<{ originalname: string; buffer: Buffer }> = [],
   ) {
     return this.requirementsService.createDatasetBatch(BigInt(user.id), BigInt(id), user.role, dto, files);
   }
