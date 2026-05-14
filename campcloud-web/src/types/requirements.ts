@@ -93,17 +93,23 @@ export interface RequirementSeriesNode {
   id: string;
   seriesUid: string;
   seriesDescription: string | null;
+  hospitalName: string | null;
+  remark: string | null;
   imageCount: number;
   uploadedAt: string | null;
+  storagePath: string | null;
   datasetBatch: {
+    id: string;
     batchNo: number;
     uploadType: string;
+    sourceName: string | null;
   };
 }
 
 export interface RequirementStudyNode {
   id: string;
   studyUid: string;
+  studyId?: string | null;
   studyDescription: string | null;
   modality: string | null;
   studyDate: string | null;
@@ -116,12 +122,68 @@ export interface RequirementPatientNode {
   patientId: string | null;
   patientName: string | null;
   sex: string | null;
+  birthday?: string | null;
   imageCount: number;
   studies: RequirementStudyNode[];
 }
 
 export interface RequirementDataTree {
   patients: RequirementPatientNode[];
+}
+
+export interface RequirementSeriesFile {
+  name: string;
+  size: number;
+  url: string;
+}
+
+export interface RequirementSeriesPreviewItem {
+  id: string;
+  seriesUid: string;
+  seriesDescription: string | null;
+  hospitalName: string | null;
+  remark: string | null;
+  uploadedAt: string | null;
+  imageCount: number;
+  files: RequirementSeriesFile[];
+  datasetBatch: {
+    id: string;
+    batchNo: number;
+    uploadType: string;
+    sourceName: string | null;
+  };
+}
+
+export interface RequirementPreviewPayload {
+  target:
+    | {
+        type: 'study';
+        id: string;
+        studyUid: string;
+        studyId: string | null;
+        modality: string | null;
+        studyDate: string | null;
+        studyDescription: string | null;
+        patient: {
+          id: string;
+          patientUid: string;
+          patientId: string | null;
+          patientName: string | null;
+        };
+      }
+    | {
+        type: 'series';
+        id: string;
+        seriesUid: string;
+        seriesDescription: string | null;
+        study: {
+          id: string;
+          studyUid: string;
+          studyId: string | null;
+          studyDescription: string | null;
+        };
+      };
+  series: RequirementSeriesPreviewItem[];
 }
 
 export interface DatasetBatchItem {

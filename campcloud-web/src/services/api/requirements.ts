@@ -8,6 +8,7 @@ import {
   RequirementDetail,
   RequirementListItem,
   RequirementListQuery,
+  RequirementPreviewPayload,
 } from '../../types/requirements';
 
 export const requirementsApi = {
@@ -28,6 +29,34 @@ export const requirementsApi = {
 
   async dataTree(id: string) {
     const response = (await http.get(`/requirements/${id}/data-tree`)) as ApiResponse<RequirementDataTree>;
+    return response.data;
+  },
+
+  async previewStudy(requirementId: string, studyId: string) {
+    const response = (await http.get(
+      `/requirements/${requirementId}/studies/${studyId}/preview`,
+    )) as ApiResponse<RequirementPreviewPayload>;
+    return response.data;
+  },
+
+  async deleteStudy(requirementId: string, studyId: string) {
+    const response = (await http.delete(`/requirements/${requirementId}/studies/${studyId}`)) as ApiResponse<{
+      success: boolean;
+    }>;
+    return response.data;
+  },
+
+  async previewSeries(requirementId: string, seriesId: string) {
+    const response = (await http.get(
+      `/requirements/${requirementId}/series/${seriesId}/preview`,
+    )) as ApiResponse<RequirementPreviewPayload>;
+    return response.data;
+  },
+
+  async deleteSeries(requirementId: string, seriesId: string) {
+    const response = (await http.delete(`/requirements/${requirementId}/series/${seriesId}`)) as ApiResponse<{
+      success: boolean;
+    }>;
     return response.data;
   },
 

@@ -491,7 +491,7 @@ export function UploadCenterPage() {
         {isTreeLoading ? (
           <Card loading />
         ) : treeData?.patients?.length ? (
-          <PatientLevel data={treeData.patients} />
+          <PatientLevel requirementId={requirementId} data={treeData.patients} onRefresh={() => void refetchTree()} />
         ) : (
           <Empty
             description="当前需求单暂无三层结构数据。第 3 周期已先完成批次记录链路，后续解析落库后这里会自动呈现。"

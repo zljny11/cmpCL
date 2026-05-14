@@ -1,8 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RequirementStatus, UserRole } from '@prisma/client';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, extname, join, relative, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
@@ -11,6 +14,8 @@ import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
 
 type UploadedFile = { originalname: string; buffer: Buffer };
+
+const execFileAsync = promisify(execFile);
 
 type ParsedDicomRecord = {
   patientUid: string;
@@ -35,7 +40,10 @@ type ParsedDicomRecord = {
 export class RequirementsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private readonly uploadRoot = join(process.cwd(), 'storage', 'uploads');
+  private readonly uploadRoots = [
+    resolve(process.cwd(), 'storage', 'uploads'),
+    resolve(__dirname, '..', '..', '..', '..', 'storage', 'uploads'),
+  ];
 
   private async ensureRequirementAccess(userId: bigint, requirementId: bigint, role: UserRole) {
     const requirement = await this.prisma.requirement.findUnique({
@@ -119,6 +127,174 @@ export class RequirementsService {
     return `${this.sanitizePathSegment(base)}${extension}`;
   }
 
+  private ensureSafeStoragePath(storagePath: string) {
+    const resolvedPath = resolve(storagePath);
+    for (const root of this.uploadRoots) {
+      const resolvedRoot = resolve(root);
+      const pathRelative = relative(resolvedRoot, resolvedPath);
+      if (!pathRelative.startsWith('..') && !pathRelative.startsWith('/')) {
+        return resolvedPath;
+      }
+    }
+    throw new BadRequestException('非法文件路径');
+  }
+
+  private async listSeriesFiles(storagePath: string, requirementId: bigint, seriesId: bigint) {
+    const safeStoragePath = this.ensureSafeStoragePath(storagePath);
+    const seriesDir = dirname(safeStoragePath);
+    const fileNames = (await readdir(seriesDir)).sort((left, right) => left.localeCompare(right, 'en'));
+
+    return Promise.all(
+      fileNames.map(async (fileName) => {
+        const filePath = join(seriesDir, fileName);
+        const fileStats = await stat(filePath);
+        return {
+          name: fileName,
+          size: fileStats.size,
+          url: `/api/v1/requirements/${requirementId.toString()}/series/${seriesId.toString()}/files/${encodeURIComponent(fileName)}`,
+        };
+      }),
+    );
+  }
+
+  private async buildSeriesViewerPayload(
+    series: {
+      id: bigint;
+      seriesUid: string;
+      seriesDescription: string | null;
+      hospitalName: string | null;
+      remark: string | null;
+      uploadedAt: Date | null;
+      imageCount: number;
+      storagePath: string | null;
+      datasetBatch: {
+        id: bigint;
+        batchNo: number;
+        uploadType: string;
+        sourceName: string | null;
+      };
+    },
+    requirementId: bigint,
+  ) {
+    const files = series.storagePath ? await this.listSeriesFiles(series.storagePath, requirementId, series.id) : [];
+
+    return {
+      id: series.id.toString(),
+      seriesUid: series.seriesUid,
+      seriesDescription: series.seriesDescription,
+      hospitalName: series.hospitalName,
+      remark: series.remark,
+      uploadedAt: series.uploadedAt,
+      imageCount: series.imageCount,
+      files,
+      datasetBatch: {
+        id: series.datasetBatch.id.toString(),
+        batchNo: series.datasetBatch.batchNo,
+        uploadType: series.datasetBatch.uploadType,
+        sourceName: series.datasetBatch.sourceName,
+      },
+    };
+  }
+
+  private async deleteSeriesFiles(storagePath: string | null) {
+    if (!storagePath) {
+      return;
+    }
+
+    const safeStoragePath = this.ensureSafeStoragePath(storagePath);
+    await rm(dirname(safeStoragePath), { recursive: true, force: true });
+  }
+
+  private async findAccessibleSeries(
+    userId: bigint,
+    role: UserRole,
+    seriesIds: string[] = [],
+    seriesUids: string[] = [],
+  ) {
+    const numericSeriesIds = seriesIds
+      .map((value) => {
+        try {
+          return BigInt(value);
+        } catch {
+          return null;
+        }
+      })
+      .filter((value): value is bigint => value !== null);
+
+    const where: Prisma.SeriesWhereInput = {
+      OR: [
+        ...(numericSeriesIds.length > 0 ? [{ id: { in: numericSeriesIds } }] : []),
+        ...(seriesUids.length > 0 ? [{ seriesUid: { in: seriesUids } }] : []),
+      ],
+      ...(role === UserRole.admin
+        ? {}
+        : {
+            study: {
+              patient: {
+                requirement: {
+                  userId,
+                },
+              },
+            },
+          }),
+    };
+
+    if (!where.OR || where.OR.length === 0) {
+      return [];
+    }
+
+    return this.prisma.series.findMany({
+      where,
+      orderBy: [{ createdAt: 'asc' }],
+      include: {
+        study: {
+          include: {
+            patient: {
+              select: {
+                id: true,
+                patientUid: true,
+                patientId: true,
+                patientName: true,
+                sex: true,
+                birthday: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  private async listSeriesFileEntries(series: { id: bigint; storagePath: string | null }) {
+    if (!series.storagePath) {
+      return [];
+    }
+
+    const safeStoragePath = this.ensureSafeStoragePath(series.storagePath);
+    const seriesDir = dirname(safeStoragePath);
+    const fileNames = (await readdir(seriesDir)).sort((left, right) => left.localeCompare(right, 'en'));
+
+    return fileNames.map((fileName) => ({
+      seriesId: series.id.toString(),
+      fileName,
+      filePath: join(seriesDir, fileName),
+    }));
+  }
+
+  private async parsePacsTagInfo(filePath: string) {
+    const file = await readFile(filePath);
+    const dataSet = dicomParser.parseDicom(new Uint8Array(file));
+    const rows = dataSet.uint16('x00280010');
+    const columns = dataSet.uint16('x00280011');
+
+    return [
+      [rows ? `Rows: ${rows}` : null, columns ? `Columns: ${columns}` : null].filter(Boolean),
+      [dataSet.string('x00100020'), dataSet.string('x0008103e')].filter(Boolean),
+      [dataSet.string('x00180050')].filter(Boolean),
+      [dataSet.string('x00080080')].filter(Boolean),
+    ];
+  }
+
   private parseDicomFile(file: UploadedFile, storagePath: string): ParsedDicomRecord {
     const byteArray = new Uint8Array(file.buffer);
     const dataSet = dicomParser.parseDicom(byteArray);
@@ -163,7 +339,7 @@ export class RequirementsService {
   }
 
   private async persistBatchFiles(requirementId: bigint, batchNo: number, files: UploadedFile[]) {
-    const batchRoot = join(this.uploadRoot, requirementId.toString(), `batch-${batchNo}`);
+    const batchRoot = join(this.uploadRoots[0], requirementId.toString(), `batch-${batchNo}`);
     await mkdir(batchRoot, { recursive: true });
     return { batchRoot };
   }
@@ -430,6 +606,437 @@ export class RequirementsService {
         })),
       })),
     };
+  }
+
+  async pacsGetImageIdGroups(userId: bigint, role: UserRole, seriesIds: string[] = [], seriesUids: string[] = []) {
+    const seriesList = await this.findAccessibleSeries(userId, role, seriesIds, seriesUids);
+    const seriesIdMap = new Map(seriesList.map((item) => [item.id.toString(), item]));
+    const seriesUidMap = new Map(seriesList.map((item) => [item.seriesUid, item]));
+
+    const orderedSeries = [
+      ...seriesIds.map((id) => seriesIdMap.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item)),
+      ...seriesUids
+        .filter((uid) => !seriesIds.some((id) => seriesIdMap.get(id)?.seriesUid === uid))
+        .map((uid) => seriesUidMap.get(uid))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    ];
+
+    if (orderedSeries.length === 0) {
+      throw new NotFoundException('未找到可访问的序列');
+    }
+
+    return Promise.all(orderedSeries.map((series) => this.listSeriesFileEntries(series)));
+  }
+
+  async pacsGetTagInfo(userId: bigint, role: UserRole, seriesIds: string[] = [], seriesUids: string[] = []) {
+    const seriesList = await this.findAccessibleSeries(userId, role, seriesIds, seriesUids);
+    const seriesIdMap = new Map(seriesList.map((item) => [item.id.toString(), item]));
+    const seriesUidMap = new Map(seriesList.map((item) => [item.seriesUid, item]));
+
+    const orderedSeries = [
+      ...seriesIds.map((id) => seriesIdMap.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item)),
+      ...seriesUids
+        .filter((uid) => !seriesIds.some((id) => seriesIdMap.get(id)?.seriesUid === uid))
+        .map((uid) => seriesUidMap.get(uid))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    ];
+
+    if (orderedSeries.length === 0) {
+      return [];
+    }
+
+    return Promise.all(
+      orderedSeries.map(async (series) => {
+        const files = await this.listSeriesFileEntries(series);
+        if (files.length === 0) {
+          return [[], [], [], []];
+        }
+        return this.parsePacsTagInfo(files[0].filePath);
+      }),
+    );
+  }
+
+  async pacsDownloadSeries(userId: bigint, role: UserRole, seriesIds: string[] = [], seriesUids: string[] = []) {
+    const seriesList = await this.findAccessibleSeries(userId, role, seriesIds, seriesUids);
+
+    if (seriesList.length === 0) {
+      throw new NotFoundException('未找到可下载的序列');
+    }
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'campcloud-pacs-'));
+    const zipPath = join(tempDir, `series_${Date.now()}.zip`);
+    const targetDirs = seriesList
+      .map((series) => (series.storagePath ? dirname(this.ensureSafeStoragePath(series.storagePath)) : null))
+      .filter((dir): dir is string => Boolean(dir));
+
+    if (targetDirs.length === 0) {
+      throw new NotFoundException('序列文件不存在');
+    }
+
+    await execFileAsync('zip', ['-r', zipPath, ...targetDirs], { cwd: '/' });
+
+    const patientId = seriesList[0].study.patient.patientId || seriesList[0].study.patient.patientUid;
+
+    return {
+      path: zipPath,
+      fileName: `series_${patientId}.zip`,
+      cleanupDir: tempDir,
+    };
+  }
+
+  async pacsPublicFile(seriesId: string, fileName: string) {
+    let parsedSeriesId: bigint;
+
+    try {
+      parsedSeriesId = BigInt(seriesId);
+    } catch {
+      throw new NotFoundException('序列不存在');
+    }
+
+    const series = await this.prisma.series.findUnique({
+      where: { id: parsedSeriesId },
+      select: { storagePath: true },
+    });
+
+    if (!series?.storagePath) {
+      throw new NotFoundException('文件不存在');
+    }
+
+    const safeStoragePath = this.ensureSafeStoragePath(series.storagePath);
+    const filePath = this.ensureSafeStoragePath(join(dirname(safeStoragePath), fileName));
+
+    try {
+      await stat(filePath);
+    } catch {
+      throw new NotFoundException('文件不存在');
+    }
+
+    return filePath;
+  }
+
+  async previewStudy(userId: bigint, requirementId: bigint, studyId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const study = await this.prisma.study.findFirst({
+      where: {
+        id: studyId,
+        patient: { requirementId },
+      },
+      include: {
+        series: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            datasetBatch: {
+              select: {
+                id: true,
+                batchNo: true,
+                uploadType: true,
+                sourceName: true,
+              },
+            },
+          },
+        },
+        patient: {
+          select: {
+            id: true,
+            patientUid: true,
+            patientId: true,
+            patientName: true,
+          },
+        },
+      },
+    });
+
+    if (!study) {
+      throw new NotFoundException('检查不存在');
+    }
+
+    return {
+      target: {
+        type: 'study' as const,
+        id: study.id.toString(),
+        studyUid: study.studyUid,
+        studyId: study.studyId,
+        modality: study.modality,
+        studyDate: study.studyDate,
+        studyDescription: study.studyDescription,
+        patient: {
+          id: study.patient.id.toString(),
+          patientUid: study.patient.patientUid,
+          patientId: study.patient.patientId,
+          patientName: study.patient.patientName,
+        },
+      },
+      series: await Promise.all(study.series.map((item) => this.buildSeriesViewerPayload(item, requirementId))),
+    };
+  }
+
+  async previewSeries(userId: bigint, requirementId: bigint, seriesId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const series = await this.prisma.series.findFirst({
+      where: {
+        id: seriesId,
+        study: {
+          patient: {
+            requirementId,
+          },
+        },
+      },
+      include: {
+        datasetBatch: {
+          select: {
+            id: true,
+            batchNo: true,
+            uploadType: true,
+            sourceName: true,
+          },
+        },
+        study: {
+          select: {
+            id: true,
+            studyUid: true,
+            studyId: true,
+            studyDescription: true,
+          },
+        },
+      },
+    });
+
+    if (!series) {
+      throw new NotFoundException('序列不存在');
+    }
+
+    return {
+      target: {
+        type: 'series' as const,
+        id: series.id.toString(),
+        seriesUid: series.seriesUid,
+        seriesDescription: series.seriesDescription,
+        study: {
+          id: series.study.id.toString(),
+          studyUid: series.study.studyUid,
+          studyId: series.study.studyId,
+          studyDescription: series.study.studyDescription,
+        },
+      },
+      series: [await this.buildSeriesViewerPayload(series, requirementId)],
+    };
+  }
+
+  async downloadSeriesFile(
+    userId: bigint,
+    requirementId: bigint,
+    seriesId: bigint,
+    fileName: string,
+    role: UserRole,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const series = await this.prisma.series.findFirst({
+      where: {
+        id: seriesId,
+        study: {
+          patient: { requirementId },
+        },
+      },
+      select: {
+        storagePath: true,
+      },
+    });
+
+    if (!series?.storagePath) {
+      throw new NotFoundException('序列文件不存在');
+    }
+
+    const safeStoragePath = this.ensureSafeStoragePath(series.storagePath);
+    const filePath = join(dirname(safeStoragePath), fileName);
+    const safeFilePath = this.ensureSafeStoragePath(filePath);
+
+    try {
+      await stat(safeFilePath);
+    } catch {
+      throw new NotFoundException('文件不存在');
+    }
+
+    return {
+      path: safeFilePath,
+      fileName,
+    };
+  }
+
+  async pacsGetSeries(userId: bigint, role: UserRole, seriesIds: string[] = [], seriesUids: string[] = []) {
+    const seriesList = await this.findAccessibleSeries(userId, role, seriesIds, seriesUids);
+
+    return seriesList.map((series) => ({
+      patientId: series.study.patient.patientId || series.study.patient.patientUid,
+      patientName: series.study.patient.patientName || series.study.patient.patientUid,
+      patientSex: series.study.patient.sex || '',
+      birthday: series.study.patient.birthday ? series.study.patient.birthday.toISOString() : '',
+      patientAge: '',
+      username: '',
+      userId: 0,
+      seriesId: series.id.toString(),
+      seriesUID: series.seriesUid,
+      seriesNumber: 0,
+      seriesDesc: series.seriesDescription || series.seriesUid,
+      scanMode: series.study.modality || '',
+      scanTime: series.study.studyDate ? series.study.studyDate.toISOString() : '',
+      imageCount: series.imageCount,
+      uploadTime: series.uploadedAt ? series.uploadedAt.toISOString() : '',
+      protocolName: '',
+      manufacturer: '',
+      institutionName: series.hospitalName || '',
+      manufacturersModelName: '',
+      studyDescription: series.study.studyDescription || '',
+      bodyPart: '',
+      hospitalName: series.hospitalName || '',
+      note: series.remark || '',
+    }));
+  }
+
+  async deleteStudy(userId: bigint, requirementId: bigint, studyId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const deletedSeriesPaths = await this.prisma.$transaction(async (tx) => {
+      const study = await tx.study.findFirst({
+        where: {
+          id: studyId,
+          patient: { requirementId },
+        },
+        include: {
+          patient: {
+            select: {
+              id: true,
+            },
+          },
+          series: {
+            select: {
+              id: true,
+              imageCount: true,
+              storagePath: true,
+            },
+          },
+        },
+      });
+
+      if (!study) {
+        throw new NotFoundException('检查不存在');
+      }
+
+      const imageCount = study.series.reduce((sum, item) => sum + item.imageCount, 0);
+
+      await tx.series.deleteMany({
+        where: {
+          studyId: study.id,
+        },
+      });
+
+      await tx.study.delete({
+        where: { id: study.id },
+      });
+
+      const remainingStudyCount = await tx.study.count({
+        where: { patientId: study.patient.id },
+      });
+
+      if (remainingStudyCount === 0) {
+        await tx.patient.delete({
+          where: { id: study.patient.id },
+        });
+      } else if (imageCount > 0) {
+        await tx.patient.update({
+          where: { id: study.patient.id },
+          data: {
+            imageCount: { decrement: imageCount },
+          },
+        });
+      }
+
+      return study.series.map((item) => item.storagePath).filter((item): item is string => Boolean(item));
+    });
+
+    await Promise.all(deletedSeriesPaths.map((item) => this.deleteSeriesFiles(item)));
+
+    return { success: true };
+  }
+
+  async deleteSeries(userId: bigint, requirementId: bigint, seriesId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const deletedSeriesPath = await this.prisma.$transaction(async (tx) => {
+      const series = await tx.series.findFirst({
+        where: {
+          id: seriesId,
+          study: {
+            patient: { requirementId },
+          },
+        },
+        include: {
+          study: {
+            include: {
+              patient: {
+                select: {
+                  id: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!series) {
+        throw new NotFoundException('序列不存在');
+      }
+
+      await tx.series.delete({
+        where: { id: series.id },
+      });
+
+      const remainingSeriesCount = await tx.series.count({
+        where: { studyId: series.study.id },
+      });
+
+      if (remainingSeriesCount === 0) {
+        await tx.study.delete({
+          where: { id: series.study.id },
+        });
+
+        const remainingStudyCount = await tx.study.count({
+          where: { patientId: series.study.patient.id },
+        });
+
+        if (remainingStudyCount === 0) {
+          await tx.patient.delete({
+            where: { id: series.study.patient.id },
+          });
+        } else {
+          await tx.patient.update({
+            where: { id: series.study.patient.id },
+            data: {
+              imageCount: { decrement: series.imageCount },
+            },
+          });
+        }
+      } else {
+        await tx.study.update({
+          where: { id: series.study.id },
+          data: { seriesCount: remainingSeriesCount },
+        });
+        await tx.patient.update({
+          where: { id: series.study.patient.id },
+          data: {
+            imageCount: { decrement: series.imageCount },
+          },
+        });
+      }
+
+      return series.storagePath;
+    });
+
+    await this.deleteSeriesFiles(deletedSeriesPath);
+
+    return { success: true };
   }
 
   async createDatasetBatch(

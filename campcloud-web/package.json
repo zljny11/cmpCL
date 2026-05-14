@@ -10,12 +10,22 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.2",
+    "@cornerstonejs/calculate-suv": "^1.1.0",
+    "@cornerstonejs/core": "^4.22.4",
+    "@cornerstonejs/dicom-image-loader": "^4.22.4",
+    "@cornerstonejs/tools": "^4.22.4",
     "@tanstack/react-query": "^5.59.20",
     "antd": "^5.21.6",
     "axios": "^1.7.7",
+    "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
+    "dcmjs": "^0.51.0",
+    "dicom-parser": "^1.8.21",
+    "dicomweb-client": "^0.11.2",
+    "html2canvas": "^1.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-icons": "^5.6.0",
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {

@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { Result, Spin } from 'antd';
 import { AppShell } from '../../components/layout/AppShell';
@@ -12,6 +13,8 @@ import { UploadCenterPage } from '../../pages/uploads';
 import { NotificationPage } from '../../pages/notifications';
 import { AdminRequirementListPage } from '../../pages/admin/RequirementListPage';
 import { AdminRequirementDetailPage } from '../../pages/admin/RequirementDetailPage';
+
+const Viewer = lazy(() => import('../../components/Viewer'));
 
 function ProtectedRoute() {
   const { isAuthenticated, isReady } = useAuth();
@@ -37,6 +40,20 @@ function AdminRoute() {
   return <Outlet />;
 }
 
+function ProtectedFullscreenRoute() {
+  const { isAuthenticated, isReady } = useAuth();
+
+  if (!isReady) {
+    return <Spin fullscreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
+}
+
 function PublicOnlyRoute() {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <Navigate to="/" replace /> : <Outlet />;
@@ -47,6 +64,20 @@ function RouterContainer() {
     {
       element: <PublicOnlyRoute />,
       children: [{ path: '/login', element: <LoginPage /> }],
+    },
+    {
+      path: '/',
+      element: <ProtectedFullscreenRoute />,
+      children: [
+        {
+          path: 'viewer',
+          element: (
+            <Suspense fallback={<Spin fullscreen />}>
+              <Viewer />
+            </Suspense>
+          ),
+        },
+      ],
     },
     {
       path: '/',

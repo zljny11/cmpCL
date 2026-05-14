@@ -1,27 +1,143 @@
-import { Card, Empty, Typography } from 'antd';
+import { Button, Empty, Space, Table, Typography, message } from 'antd';
+import dayjs from 'dayjs';
+import { useMemo, useState } from 'react';
 import { RequirementPatientNode } from '../../../../types/requirements';
 import { StudyLevel } from './StudyLevel';
+import { withTextFilter } from './pacsTableFilters';
 
 interface Props {
+  requirementId: string;
   data: RequirementPatientNode[];
+  onRefresh?: () => void;
 }
 
-export function PatientLevel({ data }: Props) {
+export function PatientLevel({ requirementId, data, onRefresh }: Props) {
+  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+  const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<React.Key[]>([]);
+
   if (data.length === 0) {
     return <Empty description="当前需求单暂无患者层级数据" />;
   }
 
+  const totalStudies = useMemo(() => data.reduce((sum, patient) => sum + patient.studies.length, 0), [data]);
+  const totalSeries = useMemo(
+    () => data.reduce((sum, patient) => sum + patient.studies.reduce((studySum, study) => studySum + study.series.length, 0), 0),
+    [data],
+  );
+  const selectedPatientKeys = useMemo(
+    () =>
+      data
+        .filter((patient) => {
+          const seriesIds = patient.studies.flatMap((study) => study.series.map((series) => series.id));
+          return seriesIds.length > 0 && seriesIds.every((id) => selectedSeriesKeys.includes(id));
+        })
+        .map((patient) => patient.id),
+    [data, selectedSeriesKeys],
+  );
+
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      {data.map((patient) => (
-        <Card key={patient.id} size="small">
-          <Typography.Text strong>{patient.patientName || patient.patientUid}</Typography.Text>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-            Patient ID: {patient.patientId || '-'} / {patient.sex || '未知性别'} / 图像数 {patient.imageCount}
-          </Typography.Paragraph>
-          <StudyLevel data={patient.studies} />
-        </Card>
-      ))}
+    <div className="pacs-tree">
+      <div className="pacs-tree-summary">
+        <Typography.Text>患者 {data.length}</Typography.Text>
+        <Typography.Text>检查 {totalStudies}</Typography.Text>
+        <Typography.Text>序列 {totalSeries}</Typography.Text>
+      </div>
+      <Table<RequirementPatientNode>
+        className="pacs-tree-table pacs-patient-table"
+        rowKey="id"
+        size="small"
+        pagination={false}
+        dataSource={data}
+        scroll={{ x: 1080 }}
+        expandedRowKeys={expandedRowKeys}
+        onExpand={(expanded, record) => {
+          setExpandedRowKeys((current) =>
+            expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
+          );
+        }}
+        rowSelection={{
+          selectedRowKeys: selectedPatientKeys,
+          columnWidth: 44,
+          onSelect: (record, selected) => {
+            const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
+            const nextKeys = selected
+              ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
+              : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
+            setSelectedSeriesKeys(nextKeys);
+          },
+          getCheckboxProps: (record) => {
+            const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
+            const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
+            return {
+              indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
+              disabled: seriesIds.length === 0,
+            };
+          },
+        }}
+        rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
+        expandable={{
+          expandedRowRender: (record) => (
+            <StudyLevel
+              requirementId={requirementId}
+              patient={record}
+              data={record.studies}
+              onRefresh={onRefresh}
+              selectedSeriesKeys={selectedSeriesKeys}
+              onSelectedSeriesKeysChange={setSelectedSeriesKeys}
+            />
+          ),
+          rowExpandable: (record) => record.studies.length > 0,
+        }}
+        columns={[
+          withTextFilter<RequirementPatientNode>('姓名', (record) => record.patientName || record.patientUid, {
+            width: 240,
+            render: (_, record) => (
+              <div>
+                <Typography.Text strong>{record.patientName || '未命名患者'}</Typography.Text>
+              </div>
+            ),
+          }),
+          {
+            title: '性别',
+            width: 90,
+            render: (_, record) => record.sex || '未知',
+          },
+          withTextFilter<RequirementPatientNode>(
+            '生日',
+            (record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : null),
+            {
+            width: 140,
+            render: (_, record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : '-'),
+            },
+          ),
+          withTextFilter<RequirementPatientNode>('患者 ID', (record) => record.patientId, {
+            dataIndex: 'patientId',
+            width: 160,
+            render: (value: string | null) => value || '-',
+          }),
+          {
+            title: '图像总张数',
+            dataIndex: 'imageCount',
+            width: 120,
+          },
+          {
+            title: '操作',
+            width: 140,
+            render: (_, record) => (
+              <Space size={4}>
+                <Button
+                  type="link"
+                  size="small"
+                  className="pacs-link-button"
+                  onClick={() => message.info(`患者 ${record.patientName || record.patientId || record.patientUid} 暂无下载能力`)}
+                >
+                  下载
+                </Button>
+              </Space>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { LoadingOutlined } from '@ant-design/icons';
 import { message } from 'antd';
-import { KeyboardEvent, useState } from 'react';
+import { KeyboardEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/auth-provider';
 import loginIllustration from './assets/1.png';
@@ -14,6 +14,11 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [hospitalName, setHospitalName] = useState('');
   const [logging, setLogging] = useState(false);
+
+  useEffect(() => {
+    console.log('[campcloud] login page mounted');
+    debugger;
+  }, []);
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim() || !hospitalName.trim()) {

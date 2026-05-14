@@ -1,28 +1,166 @@
-import { Collapse, Typography } from 'antd';
+import { useMutation } from '@tanstack/react-query';
+import { App, Button, Popconfirm, Space, Table, Typography } from 'antd';
 import dayjs from 'dayjs';
-import { RequirementStudyNode } from '../../../../types/requirements';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { requirementsApi } from '../../../../services/api/requirements';
+import { queryClient } from '../../../../services/query-client';
+import { RequirementPatientNode, RequirementStudyNode } from '../../../../types/requirements';
+import { mapStudyToViewerRecords } from './pacsViewerMapper';
 import { SeriesLevel } from './SeriesLevel';
+import { withTextFilter } from './pacsTableFilters';
 
 interface Props {
+  requirementId: string;
+  patient: RequirementPatientNode;
   data: RequirementStudyNode[];
+  onRefresh?: () => void;
+  selectedSeriesKeys: React.Key[];
+  onSelectedSeriesKeysChange: (keys: React.Key[]) => void;
 }
 
-export function StudyLevel({ data }: Props) {
+export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSeriesKeys, onSelectedSeriesKeysChange }: Props) {
+  const { message } = App.useApp();
+  const navigate = useNavigate();
+  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+  const selectedStudyKeys = useMemo(
+    () =>
+      data
+        .filter((study) => study.series.length > 0 && study.series.every((series) => selectedSeriesKeys.includes(series.id)))
+        .map((study) => study.id),
+    [data, selectedSeriesKeys],
+  );
+
+  const deleteStudyMutation = useMutation({
+    mutationFn: (studyId: string) => requirementsApi.deleteStudy(requirementId, studyId),
+    onSuccess: async () => {
+      message.success('检查删除成功');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'data-tree'] }),
+        queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'dataset-batches'] }),
+        queryClient.invalidateQueries({ queryKey: ['requirement-detail', requirementId] }),
+      ]);
+      onRefresh?.();
+    },
+    onError: () => {
+      message.error('检查删除失败');
+    },
+  });
+
   return (
-    <Collapse
-      items={data.map((study) => ({
-        key: study.id,
-        label: (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <Typography.Text strong>{study.studyDescription || study.studyUid}</Typography.Text>
-            <Typography.Text type="secondary">
-              {study.modality || '未知模态'} · {study.studyDate ? dayjs(study.studyDate).format('YYYY-MM-DD') : '无日期'} ·{' '}
-              {study.series.length} 个序列
-            </Typography.Text>
-          </div>
-        ),
-        children: <SeriesLevel data={study.series} />,
-      }))}
-    />
+    <Table<RequirementStudyNode>
+        className="pacs-tree-table pacs-study-table"
+        rowKey="id"
+        size="small"
+        pagination={false}
+        dataSource={data}
+        scroll={{ x: 860 }}
+        expandedRowKeys={expandedRowKeys}
+        onExpand={(expanded, record) => {
+          setExpandedRowKeys((current) =>
+            expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
+          );
+        }}
+        rowSelection={{
+          selectedRowKeys: selectedStudyKeys,
+          columnWidth: 44,
+          onSelect: (record, selected) => {
+            const seriesIds = record.series.map((series) => series.id);
+            const nextKeys = selected
+              ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
+              : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
+            onSelectedSeriesKeysChange(nextKeys);
+          },
+          getCheckboxProps: (record) => {
+            const seriesIds = record.series.map((series) => series.id);
+            const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
+            return {
+              indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
+              disabled: seriesIds.length === 0,
+            };
+          },
+        }}
+        rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
+        expandable={{
+          expandedRowRender: (record) => (
+            <SeriesLevel
+              requirementId={requirementId}
+              patient={patient}
+              study={record}
+              data={record.series}
+              onRefresh={onRefresh}
+              selectedSeriesKeys={selectedSeriesKeys}
+              onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
+            />
+          ),
+          rowExpandable: (record) => record.series.length > 0,
+        }}
+        columns={[
+          withTextFilter<RequirementStudyNode>('检查 ID', (record) => record.studyId || record.studyUid, {
+            width: 220,
+            render: (_, record) => (
+              <div>
+                <Typography.Text strong>{record.studyId || record.studyUid}</Typography.Text>
+              </div>
+            ),
+          }),
+          {
+            title: '模态',
+            width: 100,
+            render: (_, record) => record.modality || '未知',
+          },
+          withTextFilter<RequirementStudyNode>(
+            '检查日期',
+            (record) => (record.studyDate ? dayjs(record.studyDate).format('YYYY-MM-DD') : null),
+            {
+              width: 140,
+              render: (_, record) => (record.studyDate ? dayjs(record.studyDate).format('YYYY-MM-DD') : '-'),
+            },
+          ),
+          withTextFilter<RequirementStudyNode>('检查描述', (record) => record.studyDescription, {
+            width: 220,
+            dataIndex: 'studyDescription',
+            render: (value: string | null) => value || '-',
+          }),
+          {
+            title: '序列数',
+            width: 90,
+            render: (_, record) => record.series.length,
+          },
+          {
+            title: '操作',
+            width: 140,
+            render: (_, record) => (
+              <Space size={4}>
+                <Button
+                  type="link"
+                  size="small"
+                  className="pacs-link-button"
+                  onClick={() => navigate('/viewer', { state: { records: mapStudyToViewerRecords(patient, record) } })}
+                >
+                  查看
+                </Button>
+                <Popconfirm
+                  title="删除检查"
+                  description="删除后将同时移除该检查下的全部序列与文件。"
+                  okText="确定"
+                  cancelText="取消"
+                  onConfirm={() => deleteStudyMutation.mutate(record.id)}
+                >
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    className="pacs-link-button pacs-danger-link"
+                    loading={deleteStudyMutation.isPending && deleteStudyMutation.variables === record.id}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]}
+      />
   );
 }

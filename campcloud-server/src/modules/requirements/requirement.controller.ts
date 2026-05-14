@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthUser } from '../../types/auth-user';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
@@ -34,6 +35,62 @@ export class RequirementsController {
   @Get(':id/data-tree')
   dataTree(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     return this.requirementsService.dataTree(BigInt(user.id), BigInt(id), user.role);
+  }
+
+  @Get(':id/studies/:studyId/preview')
+  previewStudy(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('studyId', ParseIntPipe) studyId: number,
+  ) {
+    return this.requirementsService.previewStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
+  }
+
+  @Delete(':id/studies/:studyId')
+  deleteStudy(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('studyId', ParseIntPipe) studyId: number,
+  ) {
+    return this.requirementsService.deleteStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
+  }
+
+  @Get(':id/series/:seriesId/preview')
+  previewSeries(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+  ) {
+    return this.requirementsService.previewSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
+  }
+
+  @Delete(':id/series/:seriesId')
+  deleteSeries(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+  ) {
+    return this.requirementsService.deleteSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
+  }
+
+  @Get(':id/series/:seriesId/files/:fileName')
+  async downloadSeriesFile(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('seriesId', ParseIntPipe) seriesId: number,
+    @Param('fileName') fileName: string,
+    @Res() res: Response,
+  ) {
+    const file = await this.requirementsService.downloadSeriesFile(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(seriesId),
+      decodeURIComponent(fileName),
+      user.role,
+    );
+    res.setHeader('Content-Type', 'application/dicom');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`);
+    res.sendFile(file.path);
   }
 
   @Post(':id/dataset-batches')
