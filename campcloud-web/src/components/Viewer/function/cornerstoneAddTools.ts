@@ -37,31 +37,35 @@ const { createCameraPositionSynchronizer } = synchronizers;
 const { createSynchronizer, getSynchronizer } = SynchronizerManager;
 const { jumpToSlice } = utilities;
 
-cornerstoneTools.addTool(StackScrollTool);
-cornerstoneTools.addTool(LengthTool);
-cornerstoneTools.addTool(RectangleROITool);
-cornerstoneTools.addTool(EllipticalROITool);
-cornerstoneTools.addTool(CircleROITool);
-cornerstoneTools.addTool(BidirectionalTool);
-cornerstoneTools.addTool(AngleTool);
-cornerstoneTools.addTool(CobbAngleTool);
-cornerstoneTools.addTool(ArrowAnnotateTool);
-cornerstoneTools.addTool(WindowLevelTool);
-cornerstoneTools.addTool(ZoomTool);
-cornerstoneTools.addTool(PanTool);
-cornerstoneTools.addTool(DragProbeTool);
-cornerstoneTools.addTool(CrosshairsTool);
-cornerstoneTools.addTool(MIPJumpToClickTool);
-cornerstoneTools.addTool(VolumeRotateTool);
-cornerstoneTools.addTool(TrackballRotateTool);
-
 const VolumeToolGroupId = "VOLUMETOOLGROUP_ID";
 const StackToolGroupId = "STACKTOOLGROUP_ID";
 const MipToolGroupId = "MIPTOOLGROUP_ID";
 
-const VolumeToolGroup = ToolGroupManager.createToolGroup(VolumeToolGroupId);
-const StackToolGroup = ToolGroupManager.createToolGroup(StackToolGroupId);
-const MipToolGroup = ToolGroupManager.createToolGroup(MipToolGroupId);
+let toolsInitialized = false;
+
+let VolumeToolGroup;
+let StackToolGroup;
+let MipToolGroup;
+
+const registerTools = () => {
+  cornerstoneTools.addTool(StackScrollTool);
+  cornerstoneTools.addTool(LengthTool);
+  cornerstoneTools.addTool(RectangleROITool);
+  cornerstoneTools.addTool(EllipticalROITool);
+  cornerstoneTools.addTool(CircleROITool);
+  cornerstoneTools.addTool(BidirectionalTool);
+  cornerstoneTools.addTool(AngleTool);
+  cornerstoneTools.addTool(CobbAngleTool);
+  cornerstoneTools.addTool(ArrowAnnotateTool);
+  cornerstoneTools.addTool(WindowLevelTool);
+  cornerstoneTools.addTool(ZoomTool);
+  cornerstoneTools.addTool(PanTool);
+  cornerstoneTools.addTool(DragProbeTool);
+  cornerstoneTools.addTool(CrosshairsTool);
+  cornerstoneTools.addTool(MIPJumpToClickTool);
+  cornerstoneTools.addTool(VolumeRotateTool);
+  cornerstoneTools.addTool(TrackballRotateTool);
+};
 
 // CrosshairsTool 工具所需配置
 /* const viewportColors = {
@@ -134,31 +138,45 @@ const MipToolGroupAddTool = () => {
   MipToolGroup.addTool(StackScrollTool.toolName);
 };
 
-const ToolGroups = [VolumeToolGroup, StackToolGroup];
-ToolGroups.forEach((ToolGroup) => {
-  ToolGroup.addTool(StackScrollTool.toolName);
-  ToolGroup.addTool(WindowLevelTool.toolName);
-  ToolGroup.addTool(ZoomTool.toolName);
-  ToolGroup.addTool(PanTool.toolName);
+const getToolGroups = () => [VolumeToolGroup, StackToolGroup].filter(Boolean);
 
-  // ToolGroup.addTool(LengthTool.toolName);
-  // ToolGroup.addTool(RectangleROITool.toolName);
-  // ToolGroup.addTool(EllipticalROITool.toolName);
-  // ToolGroup.addTool(CircleROITool.toolName);
-  // ToolGroup.addTool(BidirectionalTool.toolName);
-  // ToolGroup.addTool(AngleTool.toolName);
-  // ToolGroup.addTool(CobbAngleTool.toolName);
-  // ToolGroup.addTool(ArrowAnnotateTool.toolName);
-  // ToolGroup.addTool(DragProbeTool.toolName);
-  setToolPassiveFun(ToolGroup);
-});
+const configureToolGroups = () => {
+  const ToolGroups = getToolGroups();
+  ToolGroups.forEach((ToolGroup) => {
+    ToolGroup.addTool(StackScrollTool.toolName);
+    ToolGroup.addTool(WindowLevelTool.toolName);
+    ToolGroup.addTool(ZoomTool.toolName);
+    ToolGroup.addTool(PanTool.toolName);
+    ToolGroup.addTool(DragProbeTool.toolName);
+    setToolPassiveFun(ToolGroup);
+  });
 
-MipToolGroupAddTool();
+  MipToolGroupAddTool();
+};
+
+const createToolGroups = () => {
+  VolumeToolGroup = ToolGroupManager.getToolGroup(VolumeToolGroupId) ?? ToolGroupManager.createToolGroup(VolumeToolGroupId);
+  StackToolGroup = ToolGroupManager.getToolGroup(StackToolGroupId) ?? ToolGroupManager.createToolGroup(StackToolGroupId);
+  MipToolGroup = ToolGroupManager.getToolGroup(MipToolGroupId) ?? ToolGroupManager.createToolGroup(MipToolGroupId);
+};
+
+const ensureCornerstoneTooling = () => {
+  if (toolsInitialized) {
+    return;
+  }
+
+  registerTools();
+  createToolGroups();
+  configureToolGroups();
+  toolsInitialized = true;
+};
 
 // VolumeToolGroup、StackToolGroup、MipToolGroup 的通用 SetToolActive 函数
 const ToolGroupSetToolActive = () => {
+  ensureCornerstoneTooling();
+
   // VolumeToolGroup、StackToolGroup    SetToolActive
-  ToolGroups.forEach((ToolGroup) => {
+  getToolGroups().forEach((ToolGroup) => {
     ToolGroup.setToolActive(StackScrollTool.toolName, { bindings: [{ mouseButton: MouseBindings.Wheel }] });
     ToolGroup.setToolActive(WindowLevelTool.toolName, {
       bindings: [{ mouseButton: MouseBindings.Primary }],
@@ -290,6 +308,7 @@ const setUpSynchronizers = (
   renderingEngineId: string,
   viewportIds: string[]
 ) => {
+  ensureCornerstoneTooling();
   const synchronizers = getSynchronizers(renderingEngineId);
   synchronizers.forEach((in_out_Synchronizer) => {
     viewportIds.forEach((viewportId) => {
@@ -304,6 +323,7 @@ const removeSynchronizers = (
   renderingEngineId: string,
   viewportIds: string[]
 ) => {
+  ensureCornerstoneTooling();
   const synchronizers = getSynchronizers(renderingEngineId);
 
   synchronizers.forEach((in_out_Synchronizer) => {
@@ -317,6 +337,7 @@ const removeSynchronizers = (
 };
 
 export {
+  ensureCornerstoneTooling,
   VolumeToolGroup,
   StackToolGroup,
   MipToolGroup,

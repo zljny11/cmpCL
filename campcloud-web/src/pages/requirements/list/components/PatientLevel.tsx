@@ -9,9 +9,10 @@ interface Props {
   requirementId: string;
   data: RequirementPatientNode[];
   onRefresh?: () => void;
+  readOnly?: boolean;
 }
 
-export function PatientLevel({ requirementId, data, onRefresh }: Props) {
+export function PatientLevel({ requirementId, data, onRefresh, readOnly = false }: Props) {
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
   const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<React.Key[]>([]);
 
@@ -55,25 +56,29 @@ export function PatientLevel({ requirementId, data, onRefresh }: Props) {
             expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
           );
         }}
-        rowSelection={{
-          selectedRowKeys: selectedPatientKeys,
-          columnWidth: 44,
-          onSelect: (record, selected) => {
-            const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
-            const nextKeys = selected
-              ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
-              : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
-            setSelectedSeriesKeys(nextKeys);
-          },
-          getCheckboxProps: (record) => {
-            const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
-            const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
-            return {
-              indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
-              disabled: seriesIds.length === 0,
-            };
-          },
-        }}
+        rowSelection={
+          readOnly
+            ? undefined
+            : {
+                selectedRowKeys: selectedPatientKeys,
+                columnWidth: 44,
+                onSelect: (record, selected) => {
+                  const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
+                  const nextKeys = selected
+                    ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
+                    : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
+                  setSelectedSeriesKeys(nextKeys);
+                },
+                getCheckboxProps: (record) => {
+                  const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
+                  const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
+                  return {
+                    indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
+                    disabled: seriesIds.length === 0,
+                  };
+                },
+              }
+        }
         rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
         expandable={{
           expandedRowRender: (record) => (
@@ -84,6 +89,7 @@ export function PatientLevel({ requirementId, data, onRefresh }: Props) {
               onRefresh={onRefresh}
               selectedSeriesKeys={selectedSeriesKeys}
               onSelectedSeriesKeysChange={setSelectedSeriesKeys}
+              readOnly={readOnly}
             />
           ),
           rowExpandable: (record) => record.studies.length > 0,
@@ -91,7 +97,7 @@ export function PatientLevel({ requirementId, data, onRefresh }: Props) {
         columns={[
           withTextFilter<RequirementPatientNode>('姓名', (record) => record.patientName || record.patientUid, {
             width: 240,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementPatientNode) => (
               <div>
                 <Typography.Text strong>{record.patientName || '未命名患者'}</Typography.Text>
               </div>
@@ -100,14 +106,14 @@ export function PatientLevel({ requirementId, data, onRefresh }: Props) {
           {
             title: '性别',
             width: 90,
-            render: (_, record) => record.sex || '未知',
+            render: (_: unknown, record: RequirementPatientNode) => record.sex || '未知',
           },
           withTextFilter<RequirementPatientNode>(
             '生日',
             (record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : null),
             {
             width: 140,
-            render: (_, record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : '-'),
+            render: (_: unknown, record: RequirementPatientNode) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : '-'),
             },
           ),
           withTextFilter<RequirementPatientNode>('患者 ID', (record) => record.patientId, {
@@ -123,7 +129,7 @@ export function PatientLevel({ requirementId, data, onRefresh }: Props) {
           {
             title: '操作',
             width: 140,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementPatientNode) => (
               <Space size={4}>
                 <Button
                   type="link"
@@ -135,8 +141,9 @@ export function PatientLevel({ requirementId, data, onRefresh }: Props) {
                 </Button>
               </Space>
             ),
+            hidden: readOnly,
           },
-        ]}
+        ].filter((column) => !('hidden' in column) || !column.hidden)}
       />
     </div>
   );

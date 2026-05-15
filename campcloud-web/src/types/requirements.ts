@@ -40,6 +40,13 @@ export interface RequirementListItem {
   createdAt: string;
   latestMessageAt: string | null;
   unreadNotificationCount: number;
+  creator?: {
+    id: string;
+    username: string;
+    hospitalName: string | null;
+  };
+  needsAdminReply?: boolean;
+  pendingReplyMessageCount?: number;
 }
 
 export interface RequirementListQuery {
@@ -87,6 +94,18 @@ export interface RequirementDetail {
     fileName: string | null;
     createdAt: string;
   } | null;
+}
+
+export interface RequirementMessageItem {
+  id: string;
+  content: string;
+  createdAt: string;
+  sender: {
+    id: string;
+    username: string;
+    role: 'user' | 'admin';
+    hospitalName: string | null;
+  };
 }
 
 export interface RequirementSeriesNode {
@@ -202,7 +221,6 @@ export interface DatasetBatchItem {
 }
 
 export interface CreateDatasetBatchPayload {
-  uploadType: DatasetUploadType;
   sourceName?: string;
   remark?: string;
   files: File[];

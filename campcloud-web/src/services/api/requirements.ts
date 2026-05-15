@@ -1,7 +1,9 @@
+import type { AxiosProgressEvent } from 'axios';
 import { http } from '../http';
 import { ApiResponse, PaginatedData } from '../../types/api';
 import {
   CreateDatasetBatchPayload,
+  RequirementMessageItem,
   CreateRequirementPayload,
   DatasetBatchItem,
   RequirementDataTree,
@@ -24,6 +26,25 @@ export const requirementsApi = {
 
   async detail(id: string) {
     const response = (await http.get(`/requirements/${id}`)) as ApiResponse<RequirementDetail>;
+    return response.data;
+  },
+
+  async listMessages(id: string) {
+    const response = (await http.get(`/requirements/${id}/messages`)) as ApiResponse<RequirementMessageItem[]>;
+    return response.data;
+  },
+
+  async createMessage(id: string, payload: { content: string }) {
+    const response = (await http.post(`/requirements/${id}/messages`, payload)) as ApiResponse<RequirementMessageItem>;
+    return response.data;
+  },
+
+  async updateStatus(id: string, payload: { status: string; reason?: string }) {
+    const response = (await http.patch(`/requirements/${id}/status`, payload)) as ApiResponse<{
+      id: string;
+      status: string;
+      updatedAt: string;
+    }>;
     return response.data;
   },
 
@@ -67,9 +88,12 @@ export const requirementsApi = {
     return response.data;
   },
 
-  async createDatasetBatch(id: string, payload: CreateDatasetBatchPayload) {
+  async createDatasetBatch(
+    id: string,
+    payload: CreateDatasetBatchPayload,
+    options?: { onUploadProgress?: (event: AxiosProgressEvent) => void },
+  ) {
     const formData = new FormData();
-    formData.append('uploadType', payload.uploadType);
     if (payload.sourceName?.trim()) {
       formData.append('sourceName', payload.sourceName.trim());
     }
@@ -78,7 +102,9 @@ export const requirementsApi = {
     }
     payload.files.forEach((file) => formData.append('files', file));
 
-    const response = (await http.post(`/requirements/${id}/dataset-batches`, formData)) as ApiResponse<{
+    const response = (await http.post(`/requirements/${id}/dataset-batches`, formData, {
+      onUploadProgress: options?.onUploadProgress,
+    })) as ApiResponse<{
       datasetBatchId: string;
       batchNo: number;
       status: string;

@@ -4,7 +4,7 @@ import { useLocation } from "react-router-dom";
 import { useAppSelector } from "../../redux/hooks";
 import ViewerProvider from "./ViewerProvider";
 import { RenderingEngine, getRenderingEngine } from "@cornerstonejs/core";
-import { initDemo } from "./function/helpers";
+import initDemo from "./function/helpers/initDemo";
 import { getImageDatas, renderingEngineId, ToolGroupSetToolActive } from "./function";
 import { Layout, ConfigProvider, theme } from "antd";
 import RaDynLoading from "../RaDynLoading";
@@ -92,35 +92,65 @@ const Viewer: React.FC = () => {
           ],
         }));
 
-        if (imageDatas[0]?.ImageIds?.[0]) {
-          try {
-            await dicomImageLoader.wadouri.loadImage(imageDatas[0].ImageIds[0]);
-            setDebugInfo((prev) => ({
-              ...prev,
-              steps: [
-                ...prev.steps,
-                {
-                  step: 'first-image-prefetch-ok',
-                  at: new Date().toISOString(),
-                  imageId: imageDatas[0].ImageIds[0],
-                },
-              ],
-            }));
-          } catch (error) {
-            setDebugInfo((prev) => ({
-              ...prev,
-              steps: [
-                ...prev.steps,
-                {
-                  step: 'first-image-prefetch-error',
-                  at: new Date().toISOString(),
-                  imageId: imageDatas[0].ImageIds[0],
-                  error: error?.message ?? String(error),
-                },
-              ],
-            }));
-          }
-        }
+        const nextLoadErrors: Record<number, { imageId: string | null; error: string }> = {};
+        const prefetchSteps: Array<Record<string, unknown>> = [];
+
+        await Promise.all(
+          imageDatas.map(async (series, index) => {
+            const firstImageId = series?.ImageIds?.[0] ?? null;
+            if (!firstImageId) {
+              nextLoadErrors[index] = {
+                imageId: null,
+                error: '当前序列未返回任何 imageId',
+              };
+              prefetchSteps.push({
+                step: 'series-prefetch-error',
+                at: new Date().toISOString(),
+                seriesIndex: index,
+                seriesId: series?.seriesId ?? null,
+                seriesUID: series?.seriesUID ?? null,
+                imageId: null,
+                error: '当前序列未返回任何 imageId',
+              });
+              return;
+            }
+
+            try {
+              const loadResult = dicomImageLoader.wadouri.loadImage(firstImageId);
+              await (loadResult?.promise ?? loadResult);
+              prefetchSteps.push({
+                step: 'series-prefetch-ok',
+                at: new Date().toISOString(),
+                seriesIndex: index,
+                seriesId: series?.seriesId ?? null,
+                seriesUID: series?.seriesUID ?? null,
+                imageId: firstImageId,
+              });
+            } catch (error) {
+              const message = error?.message ?? String(error);
+              nextLoadErrors[index] = {
+                imageId: firstImageId,
+                error: message,
+              };
+              prefetchSteps.push({
+                step: 'series-prefetch-error',
+                at: new Date().toISOString(),
+                seriesIndex: index,
+                seriesId: series?.seriesId ?? null,
+                seriesUID: series?.seriesUID ?? null,
+                imageId: firstImageId,
+                error: message,
+              });
+            }
+          }),
+        );
+
+        setLoadErrors(nextLoadErrors);
+        setDebugInfo((prev) => ({
+          ...prev,
+          loadErrors: nextLoadErrors,
+          steps: [...prev.steps, ...prefetchSteps],
+        }));
 
         if (!getRenderingEngine(renderingEngineId))
           new RenderingEngine(renderingEngineId);

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -6,9 +6,12 @@ import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthUser } from '../../types/auth-user';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
+import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
+import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
+import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto';
 import { RequirementsService } from './requirement.service';
 
 @ApiTags('requirements')
@@ -24,12 +27,35 @@ export class RequirementsController {
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query() query: ListRequirementsDto) {
-    return this.requirementsService.list(BigInt(user.id), query);
+    return this.requirementsService.list(BigInt(user.id), user.role, query);
   }
 
   @Get(':id')
   detail(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     return this.requirementsService.detail(BigInt(user.id), BigInt(id), user.role);
+  }
+
+  @Get(':id/messages')
+  listMessages(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.requirementsService.listMessages(BigInt(user.id), BigInt(id), user.role);
+  }
+
+  @Post(':id/messages')
+  createMessage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateMessageDto,
+  ) {
+    return this.requirementsService.createMessage(BigInt(user.id), BigInt(id), user.role, dto);
+  }
+
+  @Patch(':id/status')
+  updateStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateRequirementStatusDto,
+  ) {
+    return this.requirementsService.updateStatus(BigInt(user.id), BigInt(id), user.role, dto);
   }
 
   @Get(':id/data-tree')
@@ -111,5 +137,27 @@ export class RequirementsController {
     @Query() query: ListDatasetBatchesDto,
   ) {
     return this.requirementsService.listDatasetBatches(BigInt(user.id), BigInt(id), user.role, query);
+  }
+}
+
+@ApiTags('notifications')
+@ApiBearerAuth()
+@Controller('notifications')
+export class NotificationsController {
+  constructor(private readonly requirementsService: RequirementsService) {}
+
+  @Get()
+  list(@CurrentUser() user: AuthUser, @Query() query: ListNotificationsDto) {
+    return this.requirementsService.listNotifications(BigInt(user.id), query);
+  }
+
+  @Post(':id/read')
+  markRead(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.requirementsService.markNotificationRead(BigInt(user.id), BigInt(id));
+  }
+
+  @Post('read-all')
+  markAllRead(@CurrentUser() user: AuthUser) {
+    return this.requirementsService.markAllNotificationsRead(BigInt(user.id));
   }
 }

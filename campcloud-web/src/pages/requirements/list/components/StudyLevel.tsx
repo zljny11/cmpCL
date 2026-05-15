@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { App, Button, Popconfirm, Space, Table, Typography } from 'antd';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
@@ -17,9 +17,18 @@ interface Props {
   onRefresh?: () => void;
   selectedSeriesKeys: React.Key[];
   onSelectedSeriesKeysChange: (keys: React.Key[]) => void;
+  readOnly?: boolean;
 }
 
-export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSeriesKeys, onSelectedSeriesKeysChange }: Props) {
+export function StudyLevel({
+  requirementId,
+  patient,
+  data,
+  onRefresh,
+  selectedSeriesKeys,
+  onSelectedSeriesKeysChange,
+  readOnly = false,
+}: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
@@ -61,25 +70,29 @@ export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSe
             expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
           );
         }}
-        rowSelection={{
-          selectedRowKeys: selectedStudyKeys,
-          columnWidth: 44,
-          onSelect: (record, selected) => {
-            const seriesIds = record.series.map((series) => series.id);
-            const nextKeys = selected
-              ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
-              : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
-            onSelectedSeriesKeysChange(nextKeys);
-          },
-          getCheckboxProps: (record) => {
-            const seriesIds = record.series.map((series) => series.id);
-            const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
-            return {
-              indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
-              disabled: seriesIds.length === 0,
-            };
-          },
-        }}
+        rowSelection={
+          readOnly
+            ? undefined
+            : {
+                selectedRowKeys: selectedStudyKeys,
+                columnWidth: 44,
+                onSelect: (record, selected) => {
+                  const seriesIds = record.series.map((series) => series.id);
+                  const nextKeys = selected
+                    ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
+                    : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
+                  onSelectedSeriesKeysChange(nextKeys);
+                },
+                getCheckboxProps: (record) => {
+                  const seriesIds = record.series.map((series) => series.id);
+                  const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
+                  return {
+                    indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
+                    disabled: seriesIds.length === 0,
+                  };
+                },
+              }
+        }
         rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
         expandable={{
           expandedRowRender: (record) => (
@@ -91,6 +104,7 @@ export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSe
               onRefresh={onRefresh}
               selectedSeriesKeys={selectedSeriesKeys}
               onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
+              readOnly={readOnly}
             />
           ),
           rowExpandable: (record) => record.series.length > 0,
@@ -98,7 +112,7 @@ export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSe
         columns={[
           withTextFilter<RequirementStudyNode>('检查 ID', (record) => record.studyId || record.studyUid, {
             width: 220,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementStudyNode) => (
               <div>
                 <Typography.Text strong>{record.studyId || record.studyUid}</Typography.Text>
               </div>
@@ -107,14 +121,14 @@ export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSe
           {
             title: '模态',
             width: 100,
-            render: (_, record) => record.modality || '未知',
+            render: (_: unknown, record: RequirementStudyNode) => record.modality || '未知',
           },
           withTextFilter<RequirementStudyNode>(
             '检查日期',
             (record) => (record.studyDate ? dayjs(record.studyDate).format('YYYY-MM-DD') : null),
             {
               width: 140,
-              render: (_, record) => (record.studyDate ? dayjs(record.studyDate).format('YYYY-MM-DD') : '-'),
+              render: (_: unknown, record: RequirementStudyNode) => (record.studyDate ? dayjs(record.studyDate).format('YYYY-MM-DD') : '-'),
             },
           ),
           withTextFilter<RequirementStudyNode>('检查描述', (record) => record.studyDescription, {
@@ -125,12 +139,12 @@ export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSe
           {
             title: '序列数',
             width: 90,
-            render: (_, record) => record.series.length,
+            render: (_: unknown, record: RequirementStudyNode) => record.series.length,
           },
           {
             title: '操作',
             width: 140,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementStudyNode) => (
               <Space size={4}>
                 <Button
                   type="link"
@@ -140,23 +154,25 @@ export function StudyLevel({ requirementId, patient, data, onRefresh, selectedSe
                 >
                   查看
                 </Button>
-                <Popconfirm
-                  title="删除检查"
-                  description="删除后将同时移除该检查下的全部序列与文件。"
-                  okText="确定"
-                  cancelText="取消"
-                  onConfirm={() => deleteStudyMutation.mutate(record.id)}
-                >
-                  <Button
-                    type="link"
-                    size="small"
-                    danger
-                    className="pacs-link-button pacs-danger-link"
-                    loading={deleteStudyMutation.isPending && deleteStudyMutation.variables === record.id}
+                {readOnly ? null : (
+                  <Popconfirm
+                    title="删除检查"
+                    description="删除后将同时移除该检查下的全部序列与文件。"
+                    okText="确定"
+                    cancelText="取消"
+                    onConfirm={() => deleteStudyMutation.mutate(record.id)}
                   >
-                    删除
-                  </Button>
-                </Popconfirm>
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      className="pacs-link-button pacs-danger-link"
+                      loading={deleteStudyMutation.isPending && deleteStudyMutation.variables === record.id}
+                    >
+                      删除
+                    </Button>
+                  </Popconfirm>
+                )}
               </Space>
             ),
           },

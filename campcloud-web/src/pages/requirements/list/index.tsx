@@ -25,7 +25,7 @@ export function RequirementListPage() {
     () => ({
       total: data?.total ?? 0,
       pending: items.filter((item) => item.status === 'pending').length,
-      processing: items.filter((item) => item.status === 'processing').length,
+      processing: items.filter((item) => item.status === 'processing' || item.status === 'waiting_user').length,
       unread: items.reduce((sum, item) => sum + item.unreadNotificationCount, 0),
     }),
     [items, data?.total],
@@ -70,8 +70,8 @@ export function RequirementListPage() {
           onChange={setStatusInput}
           options={[
             { label: '待我响应', value: 'pending' },
-            { label: '受理中', value: 'processing' },
-            { label: '待用户确认', value: 'waiting_user' },
+            { label: '受理中（需等待）', value: 'processing' },
+            { label: '受理中（需补充数据）', value: 'waiting_user' },
             { label: '已完成', value: 'completed' },
             { label: '已拒绝', value: 'rejected' },
           ]}

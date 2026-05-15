@@ -4,7 +4,6 @@ import {
   FolderOpenOutlined,
   InboxOutlined,
   LinkOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
@@ -17,6 +16,8 @@ import {
   Form,
   Input,
   List,
+  Modal,
+  Progress,
   Row,
   Select,
   Space,
@@ -24,11 +25,12 @@ import {
   Table,
   Tag,
   Typography,
-  Upload,
 } from 'antd';
 import type { RcFile, UploadFile } from 'antd/es/upload/interface';
+import type { AxiosProgressEvent } from 'axios';
+import axios from 'axios';
 import dayjs from 'dayjs';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { RequirementListItem } from '../../types/requirements';
 import { requirementsApi } from '../../services/api/requirements';
@@ -37,11 +39,6 @@ import { DatasetBatchItem, DatasetBatchStatus, DatasetUploadType } from '../../t
 import { useRequirementDataTree } from '../requirements/list/hooks';
 import { PatientLevel } from '../requirements/list/components/PatientLevel';
 
-const uploadTypeOptions: { label: string; value: DatasetUploadType }[] = [
-  { label: '首次上传', value: 'initial' },
-  { label: '补充上传', value: 'supplement' },
-];
-
 const batchStatusColorMap: Record<DatasetBatchStatus, string> = {
   uploaded: 'blue',
   parsed: 'green',
@@ -49,7 +46,7 @@ const batchStatusColorMap: Record<DatasetBatchStatus, string> = {
 };
 
 const batchStatusLabelMap: Record<DatasetBatchStatus, string> = {
-  uploaded: '已上传',
+  uploaded: '正在上传',
   parsed: '已解析',
   failed: '解析失败',
 };
@@ -60,12 +57,16 @@ export function UploadCenterPage() {
   const { id: routeRequirementId } = useParams();
   const [searchParams] = useSearchParams();
   const requirementId = routeRequirementId || searchParams.get('requirementId') || '';
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<{ sourceName: string; remark?: string; selectedFiles: string[] }>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [showAllSelectedFiles, setShowAllSelectedFiles] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [batchPage, setBatchPage] = useState(1);
   const [batchPageSize, setBatchPageSize] = useState(10);
+  const [pendingBatchPreview, setPendingBatchPreview] = useState<DatasetBatchItem | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ percent: number; loaded: number; total: number | null } | null>(null);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const hadPendingBatchRef = useRef(false);
 
   const syncFilesToUploadList = (files: File[]) => {
     setFileList(
@@ -80,6 +81,11 @@ export function UploadCenterPage() {
       })),
     );
     setShowAllSelectedFiles(false);
+    form.setFieldValue(
+      'selectedFiles',
+      files.length > 0 ? files.map((file, index) => `${file.name}-${file.size}-${index}`) : [],
+    );
+    void form.validateFields(['selectedFiles']);
   };
 
   const { data: requirement, isLoading: isRequirementLoading, isError: isRequirementError } = useQuery({
@@ -97,6 +103,10 @@ export function UploadCenterPage() {
     queryKey: ['requirements', requirementId, 'dataset-batches', batchPage, batchPageSize],
     queryFn: () => requirementsApi.listDatasetBatches(requirementId, { page: batchPage, pageSize: batchPageSize }),
     enabled: Boolean(requirementId),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.list?.some((item) => item.status === 'uploaded') ? 3000 : false;
+    },
   });
 
   const { data: treeData, isLoading: isTreeLoading, isError: isTreeError, refetch: refetchTree } = useRequirementDataTree(
@@ -105,20 +115,52 @@ export function UploadCenterPage() {
   );
 
   const createBatchMutation = useMutation({
-    mutationFn: async (values: { uploadType: DatasetUploadType; sourceName?: string; remark?: string }) => {
+    mutationFn: async (values: { sourceName: string; remark?: string; selectedFiles: string[] }) => {
       const files = fileList
         .map((file) => file.originFileObj)
         .filter((file): file is RcFile => Boolean(file));
 
-      return requirementsApi.createDatasetBatch(requirementId, {
-        uploadType: values.uploadType,
-        sourceName: values.sourceName,
-        remark: values.remark,
-        files,
+      const nextUploadType: DatasetUploadType = (batchData?.total ?? 0) > 0 ? 'supplement' : 'initial';
+
+      setPendingBatchPreview({
+        id: `pending-${Date.now()}`,
+        batchNo: 0,
+        uploadType: nextUploadType,
+        sourceName: values.sourceName?.trim() || null,
+        fileCount: files.length,
+        status: 'uploaded',
+        remark: values.remark?.trim() || null,
+        uploadedAt: new Date().toISOString(),
+        uploader: {
+          id: 'pending',
+          username: '当前用户',
+        },
       });
+      setIsUploadingFiles(true);
+      setUploadProgress({ percent: 0, loaded: 0, total: null });
+
+      return requirementsApi.createDatasetBatch(
+        requirementId,
+        {
+          sourceName: values.sourceName,
+          remark: values.remark,
+          files,
+        },
+        {
+          onUploadProgress: (event: AxiosProgressEvent) => {
+            const total = event.total ?? null;
+            const loaded = event.loaded;
+            const percent = total && total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+            setUploadProgress({ percent, loaded, total });
+          },
+        },
+      );
     },
     onSuccess: async (result) => {
-      message.success(`已创建批次 #${result.batchNo}`);
+      setPendingBatchPreview(null);
+      setIsUploadingFiles(false);
+      setUploadProgress(null);
+      message.success(`已创建批次 #${result.batchNo}，后台正在异步解析`);
       form.resetFields();
       setFileList([]);
       setShowAllSelectedFiles(false);
@@ -133,8 +175,14 @@ export function UploadCenterPage() {
       void refetchBatches();
       void refetchTree();
     },
-    onError: () => {
-      message.error('批次创建失败');
+    onError: (error) => {
+      setPendingBatchPreview(null);
+      setIsUploadingFiles(false);
+      setUploadProgress(null);
+      const errorMessage = axios.isAxiosError(error)
+        ? (error.response?.data as { message?: string } | undefined)?.message
+        : undefined;
+      message.error(errorMessage || '批次创建失败');
     },
   });
 
@@ -144,7 +192,13 @@ export function UploadCenterPage() {
     enabled: !requirementId,
   });
 
-  const batchItems = batchData?.list ?? [];
+  const batchItems = pendingBatchPreview ? [pendingBatchPreview, ...(batchData?.list ?? [])] : batchData?.list ?? [];
+  const hasPendingBatch = batchItems.some((item) => item.status === 'uploaded');
+  const uploadProgressText = uploadProgress
+    ? `${(uploadProgress.loaded / 1024 / 1024).toFixed(2)} MB${
+        uploadProgress.total ? ` / ${(uploadProgress.total / 1024 / 1024).toFixed(2)} MB` : ''
+      }`
+    : '';
   const visibleSelectedFiles = showAllSelectedFiles ? fileList : fileList.slice(0, 8);
   const batchSummary = useMemo(
     () => ({
@@ -155,6 +209,29 @@ export function UploadCenterPage() {
     }),
     [batchData?.total, batchItems],
   );
+
+  useEffect(() => {
+    if (!requirementId) {
+      return;
+    }
+
+    let timer: ReturnType<typeof setInterval> | null = null;
+    if (hasPendingBatch) {
+      hadPendingBatchRef.current = true;
+      timer = setInterval(() => {
+        void refetchTree();
+      }, 3000);
+    } else if (hadPendingBatchRef.current) {
+      hadPendingBatchRef.current = false;
+      void refetchTree();
+    }
+
+    return () => {
+      if (timer) {
+        clearInterval(timer);
+      }
+    };
+  }, [hasPendingBatch, refetchTree, requirementId]);
 
   if (!requirementId) {
     return (
@@ -197,6 +274,25 @@ export function UploadCenterPage() {
 
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      <Modal open={isUploadingFiles} footer={null} closable={false} maskClosable={false} centered width={480}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            正在上传文件夹
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            文件正在上传到服务器，请不要关闭页面。上传完成后会自动进入后台异步解析。
+          </Typography.Text>
+          <Progress percent={uploadProgress?.percent ?? 0} status="active" />
+          <Typography.Text>
+            {uploadProgress
+              ? `${(uploadProgress.loaded / 1024 / 1024).toFixed(2)} MB${
+                  uploadProgress.total ? ` / ${(uploadProgress.total / 1024 / 1024).toFixed(2)} MB` : ''
+                }`
+              : '正在准备上传'}
+          </Typography.Text>
+        </Space>
+      </Modal>
+
       <Card
         loading={isRequirementLoading}
         bordered={false}
@@ -254,7 +350,7 @@ export function UploadCenterPage() {
         </Col>
         <Col xs={24} md={12} xl={6}>
           <Card>
-            <Statistic title="待解析批次" value={batchSummary.uploaded} prefix={<UploadOutlined />} />
+            <Statistic title="待解析批次" value={batchSummary.uploaded} prefix={<InboxOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
@@ -270,23 +366,31 @@ export function UploadCenterPage() {
             title="创建上传批次"
             extra={<Typography.Text type="secondary">legacy 仅复用上传交互，不复用旧模型</Typography.Text>}
           >
+            {createBatchMutation.isPending ? (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={`正在上传文件夹${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`}
+                description={`文件正在异步上传，请不要关闭页面。${uploadProgressText ? ` 当前进度：${uploadProgressText}` : ''} 上传完成后会自动进入后台异步解析。`}
+              />
+            ) : null}
             <Form
               form={form}
               layout="vertical"
-              initialValues={{ uploadType: 'initial' satisfies DatasetUploadType }}
+              initialValues={{ selectedFiles: [] }}
               onFinish={(values) => createBatchMutation.mutate(values)}
             >
-              <Form.Item
-                name="uploadType"
-                label="上传类型"
-                rules={[{ required: true, message: '请选择上传类型' }]}
-              >
-                <Select options={uploadTypeOptions} />
+              <Form.Item label="上传类型">
+                <Input
+                  value={(batchData?.total ?? 0) > 0 ? '补充上传' : '首次上传'}
+                  disabled
+                />
               </Form.Item>
               <Form.Item
                 name="sourceName"
                 label="来源说明"
-                tooltip="未上传文件时，至少填写来源说明以便保留批次记录"
+                rules={[{ required: true, message: '请输入来源说明' }]}
               >
                 <Input placeholder="例如：心内科 2026-05 第一次导出" maxLength={255} />
               </Form.Item>
@@ -297,109 +401,109 @@ export function UploadCenterPage() {
                   placeholder="记录数据范围、补传原因、约定事项等"
                 />
               </Form.Item>
-              <Form.Item label="上传文件">
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  multiple
-                  style={{ display: 'none' }}
-                  {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
-                  onChange={(event) => {
-                    const files = Array.from(event.target.files ?? []);
-                    syncFilesToUploadList(files);
-                  }}
-                />
-                <Space style={{ marginBottom: 12 }} wrap>
-                  <Button onClick={() => folderInputRef.current?.click()}>选择文件夹</Button>
-                  <Button
-                    onClick={() => {
-                      setFileList([]);
-                      setShowAllSelectedFiles(false);
-                      if (folderInputRef.current) {
-                        folderInputRef.current.value = '';
+              <Form.Item
+                label="上传文件"
+                name="selectedFiles"
+                required
+                rules={[
+                  {
+                    validator: async (_, value: string[] | undefined) => {
+                      if (value && value.length > 0) {
+                        return;
                       }
+                      throw new Error('请上传文件');
+                    },
+                  },
+                ]}
+              >
+                <div>
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    multiple
+                    style={{ display: 'none' }}
+                    {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files ?? []);
+                      syncFilesToUploadList(files);
                     }}
-                  >
-                    清空已选文件
-                  </Button>
-                </Space>
-                <Upload.Dragger
-                  multiple
-                  directory
-                  beforeUpload={() => false}
-                  fileList={fileList}
-                  showUploadList={false}
-                  onChange={({ fileList: nextFileList }) => {
-                    setFileList(nextFileList);
-                    setShowAllSelectedFiles(false);
-                    if (folderInputRef.current) {
-                      folderInputRef.current.value = '';
-                    }
-                  }}
-                >
-                  <p className="ant-upload-drag-icon">
-                    <InboxOutlined />
-                  </p>
-                  <p className="ant-upload-text">选择文件夹、选择文件，或直接拖拽到这里</p>
-                  <p className="ant-upload-hint">
-                    macOS 下如果系统弹窗对文件夹选择不直观，优先使用上面的“选择文件夹”按钮。
-                  </p>
-                </Upload.Dragger>
-                {fileList.length > 0 ? (
-                  <Card size="small" style={{ marginTop: 12 }}>
-                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                        <Typography.Text strong>已选择 {fileList.length} 个文件</Typography.Text>
-                        <Button type="link" onClick={() => setShowAllSelectedFiles((value) => !value)}>
-                          {showAllSelectedFiles ? '收起文件列表' : `展开全部文件 (${fileList.length})`}
-                        </Button>
-                      </Space>
-                      <List
-                        size="small"
-                        dataSource={visibleSelectedFiles}
-                        renderItem={(item) => (
-                          <List.Item style={{ padding: '6px 0' }}>
-                            <div
-                              style={{
-                                width: '100%',
-                                display: 'grid',
-                                gridTemplateColumns: 'minmax(0, 1fr) 72px',
-                                gap: 12,
-                                alignItems: 'center',
-                              }}
-                            >
-                              <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 13, lineHeight: '20px' }}>
-                                {item.name}
-                              </Typography.Text>
-                              <Typography.Text
-                                type="secondary"
-                                style={{ textAlign: 'right', fontSize: 12, whiteSpace: 'nowrap' }}
+                  />
+                  <Space style={{ marginBottom: 12 }} wrap>
+                    <Button onClick={() => folderInputRef.current?.click()}>选择文件夹</Button>
+                    <Button
+                      onClick={() => {
+                        setFileList([]);
+                        setShowAllSelectedFiles(false);
+                        form.setFieldValue('selectedFiles', []);
+                        void form.validateFields(['selectedFiles']);
+                        if (folderInputRef.current) {
+                          folderInputRef.current.value = '';
+                        }
+                      }}
+                    >
+                      清空已选文件
+                    </Button>
+                  </Space>
+                  {fileList.length > 0 ? (
+                    <Card size="small" style={{ marginTop: 12 }}>
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                          <Typography.Text strong>已选择 {fileList.length} 个文件</Typography.Text>
+                          <Button type="link" onClick={() => setShowAllSelectedFiles((value) => !value)}>
+                            {showAllSelectedFiles ? '收起文件列表' : `展开全部文件 (${fileList.length})`}
+                          </Button>
+                        </Space>
+                        <List
+                          size="small"
+                          dataSource={visibleSelectedFiles}
+                          renderItem={(item) => (
+                            <List.Item style={{ padding: '6px 0' }}>
+                              <div
+                                style={{
+                                  width: '100%',
+                                  display: 'grid',
+                                  gridTemplateColumns: 'minmax(0, 1fr) 72px',
+                                  gap: 12,
+                                  alignItems: 'center',
+                                }}
                               >
-                                {item.size ? `${Math.max(item.size / 1024 / 1024, 0.01).toFixed(2)} MB` : '-'}
-                              </Typography.Text>
-                            </div>
-                          </List.Item>
-                        )}
-                      />
-                      {!showAllSelectedFiles && fileList.length > visibleSelectedFiles.length ? (
-                        <Typography.Text type="secondary">
-                          当前仅预览前 {visibleSelectedFiles.length} 个文件，其余 {fileList.length - visibleSelectedFiles.length}{' '}
-                          个文件已隐藏。
-                        </Typography.Text>
-                      ) : null}
-                    </Space>
-                  </Card>
-                ) : null}
+                                <Typography.Text ellipsis style={{ minWidth: 0, fontSize: 13, lineHeight: '20px' }}>
+                                  {item.name}
+                                </Typography.Text>
+                                <Typography.Text
+                                  type="secondary"
+                                  style={{ textAlign: 'right', fontSize: 12, whiteSpace: 'nowrap' }}
+                                >
+                                  {item.size ? `${Math.max(item.size / 1024 / 1024, 0.01).toFixed(2)} MB` : '-'}
+                                </Typography.Text>
+                              </div>
+                            </List.Item>
+                          )}
+                        />
+                        {!showAllSelectedFiles && fileList.length > visibleSelectedFiles.length ? (
+                          <Typography.Text type="secondary">
+                            当前仅预览前 {visibleSelectedFiles.length} 个文件，其余 {fileList.length - visibleSelectedFiles.length}{' '}
+                            个文件已隐藏。
+                          </Typography.Text>
+                        ) : null}
+                      </Space>
+                    </Card>
+                  ) : null}
+                </div>
               </Form.Item>
               <Space>
                 <Button type="primary" htmlType="submit" loading={createBatchMutation.isPending}>
-                  创建批次
+                  {createBatchMutation.isPending
+                    ? `正在上传${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`
+                    : '创建批次'}
                 </Button>
                 <Button
+                  disabled={createBatchMutation.isPending}
                   onClick={() => {
                     form.resetFields();
                     setFileList([]);
                     setShowAllSelectedFiles(false);
+                    form.setFieldValue('selectedFiles', []);
                     if (folderInputRef.current) {
                       folderInputRef.current.value = '';
                     }
@@ -487,6 +591,15 @@ export function UploadCenterPage() {
         title="三层结构预览"
         extra={<Typography.Text type="secondary">批次不作为第四层，来源信息保留在序列明细中</Typography.Text>}
       >
+        {batchItems.some((item) => item.status === 'uploaded') ? (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="存在待解析批次"
+            description="上传请求已完成，后台正在异步解析并落库，列表和三层结构会自动刷新。"
+          />
+        ) : null}
         {isTreeError ? <Alert type="error" showIcon message="三层结构加载失败" /> : null}
         {isTreeLoading ? (
           <Card loading />

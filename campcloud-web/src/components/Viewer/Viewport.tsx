@@ -211,6 +211,7 @@ const Viewport: React.FC<{
 
     if (viewportId === 'viewport1_1') {
       seriesIndex.current = 0
+      if (!ImageDatas[0]?.ImageIds?.length) return;
       // 检查第一个序列是否有加载错误
       if (loadErrors && loadErrors[0]) {
         setRenderError("该序列加载失败，无法显示");

@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Col, Empty, List, Row, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Empty, List, Modal, Row, Space, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../app/providers/auth-provider';
+import { notificationsApi } from '../../services/api/notifications';
 import { profileApi } from '../../services/api/profile';
 import { requirementsApi } from '../../services/api/requirements';
 import { RequirementListItem } from '../../types/requirements';
@@ -35,17 +37,23 @@ function isProfileComplete(profile?: {
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const requirementsQuery = useQuery({
     queryKey: ['dashboard', 'requirements'],
-    queryFn: () => requirementsApi.list({ page: 1, pageSize: 50 }),
+    queryFn: () => requirementsApi.list({ page: 1, pageSize: 100 }),
   });
 
   const profileQuery = useQuery({
     queryKey: ['dashboard', 'profile'],
     queryFn: profileApi.getProfile,
   });
+  const notificationsQuery = useQuery({
+    queryKey: ['dashboard', 'notifications'],
+    queryFn: () => notificationsApi.list({ page: 1, pageSize: 100, unreadOnly: true }),
+  });
 
   const items = requirementsQuery.data?.list ?? [];
+  const unreadNotifications = notificationsQuery.data?.list ?? [];
   const profile = profileQuery.data;
   const profileCompleted = isProfileComplete({
     ...profile,
@@ -53,8 +61,10 @@ export function DashboardPage() {
   });
   const waitingUserCount = items.filter((item) => item.status === 'waiting_user').length;
   const pendingCount = items.filter((item) => item.status === 'pending').length;
-  const processingCount = items.filter((item) => item.status === 'processing').length;
+  const processingCount = items.filter((item) => item.status === 'processing' || item.status === 'waiting_user').length;
   const unreadCount = items.reduce((sum, item) => sum + item.unreadNotificationCount, 0);
+  const adminPendingRequirementCount = items.filter((item) => item.needsAdminReply).length;
+  const adminPendingMessageCount = items.reduce((sum, item) => sum + (item.pendingReplyMessageCount ?? 0), 0);
   const recentItems = items
     .slice()
     .sort((left, right) => {
@@ -64,41 +74,72 @@ export function DashboardPage() {
     })
     .slice(0, 5);
 
+  useEffect(() => {
+    if (isAdmin) {
+      return;
+    }
+    if (unreadNotifications.length === 0) {
+      return;
+    }
+
+    const popupKey = 'campcloud_notification_popup_seen_ids';
+    const seenIds = new Set<string>(JSON.parse(localStorage.getItem(popupKey) ?? '[]') as string[]);
+    const pendingPopups = unreadNotifications.filter((item) => !seenIds.has(item.id));
+    if (pendingPopups.length === 0) {
+      return;
+    }
+
+    const nextSeenIds = Array.from(new Set([...seenIds, ...pendingPopups.map((item) => item.id)])).slice(-100);
+    localStorage.setItem(popupKey, JSON.stringify(nextSeenIds));
+
+    Modal.info({
+      title: '您的需求有回复了',
+      content: '请在消息通知栏目查看最新处理进展与留言回复。',
+      okText: '知道了',
+    });
+  }, [isAdmin, unreadNotifications]);
+
+  const dashboardSummary = isAdmin
+    ? [
+        { label: '总需求数', value: requirementsQuery.data?.total ?? 0 },
+        { label: '受理中', value: processingCount },
+        { label: '待响应', value: adminPendingRequirementCount },
+        { label: '未读通知', value: unreadNotifications.length },
+      ]
+    : [
+        { label: '我的需求', value: requirementsQuery.data?.total ?? 0 },
+        { label: '待我响应', value: pendingCount },
+        { label: '受理中', value: processingCount },
+        { label: '未读通知', value: unreadCount },
+      ];
+
+  const entryLink = isAdmin ? '/admin/requirements' : '/requirements';
+
   return (
     <div className="dashboard-page">
       <div className="dashboard-hero">
         <div>
-          <Typography.Title level={3}>用户工作台</Typography.Title>
+          <Typography.Title level={3}>{isAdmin ? '管理员工作台' : '用户工作台'}</Typography.Title>
         </div>
-        <Link to="/requirements">
-          <Button type="primary">进入需求列表</Button>
+        <Link to={entryLink}>
+          <Button type="primary">{isAdmin ? '进入管理侧需求' : '进入需求列表'}</Button>
         </Link>
       </div>
 
       <div className="dashboard-summary">
-        <div className="dashboard-summary-card">
-          <p>我的需求</p>
-          <strong>{requirementsQuery.data?.total ?? 0}</strong>
-        </div>
-        <div className="dashboard-summary-card">
-          <p>待我响应</p>
-          <strong>{pendingCount}</strong>
-        </div>
-        <div className="dashboard-summary-card">
-          <p>受理中</p>
-          <strong>{processingCount}</strong>
-        </div>
-        <div className="dashboard-summary-card">
-          <p>未读通知</p>
-          <strong>{unreadCount}</strong>
-        </div>
+        {dashboardSummary.map((item) => (
+          <div key={item.label} className="dashboard-summary-card">
+            <p>{item.label}</p>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
       </div>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <Card title="待我响应">
+          <Card title={isAdmin ? '管理员提醒' : '待我响应'}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              {!profileCompleted ? (
+              {!isAdmin && !profileCompleted ? (
                 <Alert
                   type="warning"
                   showIcon
@@ -113,33 +154,62 @@ export function DashboardPage() {
                   }
                 />
               ) : null}
-              {waitingUserCount > 0 ? (
+              {!isAdmin && waitingUserCount > 0 ? (
                 <Alert
                   type="info"
                   showIcon
-                  message={`有 ${waitingUserCount} 条需求待你确认`}
-                  description="通常表示管理员已更新状态，或需要你补充信息。"
+                  message={`有 ${waitingUserCount} 条需求需要补充数据`}
+                  description="这些需求已进入处理中，但管理员还需要你继续补充数据或说明。"
                   action={
-                    <Link to="/requirements">
+                    <Link to="/notifications">
                       <Button size="small">去查看</Button>
                     </Link>
                   }
                 />
               ) : null}
-              {unreadCount > 0 ? (
+              {!isAdmin && unreadCount > 0 ? (
                 <Alert
                   type="error"
                   showIcon
                   message={`有 ${unreadCount} 条未读提醒`}
                   description="建议优先查看最近有状态变化或留言更新的需求。"
                   action={
-                    <Link to="/requirements">
+                    <Link to="/notifications">
                       <Button size="small">去处理</Button>
                     </Link>
                   }
                 />
               ) : null}
-              {profileCompleted && waitingUserCount === 0 && unreadCount === 0 ? (
+              {isAdmin && adminPendingRequirementCount > 0 ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={`有 ${adminPendingRequirementCount} 条需求等待管理员回复`}
+                  description={`共 ${unreadNotifications.length} 条通知仍为未读，请进入消息通知手动处理。`}
+                  action={
+                    <Link to="/admin/requirements">
+                      <Button size="small">去处理</Button>
+                    </Link>
+                  }
+                />
+              ) : null}
+              {isAdmin && unreadNotifications.length > 0 ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message={`有 ${unreadNotifications.length} 条未读通知`}
+                  description="这些通知来自用户补充留言或需求动态，请优先查看。"
+                  action={
+                    <Link to="/notifications">
+                      <Button size="small">去查看</Button>
+                    </Link>
+                  }
+                />
+              ) : null}
+              {!isAdmin && profileCompleted && waitingUserCount === 0 && unreadCount === 0 ? (
+                <Empty description="当前没有待处理事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : null}
+              {isAdmin && adminPendingRequirementCount === 0 && unreadNotifications.length === 0 ? (
                 <Empty description="当前没有待处理事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               ) : null}
             </Space>
@@ -149,8 +219,8 @@ export function DashboardPage() {
           <Card title="最近动态" loading={requirementsQuery.isLoading}>
             {recentItems.length === 0 ? (
               <Empty description="当前还没有可展示的需求动态" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                <Link to="/requirements">
-                  <Button type="primary">查看需求列表</Button>
+                <Link to={entryLink}>
+                  <Button type="primary">{isAdmin ? '查看管理侧需求' : '查看需求列表'}</Button>
                 </Link>
               </Empty>
             ) : (
@@ -160,7 +230,7 @@ export function DashboardPage() {
                 renderItem={(item) => (
                   <List.Item
                     actions={[
-                      <Link key="detail" to={`/requirements/${item.id}`}>
+                      <Link key="detail" to={isAdmin ? `/admin/requirements/${item.id}` : `/requirements/${item.id}`}>
                         查看详情
                       </Link>,
                     ]}
@@ -169,8 +239,11 @@ export function DashboardPage() {
                       <Space wrap>
                         {renderRequirementStatus(item.status)}
                         <Tag color="blue">{renderRequirementType(item.type)}</Tag>
-                        {item.unreadNotificationCount > 0 ? (
+                        {!isAdmin && item.unreadNotificationCount > 0 ? (
                           <Tag color="red">未读 {item.unreadNotificationCount}</Tag>
+                        ) : null}
+                        {isAdmin && item.unreadNotificationCount > 0 ? (
+                          <Tag color="orange">未读 {item.unreadNotificationCount}</Tag>
                         ) : null}
                       </Space>
                       <Typography.Text strong>{item.title}</Typography.Text>
@@ -180,6 +253,11 @@ export function DashboardPage() {
                           : `创建于 ${dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')}`}{' '}
                         · 患者 {item.patientCount} / 检查 {item.studyCount} / 序列 {item.seriesCount}
                       </Typography.Text>
+                      {isAdmin && item.creator ? (
+                        <Typography.Text type="secondary">
+                          提交方：{item.creator.username} / {item.creator.hospitalName || '-'}
+                        </Typography.Text>
+                      ) : null}
                     </Space>
                   </List.Item>
                 )}

@@ -1,5 +1,130 @@
-import { Result } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { App, Button, Card, Empty, List, Segmented, Space, Tag, Typography } from 'antd';
+import dayjs from 'dayjs';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../app/providers/auth-provider';
+import { notificationsApi } from '../../services/api/notifications';
+import { queryClient } from '../../services/query-client';
+import { NotificationItem } from '../../types/notifications';
+import { renderRequirementStatus } from '../requirements/list/helpers';
 
 export function NotificationPage() {
-  return <Result status="info" title="正在开发" />;
+  const { message } = App.useApp();
+  const { user } = useAuth();
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications', filter],
+    queryFn: () =>
+      notificationsApi.list({
+        page: 1,
+        pageSize: 50,
+        unreadOnly: filter === 'unread',
+      }),
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) => notificationsApi.markRead(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      void queryClient.invalidateQueries({ queryKey: ['requirements'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'requirements'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'requirements'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'notifications'] });
+    },
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: notificationsApi.markAllRead,
+    onSuccess: (result) => {
+      message.success(`已处理 ${result.updatedCount} 条未读通知`);
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      void queryClient.invalidateQueries({ queryKey: ['requirements'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'requirements'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'requirements'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', 'notifications'] });
+    },
+  });
+
+  const items = notificationsQuery.data?.list ?? [];
+  const unreadCount = items.filter((item) => !item.isRead).length;
+  const requirementBasePath = user?.role === 'admin' ? '/admin/requirements' : '/requirements';
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+        <div>
+          <Typography.Title level={3} style={{ marginBottom: 8 }}>
+            消息通知
+          </Typography.Title>
+          <Typography.Text type="secondary">查看需求状态更新、影动回复和补充说明提醒。</Typography.Text>
+        </div>
+        <Space wrap>
+          <Segmented
+            value={filter}
+            onChange={(value) => setFilter(value as 'all' | 'unread')}
+            options={[
+              { label: '全部通知', value: 'all' },
+              { label: '仅看未读', value: 'unread' },
+            ]}
+          />
+          <Button onClick={() => markAllReadMutation.mutate()} loading={markAllReadMutation.isPending}>
+            全部标记已读
+          </Button>
+        </Space>
+      </Space>
+
+      <Card>
+        {items.length === 0 && !notificationsQuery.isLoading ? (
+          <Empty description="当前没有通知" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <List<NotificationItem>
+            loading={notificationsQuery.isLoading}
+            dataSource={items}
+            renderItem={(item) => (
+              <List.Item
+                actions={[
+                  item.requirement ? (
+                    <Link key="detail" to={`${requirementBasePath}/${item.requirement.id}`}>
+                      查看需求
+                    </Link>
+                  ) : null,
+                  item.isRead ? null : (
+                    <Button
+                      key="read"
+                      type="link"
+                      onClick={() => markReadMutation.mutate(item.id)}
+                      loading={markReadMutation.isPending}
+                    >
+                      标记已读
+                    </Button>
+                  ),
+                ].filter(Boolean)}
+              >
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Space wrap>
+                    {!item.isRead ? <Tag color="red">未读</Tag> : <Tag>已读</Tag>}
+                    {item.requirement ? renderRequirementStatus(item.requirement.status) : null}
+                    <Typography.Text type="secondary">
+                      {dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')}
+                    </Typography.Text>
+                  </Space>
+                  <Typography.Text strong>{item.title}</Typography.Text>
+                  <Typography.Paragraph style={{ marginBottom: 0 }}>{item.content}</Typography.Paragraph>
+                  {item.requirement ? (
+                    <Typography.Text type="secondary">关联需求：{item.requirement.title}</Typography.Text>
+                  ) : null}
+                </Space>
+              </List.Item>
+            )}
+          />
+        )}
+      </Card>
+
+      {filter === 'all' && unreadCount > 0 ? (
+        <Typography.Text type="secondary">当前列表中还有 {unreadCount} 条未读通知。</Typography.Text>
+      ) : null}
+    </Space>
+  );
 }

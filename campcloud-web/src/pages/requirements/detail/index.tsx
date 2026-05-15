@@ -1,23 +1,49 @@
-import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Col, Descriptions, Empty, Result, Row, Space, Statistic, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Input, List, Result, Row, Space, Statistic, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { Link, useNavigate } from 'react-router-dom';
 import { useParams } from 'react-router-dom';
+import { useAuth } from '../../../app/providers/auth-provider';
 import { requirementsApi } from '../../../services/api/requirements';
+import { queryClient } from '../../../services/query-client';
 import { renderRequirementType, renderRequirementStatus } from '../list/helpers';
 
 export function RequirementDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { message } = App.useApp();
+  const [form] = Form.useForm<{ content: string }>();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['requirement-detail', id],
     queryFn: () => requirementsApi.detail(id),
     enabled: Boolean(id),
   });
+  const messagesQuery = useQuery({
+    queryKey: ['requirement-messages', id],
+    queryFn: () => requirementsApi.listMessages(id),
+    enabled: Boolean(id),
+  });
+  const createMessageMutation = useMutation({
+    mutationFn: (payload: { content: string }) => requirementsApi.createMessage(id, payload),
+    onSuccess: async () => {
+      message.success('留言已发送');
+      form.resetFields();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['requirement-messages', id] }),
+        queryClient.invalidateQueries({ queryKey: ['requirement-detail', id] }),
+        queryClient.invalidateQueries({ queryKey: ['requirements'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'requirements'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    },
+  });
 
   if (isError) {
     return <Result status="error" title="需求详情加载失败" />;
   }
+
+  const canUserLeaveMessage = user?.role === 'admin' || (data ? !['pending', 'rejected'].includes(data.status) : false);
 
   return (
     <Card loading={isLoading} bordered={false}>
@@ -121,6 +147,67 @@ export function RequirementDetailPage() {
                 ) : (
                   <Empty description="暂无交付" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 )}
+              </Card>
+            </Col>
+            <Col xs={24}>
+              <Card title="需求留言与补充" size="small" loading={messagesQuery.isLoading}>
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                  {messagesQuery.data && messagesQuery.data.length > 0 ? (
+                    <List
+                      dataSource={messagesQuery.data}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                            <Space wrap>
+                              <Typography.Text strong>{item.sender.username}</Typography.Text>
+                              <Tag color={item.sender.role === 'admin' ? 'blue' : 'default'}>
+                                {item.sender.role === 'admin' ? '影动' : '用户'}
+                              </Tag>
+                              {item.sender.hospitalName ? (
+                                <Typography.Text type="secondary">{item.sender.hospitalName}</Typography.Text>
+                              ) : null}
+                              <Typography.Text type="secondary">
+                                {dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')}
+                              </Typography.Text>
+                            </Space>
+                            <Typography.Paragraph style={{ marginBottom: 0 }}>{item.content}</Typography.Paragraph>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  ) : (
+                    <Empty description="暂无留言，您可以先补充说明" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  )}
+
+                  <Form
+                    form={form}
+                    layout="vertical"
+                    disabled={!canUserLeaveMessage}
+                    onFinish={(values) =>
+                      createMessageMutation.mutate({
+                        content: values.content.trim(),
+                      })
+                    }
+                  >
+                    {!canUserLeaveMessage ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message={data?.status === 'pending' ? '管理员受理后才可以继续留言' : '当前需求状态不支持继续留言'}
+                      />
+                    ) : null}
+                    <Form.Item
+                      label="补充回复"
+                      name="content"
+                      rules={[{ required: true, message: '请输入补充内容' }]}
+                    >
+                      <Input.TextArea rows={4} placeholder="例如补充扫描背景、补传计划、对处理结果的进一步要求等" />
+                    </Form.Item>
+                    <Button type="primary" htmlType="submit" loading={createMessageMutation.isPending}>
+                      发送留言
+                    </Button>
+                  </Form>
+                </Space>
               </Card>
             </Col>
           </Row>

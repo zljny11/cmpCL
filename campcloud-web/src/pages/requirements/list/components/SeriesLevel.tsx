@@ -17,6 +17,7 @@ interface Props {
   onRefresh?: () => void;
   selectedSeriesKeys: React.Key[];
   onSelectedSeriesKeysChange: (keys: React.Key[]) => void;
+  readOnly?: boolean;
 }
 
 export function SeriesLevel({
@@ -27,6 +28,7 @@ export function SeriesLevel({
   onRefresh,
   selectedSeriesKeys,
   onSelectedSeriesKeysChange,
+  readOnly = false,
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -60,18 +62,22 @@ export function SeriesLevel({
         pagination={false}
         size="small"
         scroll={{ x: 1240, y: data.length > 8 ? 430 : undefined }}
-        rowSelection={{
-          selectedRowKeys,
-          onChange: (keys) => {
-            const remainingKeys = selectedSeriesKeys.filter((key) => !data.some((item) => item.id === key));
-            onSelectedSeriesKeysChange([...remainingKeys, ...keys]);
-          },
-          columnWidth: 44,
-        }}
+        rowSelection={
+          readOnly
+            ? undefined
+            : {
+                selectedRowKeys,
+                onChange: (keys) => {
+                  const remainingKeys = selectedSeriesKeys.filter((key) => !data.some((item) => item.id === key));
+                  onSelectedSeriesKeysChange([...remainingKeys, ...keys]);
+                },
+                columnWidth: 44,
+              }
+        }
         columns={[
           withTextFilter<RequirementSeriesNode>('序列描述', (record) => record.seriesDescription || record.seriesUid, {
             width: 360,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementSeriesNode) => (
               <div>
                 <Typography.Text strong>{record.seriesDescription || '未命名序列'}</Typography.Text>
                 <br />
@@ -84,7 +90,7 @@ export function SeriesLevel({
           {
             title: '来源批次',
             width: 180,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementSeriesNode) => (
               <div>
                 <Tag color={record.datasetBatch.uploadType === 'initial' ? 'geekblue' : 'gold'}>
                   批次 #{record.datasetBatch.batchNo}
@@ -118,13 +124,13 @@ export function SeriesLevel({
             (record) => (record.uploadedAt ? dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm:ss') : null),
             {
               width: 160,
-              render: (_, record) => (record.uploadedAt ? dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm') : '-'),
+              render: (_: unknown, record: RequirementSeriesNode) => (record.uploadedAt ? dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm') : '-'),
             },
           ),
           {
             title: '操作',
             width: 140,
-            render: (_, record) => (
+            render: (_: unknown, record: RequirementSeriesNode) => (
               <Space size={4}>
                 <Button
                   type="link"
@@ -134,23 +140,25 @@ export function SeriesLevel({
                 >
                   查看
                 </Button>
-                <Popconfirm
-                  title="删除序列"
-                  description="删除后将移除该序列对应文件。"
-                  okText="确定"
-                  cancelText="取消"
-                  onConfirm={() => deleteSeriesMutation.mutate(record.id)}
-                >
-                  <Button
-                    type="link"
-                    size="small"
-                    danger
-                    className="pacs-link-button pacs-danger-link"
-                    loading={deleteSeriesMutation.isPending && deleteSeriesMutation.variables === record.id}
+                {readOnly ? null : (
+                  <Popconfirm
+                    title="删除序列"
+                    description="删除后将移除该序列对应文件。"
+                    okText="确定"
+                    cancelText="取消"
+                    onConfirm={() => deleteSeriesMutation.mutate(record.id)}
                   >
-                    删除
-                  </Button>
-                </Popconfirm>
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      className="pacs-link-button pacs-danger-link"
+                      loading={deleteSeriesMutation.isPending && deleteSeriesMutation.variables === record.id}
+                    >
+                      删除
+                    </Button>
+                  </Popconfirm>
+                )}
               </Space>
             ),
           },

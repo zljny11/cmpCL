@@ -7,6 +7,7 @@
     "start": "node dist/src/main.js",
     "start:dev": "node scripts/dev-server.js",
     "start:debug": "node scripts/dev-server.js --inspect",
+    "clear:upload-data": "node scripts/clear-upload-data.js",
     "lint": "eslint \"{src,prisma,test}/**/*.ts\"",
     "format": "prettier --write \"{src,prisma,test}/**/*.ts\"",
     "prisma:generate": "prisma generate",

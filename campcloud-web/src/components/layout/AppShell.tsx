@@ -12,23 +12,27 @@ export function AppShell({ children }: PropsWithChildren) {
   const location = useLocation();
   const { user, logout } = useAuth();
 
-  const menuItems = [
-    { key: '/', icon: <HomeOutlined />, label: 'Dashboard' },
-    { key: '/requirements', icon: <FileSearchOutlined />, label: '需求列表' },
-    { key: '/requirements/create', icon: <FileAddOutlined />, label: '新建需求' },
-    { key: '/uploads', icon: <CloudUploadOutlined />, label: '数据上传' },
-    { key: '/notifications', icon: <BellOutlined />, label: '消息通知' },
-    { key: '/profile', icon: <SettingOutlined />, label: '个人资料' },
-  ];
+  const menuItems =
+    user?.role === 'admin'
+      ? [
+          { key: '/', icon: <HomeOutlined />, label: 'Dashboard' },
+          { key: '/notifications', icon: <BellOutlined />, label: '消息通知' },
+          { key: '/admin/requirements', icon: <SettingOutlined />, label: '管理侧需求' },
+        ]
+      : [
+          { key: '/', icon: <HomeOutlined />, label: 'Dashboard' },
+          { key: '/requirements', icon: <FileSearchOutlined />, label: '需求列表' },
+          { key: '/requirements/create', icon: <FileAddOutlined />, label: '新建需求' },
+          { key: '/uploads', icon: <CloudUploadOutlined />, label: '数据上传' },
+          { key: '/notifications', icon: <BellOutlined />, label: '消息通知' },
+          { key: '/profile', icon: <SettingOutlined />, label: '个人资料' },
+        ];
 
-  if (user?.role === 'admin') {
-    menuItems.push({ key: '/admin/requirements', icon: <SettingOutlined />, label: '管理侧需求' });
-  }
-
+  const normalizedPathname = location.pathname.match(/^\/requirements\/[^/]+\/upload$/) ? '/uploads' : location.pathname;
   const selectedKey =
     [...menuItems]
       .sort((left, right) => right.key.length - left.key.length)
-      .find((item) => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`))?.key ?? '/';
+      .find((item) => normalizedPathname === item.key || normalizedPathname.startsWith(`${item.key}/`))?.key ?? '/';
 
   return (
     <Layout style={{ minHeight: '100vh', background: 'transparent' }}>

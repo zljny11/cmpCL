@@ -1,8 +1,9 @@
 import registerMetadataProvider from './initProviders';
 import initVolumeLoader from './initVolumeLoader';
-import { init as csCoreInit } from '@cornerstonejs/core';
+import { init as csCoreInit, getConfiguration } from '@cornerstonejs/core';
 import dicomImageLoader from '@cornerstonejs/dicom-image-loader';
-import { getToken } from '../../../../services/http';
+import { init as csToolsInit } from '@cornerstonejs/tools';
+import { ensureCornerstoneTooling } from '../cornerstoneAddTools';
 
 let initPromise;
 let wadouriLoadImagePatched = false;
@@ -14,19 +15,25 @@ export default async function initDemo() {
 
   initPromise = (async () => {
     await csCoreInit();
+    await csToolsInit();
+
+    const { preferSizeOverAccuracy, useNorm16Texture } = getConfiguration().rendering;
+
     dicomImageLoader.init({
       maxWebWorkers:
         typeof navigator !== 'undefined' && navigator.hardwareConcurrency
           ? Math.max(1, Math.min(4, Math.floor(navigator.hardwareConcurrency / 2)))
           : 1,
-      beforeSend: async (_xhr, _imageId, headers) => {
-        const token = getToken();
-        return token
-          ? {
-              ...headers,
-              Authorization: `Bearer ${token}`,
-            }
-          : headers;
+      startWebWorkersOnDemand: false,
+      taskConfiguration: {
+        decodeTask: {
+          initializeCodecsOnStartup: false,
+          strict: false,
+          decodeConfig: {
+            convertFloatPixelDataToInt: false,
+            use16BitDataType: preferSizeOverAccuracy || useNorm16Texture,
+          },
+        },
       },
     });
 
@@ -45,7 +52,10 @@ export default async function initDemo() {
 
     initVolumeLoader();
     registerMetadataProvider();
-  });
+    ensureCornerstoneTooling();
+  })();
 
   return initPromise;
 }
+
+

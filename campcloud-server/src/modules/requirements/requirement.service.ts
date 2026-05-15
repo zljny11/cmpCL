@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, RequirementStatus, UserRole } from '@prisma/client';
+import { DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -9,9 +9,12 @@ import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
+import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
+import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
+import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto';
 
 type UploadedFile = { originalname: string; buffer: Buffer };
 
@@ -48,7 +51,7 @@ export class RequirementsService {
   private async ensureRequirementAccess(userId: bigint, requirementId: bigint, role: UserRole) {
     const requirement = await this.prisma.requirement.findUnique({
       where: { id: requirementId },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, title: true, status: true },
     });
 
     if (!requirement) {
@@ -70,6 +73,55 @@ export class RequirementsService {
   private normalizePatientName(value: string | undefined | null) {
     const normalized = this.normalizeText(value);
     return normalized ? normalized.replace(/\^/g, ' ') : null;
+  }
+
+  private summarizeNotificationContent(value: string, maxLength = 120) {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+  }
+
+  private renderRequirementStatusLabel(status: RequirementStatus) {
+    switch (status) {
+      case RequirementStatus.pending:
+        return '待响应';
+      case RequirementStatus.processing:
+        return '受理中（需等待）';
+      case RequirementStatus.waiting_user:
+        return '受理中（需补充数据）';
+      case RequirementStatus.completed:
+        return '已完成';
+      case RequirementStatus.rejected:
+        return '已拒绝';
+      default:
+        return status;
+    }
+  }
+
+  private async createNotifications(
+    tx: Prisma.TransactionClient,
+    userIds: bigint[],
+    requirementId: bigint,
+    type: string,
+    title: string,
+    content: string,
+  ) {
+    const uniqueUserIds = Array.from(new Set(userIds.map((item) => item.toString()))).map((item) => BigInt(item));
+    if (uniqueUserIds.length === 0) {
+      return;
+    }
+
+    await tx.notification.createMany({
+      data: uniqueUserIds.map((targetUserId) => ({
+        userId: targetUserId,
+        requirementId,
+        type,
+        title,
+        content,
+      })),
+    });
   }
 
   private parseDicomDate(value: string | undefined | null) {
@@ -344,6 +396,165 @@ export class RequirementsService {
     return { batchRoot };
   }
 
+  private async processDatasetBatch(
+    batch: {
+      id: bigint;
+      batchNo: number;
+      uploadedAt: Date;
+    },
+    requirementId: bigint,
+    remark: string | null | undefined,
+    files: UploadedFile[],
+  ) {
+    const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo, files);
+    const parsedRecords: ParsedDicomRecord[] = [];
+    let failedCount = 0;
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      try {
+        const tempRecord = this.parseDicomFile(file, '');
+        const seriesDir = join(batchRoot, this.sanitizePathSegment(tempRecord.seriesUid));
+        await mkdir(seriesDir, { recursive: true });
+        const filename = this.sanitizeFilename(file.originalname, index);
+        const storagePath = join(seriesDir, filename);
+        await writeFile(storagePath, file.buffer);
+        parsedRecords.push({ ...tempRecord, storagePath });
+      } catch {
+        failedCount += 1;
+      }
+    }
+
+    if (parsedRecords.length === 0) {
+      await this.prisma.datasetBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: 'failed',
+          remark: remark?.trim() ? `${remark.trim()}；全部文件解析失败` : '全部文件解析失败',
+        },
+      });
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const record of parsedRecords) {
+        const patient = await tx.patient.upsert({
+          where: {
+            requirementId_patientUid: {
+              requirementId,
+              patientUid: record.patientUid,
+            },
+          },
+          update: {
+            patientId: record.patientId ?? undefined,
+            patientName: record.patientName ?? undefined,
+            sex: record.sex ?? undefined,
+            birthday: record.birthday ?? undefined,
+            imageCount: { increment: 1 },
+          },
+          create: {
+            requirementId,
+            patientUid: record.patientUid,
+            patientId: record.patientId,
+            patientName: record.patientName,
+            sex: record.sex,
+            birthday: record.birthday,
+            imageCount: 1,
+          },
+        });
+
+        const study = await tx.study.upsert({
+          where: {
+            patientId_studyUid: {
+              patientId: patient.id,
+              studyUid: record.studyUid,
+            },
+          },
+          update: {
+            studyId: record.studyId ?? undefined,
+            modality: record.modality ?? undefined,
+            studyDate: record.studyDate ?? undefined,
+            studyDescription: record.studyDescription ?? undefined,
+          },
+          create: {
+            patientId: patient.id,
+            studyUid: record.studyUid,
+            studyId: record.studyId,
+            modality: record.modality,
+            studyDate: record.studyDate,
+            studyDescription: record.studyDescription,
+          },
+        });
+
+        await tx.series.upsert({
+          where: {
+            studyId_seriesUid_datasetBatchId: {
+              studyId: study.id,
+              seriesUid: record.seriesUid,
+              datasetBatchId: batch.id,
+            },
+          },
+          update: {
+            seriesDescription: record.seriesDescription ?? undefined,
+            hospitalName: record.hospitalName ?? undefined,
+            uploadedAt: record.uploadedAt ?? undefined,
+            imageCount: { increment: 1 },
+            storagePath: record.storagePath,
+          },
+          create: {
+            studyId: study.id,
+            datasetBatchId: batch.id,
+            seriesUid: record.seriesUid,
+            seriesDescription: record.seriesDescription,
+            hospitalName: record.hospitalName,
+            uploadedAt: record.uploadedAt,
+            imageCount: 1,
+            storagePath: record.storagePath,
+          },
+        });
+      }
+
+      const patientIds = [...new Set(parsedRecords.map((record) => record.patientUid))];
+      for (const patientUid of patientIds) {
+        const patient = await tx.patient.findUnique({
+          where: {
+            requirementId_patientUid: {
+              requirementId,
+              patientUid,
+            },
+          },
+          select: { id: true },
+        });
+
+        if (!patient) {
+          continue;
+        }
+
+        const studies = await tx.study.findMany({
+          where: { patientId: patient.id },
+          select: { id: true },
+        });
+
+        for (const study of studies) {
+          const seriesCount = await tx.series.count({ where: { studyId: study.id } });
+          await tx.study.update({
+            where: { id: study.id },
+            data: { seriesCount },
+          });
+        }
+      }
+
+      await tx.datasetBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: 'parsed',
+          remark:
+            failedCount > 0 ? [remark?.trim(), `${failedCount} 个文件解析失败`].filter(Boolean).join('；') : remark?.trim() || null,
+        },
+      });
+    });
+  }
+
   async create(userId: bigint, dto: CreateRequirementDto) {
     const requirement = await this.prisma.requirement.create({
       data: {
@@ -383,11 +594,11 @@ export class RequirementsService {
     };
   }
 
-  async list(userId: bigint, query: ListRequirementsDto) {
+  async list(userId: bigint, role: UserRole, query: ListRequirementsDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 10;
     const where: Prisma.RequirementWhereInput = {
-      userId,
+      ...(role === UserRole.admin ? {} : { userId }),
       ...(query.status ? { status: query.status as RequirementStatus } : {}),
       ...(query.keyword
         ? {
@@ -407,6 +618,15 @@ export class RequirementsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              hospitalName: true,
+            },
+          },
+        },
       }),
     ]);
 
@@ -438,6 +658,13 @@ export class RequirementsService {
           studyCount,
           seriesCount,
           unreadNotificationCount,
+          creator: {
+            id: requirement.user.id.toString(),
+            username: requirement.user.username,
+            hospitalName: requirement.user.hospitalName,
+          },
+          needsAdminReply: role === UserRole.admin ? unreadNotificationCount > 0 : false,
+          pendingReplyMessageCount: role === UserRole.admin ? unreadNotificationCount : 0,
         };
       }),
     );
@@ -538,6 +765,289 @@ export class RequirementsService {
             createdAt: latestDelivery.createdAt,
           }
         : null,
+    };
+  }
+
+  async listMessages(userId: bigint, requirementId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const messages = await this.prisma.message.findMany({
+      where: { requirementId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            username: true,
+            role: true,
+            hospitalName: true,
+          },
+        },
+      },
+    });
+
+    return messages.map((item) => ({
+      id: item.id.toString(),
+      content: item.content,
+      createdAt: item.createdAt,
+      sender: {
+        id: item.sender.id.toString(),
+        username: item.sender.username,
+        role: item.sender.role,
+        hospitalName: item.sender.hospitalName,
+      },
+    }));
+  }
+
+  async createMessage(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateMessageDto) {
+    const requirement = await this.ensureRequirementAccess(userId, requirementId, role);
+    const content = dto.content.trim();
+    if (!content) {
+      throw new BadRequestException('留言内容不能为空');
+    }
+
+    if (
+      role === UserRole.user &&
+      (requirement.status === RequirementStatus.pending || requirement.status === RequirementStatus.rejected)
+    ) {
+      throw new BadRequestException('需求受理后才可以继续留言');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.message.create({
+        data: {
+          requirementId,
+          senderId: userId,
+          senderRole: role,
+          content,
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              username: true,
+              role: true,
+              hospitalName: true,
+            },
+          },
+        },
+      });
+
+      const nextRequirementStatus =
+        role === UserRole.user && requirement.status === RequirementStatus.waiting_user
+          ? RequirementStatus.processing
+          : requirement.status;
+
+      await tx.requirement.update({
+        where: { id: requirementId },
+        data: {
+          latestMessageAt: created.createdAt,
+          ...(nextRequirementStatus !== requirement.status ? { status: nextRequirementStatus } : {}),
+        },
+      });
+
+      if (nextRequirementStatus !== requirement.status) {
+        await tx.requirementStatusLog.create({
+          data: {
+            requirementId,
+            fromStatus: requirement.status,
+            toStatus: nextRequirementStatus,
+            changedBy: userId,
+            changedRole: role,
+            reason: '用户已补充所需数据，需求继续处理中',
+          },
+        });
+      }
+
+      const notificationTitle =
+        role === UserRole.admin ? '您的需求有回复了，请在消息通知栏目查看' : '收到新的需求补充，请尽快处理';
+      const notificationContent =
+        role === UserRole.admin
+          ? `需求「${requirement.title}」收到影动回复：${this.summarizeNotificationContent(content)}`
+          : `${created.sender.username} 补充了需求留言：${this.summarizeNotificationContent(content)}`;
+
+      if (role === UserRole.admin) {
+        await this.createNotifications(tx, [requirement.userId], requirementId, 'message_reply', notificationTitle, notificationContent);
+      } else {
+        const admins = await tx.user.findMany({
+          where: { role: UserRole.admin },
+          select: { id: true },
+        });
+        await this.createNotifications(
+          tx,
+          admins.map((item) => item.id),
+          requirementId,
+          'message_reply',
+          notificationTitle,
+          notificationContent,
+        );
+      }
+
+      return {
+        id: created.id.toString(),
+        content: created.content,
+        createdAt: created.createdAt,
+        sender: {
+          id: created.sender.id.toString(),
+          username: created.sender.username,
+          role: created.sender.role,
+          hospitalName: created.sender.hospitalName,
+        },
+      };
+    });
+  }
+
+  async updateStatus(userId: bigint, requirementId: bigint, role: UserRole, dto: UpdateRequirementStatusDto) {
+    if (role !== UserRole.admin) {
+      throw new ForbiddenException('仅管理员可更新需求状态');
+    }
+    if (dto.status === RequirementStatus.pending) {
+      throw new BadRequestException('管理侧不支持将需求状态更新为待我响应');
+    }
+
+    const requirement = await this.prisma.requirement.findUnique({
+      where: { id: requirementId },
+      select: {
+        id: true,
+        userId: true,
+        title: true,
+        status: true,
+      },
+    });
+
+    if (!requirement) {
+      throw new NotFoundException('需求单不存在');
+    }
+
+    const reason = this.normalizeText(dto.reason);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.requirement.update({
+        where: { id: requirementId },
+        data: { status: dto.status },
+      });
+
+      await tx.requirementStatusLog.create({
+        data: {
+          requirementId,
+          fromStatus: requirement.status,
+          toStatus: dto.status,
+          changedBy: userId,
+          changedRole: role,
+          reason,
+        },
+      });
+
+      const content = reason
+        ? `需求「${requirement.title}」状态已更新为 ${this.renderRequirementStatusLabel(dto.status)}，说明：${reason}`
+        : `需求「${requirement.title}」状态已更新为 ${this.renderRequirementStatusLabel(dto.status)}`;
+      await this.createNotifications(
+        tx,
+        [requirement.userId],
+        requirementId,
+        'status_update',
+        '您的需求状态有更新，请在消息通知栏目查看',
+        content,
+      );
+
+      return {
+        id: updated.id.toString(),
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+      };
+    });
+  }
+
+  async listNotifications(userId: bigint, query: ListNotificationsDto) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const where: Prisma.NotificationWhereInput = {
+      userId,
+      ...(query.unreadOnly ? { isRead: false } : {}),
+    };
+
+    const [total, notifications] = await this.prisma.$transaction([
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.findMany({
+        where,
+        include: {
+          requirement: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      list: notifications.map((item) => ({
+        id: item.id.toString(),
+        type: item.type,
+        title: item.title,
+        content: item.content,
+        isRead: item.isRead,
+        readAt: item.readAt,
+        createdAt: item.createdAt,
+        requirement: item.requirement
+          ? {
+              id: item.requirement.id.toString(),
+              title: item.requirement.title,
+              status: item.requirement.status,
+            }
+          : null,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async markNotificationRead(userId: bigint, notificationId: bigint) {
+    const notification = await this.prisma.notification.findFirst({
+      where: { id: notificationId, userId },
+      select: { id: true, isRead: true },
+    });
+
+    if (!notification) {
+      throw new NotFoundException('通知不存在');
+    }
+
+    if (notification.isRead) {
+      return { success: true };
+    }
+
+    await this.prisma.notification.update({
+      where: { id: notificationId },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
+
+    return { success: true };
+  }
+
+  async markAllNotificationsRead(userId: bigint) {
+    const result = await this.prisma.notification.updateMany({
+      where: {
+        userId,
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
+
+    return {
+      success: true,
+      updatedCount: result.count,
     };
   }
 
@@ -1049,8 +1559,11 @@ export class RequirementsService {
     await this.ensureRequirementAccess(userId, requirementId, role);
 
     const fileCount = files.length;
-    if (fileCount === 0 && !dto.sourceName?.trim()) {
-      throw new BadRequestException('请上传文件或填写批次来源说明');
+    if (!dto.sourceName?.trim()) {
+      throw new BadRequestException('请填写来源说明');
+    }
+    if (fileCount === 0) {
+      throw new BadRequestException('请上传文件');
     }
 
     const batch = await this.prisma.$transaction(async (tx) => {
@@ -1065,7 +1578,7 @@ export class RequirementsService {
           requirementId,
           uploadedBy: userId,
           batchNo: (lastBatch?.batchNo ?? 0) + 1,
-          uploadType: dto.uploadType,
+          uploadType: lastBatch ? DatasetUploadType.supplement : DatasetUploadType.initial,
           sourceName: dto.sourceName?.trim() || null,
           remark: dto.remark?.trim() || null,
           fileCount,
@@ -1073,169 +1586,12 @@ export class RequirementsService {
       });
     });
 
-    if (fileCount === 0) {
-      return {
-        datasetBatchId: batch.id.toString(),
-        batchNo: batch.batchNo,
-        status: batch.status,
-        fileCount: batch.fileCount,
-        uploadedAt: batch.uploadedAt,
-      };
-    }
-
-    const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo, files);
-    const parsedRecords: ParsedDicomRecord[] = [];
-    let failedCount = 0;
-
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      try {
-        const tempRecord = this.parseDicomFile(file, '');
-        const seriesDir = join(batchRoot, this.sanitizePathSegment(tempRecord.seriesUid));
-        await mkdir(seriesDir, { recursive: true });
-        const filename = this.sanitizeFilename(file.originalname, index);
-        const storagePath = join(seriesDir, filename);
-        await writeFile(storagePath, file.buffer);
-        parsedRecords.push({ ...tempRecord, storagePath });
-      } catch {
-        failedCount += 1;
-      }
-    }
-
-    if (parsedRecords.length === 0) {
+    void this.processDatasetBatch(batch, requirementId, dto.remark, files).catch(async () => {
       await this.prisma.datasetBatch.update({
         where: { id: batch.id },
         data: {
           status: 'failed',
-          remark: dto.remark?.trim() ? `${dto.remark.trim()}；全部文件解析失败` : '全部文件解析失败',
-        },
-      });
-
-      return {
-        datasetBatchId: batch.id.toString(),
-        batchNo: batch.batchNo,
-        status: 'failed',
-        fileCount: batch.fileCount,
-        uploadedAt: batch.uploadedAt,
-      };
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      for (const record of parsedRecords) {
-        const patient = await tx.patient.upsert({
-          where: {
-            requirementId_patientUid: {
-              requirementId,
-              patientUid: record.patientUid,
-            },
-          },
-          update: {
-            patientId: record.patientId ?? undefined,
-            patientName: record.patientName ?? undefined,
-            sex: record.sex ?? undefined,
-            birthday: record.birthday ?? undefined,
-            imageCount: { increment: 1 },
-          },
-          create: {
-            requirementId,
-            patientUid: record.patientUid,
-            patientId: record.patientId,
-            patientName: record.patientName,
-            sex: record.sex,
-            birthday: record.birthday,
-            imageCount: 1,
-          },
-        });
-
-        const study = await tx.study.upsert({
-          where: {
-            patientId_studyUid: {
-              patientId: patient.id,
-              studyUid: record.studyUid,
-            },
-          },
-          update: {
-            studyId: record.studyId ?? undefined,
-            modality: record.modality ?? undefined,
-            studyDate: record.studyDate ?? undefined,
-            studyDescription: record.studyDescription ?? undefined,
-          },
-          create: {
-            patientId: patient.id,
-            studyUid: record.studyUid,
-            studyId: record.studyId,
-            modality: record.modality,
-            studyDate: record.studyDate,
-            studyDescription: record.studyDescription,
-          },
-        });
-
-        await tx.series.upsert({
-          where: {
-            studyId_seriesUid_datasetBatchId: {
-              studyId: study.id,
-              seriesUid: record.seriesUid,
-              datasetBatchId: batch.id,
-            },
-          },
-          update: {
-            seriesDescription: record.seriesDescription ?? undefined,
-            hospitalName: record.hospitalName ?? undefined,
-            uploadedAt: record.uploadedAt ?? undefined,
-            imageCount: { increment: 1 },
-            storagePath: record.storagePath,
-          },
-          create: {
-            studyId: study.id,
-            datasetBatchId: batch.id,
-            seriesUid: record.seriesUid,
-            seriesDescription: record.seriesDescription,
-            hospitalName: record.hospitalName,
-            uploadedAt: record.uploadedAt,
-            imageCount: 1,
-            storagePath: record.storagePath,
-          },
-        });
-      }
-
-      const patientIds = [...new Set(parsedRecords.map((record) => record.patientUid))];
-      for (const patientUid of patientIds) {
-        const patient = await tx.patient.findUnique({
-          where: {
-            requirementId_patientUid: {
-              requirementId,
-              patientUid,
-            },
-          },
-          select: { id: true },
-        });
-
-        if (!patient) {
-          continue;
-        }
-
-        const studies = await tx.study.findMany({
-          where: { patientId: patient.id },
-          select: { id: true },
-        });
-
-        for (const study of studies) {
-          const seriesCount = await tx.series.count({ where: { studyId: study.id } });
-          await tx.study.update({
-            where: { id: study.id },
-            data: { seriesCount },
-          });
-        }
-      }
-
-      await tx.datasetBatch.update({
-        where: { id: batch.id },
-        data: {
-          status: 'parsed',
-          remark:
-            failedCount > 0
-              ? [dto.remark?.trim(), `${failedCount} 个文件解析失败`].filter(Boolean).join('；')
-              : dto.remark?.trim() || null,
+          remark: dto.remark?.trim() ? `${dto.remark.trim()}；后台解析失败` : '后台解析失败',
         },
       });
     });
@@ -1243,7 +1599,7 @@ export class RequirementsService {
     return {
       datasetBatchId: batch.id.toString(),
       batchNo: batch.batchNo,
-      status: parsedRecords.length > 0 ? 'parsed' : 'failed',
+      status: batch.status,
       fileCount: batch.fileCount,
       uploadedAt: batch.uploadedAt,
     };
