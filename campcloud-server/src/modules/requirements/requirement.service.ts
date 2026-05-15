@@ -8,6 +8,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
@@ -17,6 +18,7 @@ import { ListRequirementsDto } from './dto/list-requirements.dto';
 import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto';
 
 type UploadedFile = { originalname: string; buffer: Buffer };
+type UploadedBinaryFile = { originalname: string; buffer: Buffer; mimetype?: string };
 
 const execFileAsync = promisify(execFile);
 
@@ -46,6 +48,11 @@ export class RequirementsService {
   private readonly uploadRoots = [
     resolve(process.cwd(), 'storage', 'uploads'),
     resolve(__dirname, '..', '..', '..', '..', 'storage', 'uploads'),
+  ];
+
+  private readonly deliveryRoots = [
+    resolve(process.cwd(), 'storage', 'deliveries'),
+    resolve(__dirname, '..', '..', '..', '..', 'storage', 'deliveries'),
   ];
 
   private async ensureRequirementAccess(userId: bigint, requirementId: bigint, role: UserRole) {
@@ -179,9 +186,9 @@ export class RequirementsService {
     return `${this.sanitizePathSegment(base)}${extension}`;
   }
 
-  private ensureSafeStoragePath(storagePath: string) {
+  private ensureSafePathInRoots(storagePath: string, roots: string[]) {
     const resolvedPath = resolve(storagePath);
-    for (const root of this.uploadRoots) {
+    for (const root of roots) {
       const resolvedRoot = resolve(root);
       const pathRelative = relative(resolvedRoot, resolvedPath);
       if (!pathRelative.startsWith('..') && !pathRelative.startsWith('/')) {
@@ -189,6 +196,14 @@ export class RequirementsService {
       }
     }
     throw new BadRequestException('非法文件路径');
+  }
+
+  private ensureSafeStoragePath(storagePath: string) {
+    return this.ensureSafePathInRoots(storagePath, this.uploadRoots);
+  }
+
+  private ensureSafeDeliveryPath(storagePath: string) {
+    return this.ensureSafePathInRoots(storagePath, this.deliveryRoots);
   }
 
   private async listSeriesFiles(storagePath: string, requirementId: bigint, seriesId: bigint) {
@@ -396,6 +411,17 @@ export class RequirementsService {
     return { batchRoot };
   }
 
+  private async persistDeliveryFile(requirementId: bigint, originalname: string, buffer: Buffer) {
+    const deliveryRoot = join(this.deliveryRoots[0], requirementId.toString());
+    await mkdir(deliveryRoot, { recursive: true });
+    const extension = extname(originalname).toLowerCase();
+    const baseName = originalname.slice(0, originalname.length - extension.length) || 'delivery';
+    const fileName = `${Date.now()}_${this.sanitizePathSegment(baseName)}${extension || '.pth'}`;
+    const filePath = join(deliveryRoot, fileName);
+    await writeFile(filePath, buffer);
+    return { filePath, fileName };
+  }
+
   private async processDatasetBatch(
     batch: {
       id: bigint;
@@ -556,29 +582,50 @@ export class RequirementsService {
   }
 
   async create(userId: bigint, dto: CreateRequirementDto) {
-    const requirement = await this.prisma.requirement.create({
-      data: {
-        userId,
-        type: dto.type,
-        typeCustom: dto.typeCustom ?? null,
-        title: dto.title,
-        description: dto.description,
-        expectedGoal: dto.expectedGoal,
-        remark: dto.remark,
-        status: RequirementStatus.pending,
-        submittedAt: new Date(),
-      },
-    });
+    const requirement = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.requirement.create({
+        data: {
+          userId,
+          type: dto.type,
+          typeCustom: dto.typeCustom ?? null,
+          title: dto.title,
+          description: dto.description,
+          expectedGoal: dto.expectedGoal,
+          remark: dto.remark,
+          status: RequirementStatus.pending,
+          submittedAt: new Date(),
+        },
+      });
 
-    await this.prisma.requirementStatusLog.create({
-      data: {
-        requirementId: requirement.id,
-        fromStatus: null,
-        toStatus: RequirementStatus.pending,
-        changedBy: userId,
-        changedRole: UserRole.user,
-        reason: 'Requirement created',
-      },
+      await tx.requirementStatusLog.create({
+        data: {
+          requirementId: created.id,
+          fromStatus: null,
+          toStatus: RequirementStatus.pending,
+          changedBy: userId,
+          changedRole: UserRole.user,
+          reason: 'Requirement created',
+        },
+      });
+
+      const admins = await tx.user.findMany({
+        where: {
+          role: UserRole.admin,
+          id: { not: userId },
+        },
+        select: { id: true },
+      });
+
+      await this.createNotifications(
+        tx,
+        admins.map((item) => item.id),
+        created.id,
+        'new_requirement',
+        '收到新的用户需求，请在管理侧查看',
+        `新需求「${created.title}」已提交，请及时处理。`,
+      );
+
+      return created;
     });
 
     return {
@@ -762,6 +809,7 @@ export class RequirementsService {
             id: latestDelivery.id.toString(),
             title: latestDelivery.title,
             fileName: latestDelivery.fileName,
+            isFinal: latestDelivery.isFinal,
             createdAt: latestDelivery.createdAt,
           }
         : null,
@@ -797,6 +845,137 @@ export class RequirementsService {
         hospitalName: item.sender.hospitalName,
       },
     }));
+  }
+
+  async listDeliveries(userId: bigint, requirementId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const deliveries = await this.prisma.delivery.findMany({
+      where: { requirementId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        uploader: {
+          select: {
+            id: true,
+            username: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    return deliveries.map((item) => ({
+      id: item.id.toString(),
+      title: item.title,
+      description: item.description,
+      fileName: item.fileName,
+      isFinal: item.isFinal,
+      createdAt: item.createdAt,
+      uploader: {
+        id: item.uploader.id.toString(),
+        username: item.uploader.username,
+        role: item.uploader.role,
+      },
+    }));
+  }
+
+  async createDelivery(
+    userId: bigint,
+    requirementId: bigint,
+    role: UserRole,
+    dto: CreateDeliveryDto,
+    file?: UploadedBinaryFile,
+  ) {
+    if (role !== UserRole.admin) {
+      throw new ForbiddenException('仅管理员可上传交付');
+    }
+
+    const requirement = await this.ensureRequirementAccess(userId, requirementId, role);
+    const title = dto.title.trim();
+    if (!title) {
+      throw new BadRequestException('交付标题不能为空');
+    }
+    if (!file?.buffer || !file.originalname) {
+      throw new BadRequestException('请上传交付文件');
+    }
+    if (extname(file.originalname).toLowerCase() !== '.pth') {
+      throw new BadRequestException('仅支持上传 .pth 格式算法文件');
+    }
+
+    const description = this.normalizeText(dto.description);
+    const isFinal = Boolean(dto.isFinal);
+    const persistedFile = await this.persistDeliveryFile(requirementId, file.originalname, file.buffer);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await tx.delivery.create({
+          data: {
+            requirementId,
+            uploadedBy: userId,
+            title,
+            description,
+            fileName: file.originalname,
+            fileUrl: persistedFile.filePath,
+            isFinal,
+          },
+          include: {
+            uploader: {
+              select: {
+                id: true,
+                username: true,
+                role: true,
+              },
+            },
+          },
+        });
+
+        const nextStatus = isFinal ? RequirementStatus.completed : requirement.status;
+
+        await tx.requirement.update({
+          where: { id: requirementId },
+          data: {
+            latestDeliveryAt: created.createdAt,
+            ...(nextStatus !== requirement.status ? { status: nextStatus } : {}),
+          },
+        });
+
+        if (nextStatus !== requirement.status) {
+          await tx.requirementStatusLog.create({
+            data: {
+              requirementId,
+              fromStatus: requirement.status,
+              toStatus: nextStatus,
+              changedBy: userId,
+              changedRole: role,
+              reason: '管理员已上传最终交付，需求自动完成',
+            },
+          });
+        }
+
+        const notificationTitle = isFinal ? '您的需求已完成最终交付，请在详情页查看' : '您的需求有新的交付，请在详情页查看';
+        const notificationContent = isFinal
+          ? `需求「${requirement.title}」已收到最终交付：${title}`
+          : `需求「${requirement.title}」已收到新的交付：${title}`;
+        await this.createNotifications(tx, [requirement.userId], requirementId, 'delivery', notificationTitle, notificationContent);
+
+        return {
+          id: created.id.toString(),
+          title: created.title,
+          description: created.description,
+          fileName: created.fileName,
+          isFinal: created.isFinal,
+          createdAt: created.createdAt,
+          uploader: {
+            id: created.uploader.id.toString(),
+            username: created.uploader.username,
+            role: created.uploader.role,
+          },
+        };
+      });
+    } catch (error) {
+      await rm(persistedFile.filePath, { force: true });
+      throw error;
+    }
   }
 
   async createMessage(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateMessageDto) {
@@ -956,6 +1135,37 @@ export class RequirementsService {
         updatedAt: updated.updatedAt,
       };
     });
+  }
+
+  async downloadDeliveryFile(userId: bigint, requirementId: bigint, deliveryId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const delivery = await this.prisma.delivery.findFirst({
+      where: {
+        id: deliveryId,
+        requirementId,
+      },
+      select: {
+        fileUrl: true,
+        fileName: true,
+      },
+    });
+
+    if (!delivery?.fileUrl || !delivery.fileName) {
+      throw new NotFoundException('交付文件不存在');
+    }
+
+    const safeFilePath = this.ensureSafeDeliveryPath(delivery.fileUrl);
+    try {
+      await stat(safeFilePath);
+    } catch {
+      throw new NotFoundException('交付文件不存在');
+    }
+
+    return {
+      path: safeFilePath,
+      fileName: delivery.fileName,
+    };
   }
 
   async listNotifications(userId: bigint, query: ListNotificationsDto) {
@@ -1573,7 +1783,7 @@ export class RequirementsService {
         select: { batchNo: true },
       });
 
-      return tx.datasetBatch.create({
+      const created = await tx.datasetBatch.create({
         data: {
           requirementId,
           uploadedBy: userId,
@@ -1584,6 +1794,27 @@ export class RequirementsService {
           fileCount,
         },
       });
+
+      if (role === UserRole.user) {
+        const requirement = await tx.requirement.findUnique({
+          where: { id: requirementId },
+          select: { title: true },
+        });
+        const admins = await tx.user.findMany({
+          where: { role: UserRole.admin },
+          select: { id: true },
+        });
+        await this.createNotifications(
+          tx,
+          admins.map((item) => item.id),
+          requirementId,
+          'data_upload',
+          '收到新的用户数据上传，请在管理侧查看',
+          `需求「${requirement?.title || requirementId.toString()}」有新的数据上传，请及时处理。`,
+        );
+      }
+
+      return created;
     });
 
     void this.processDatasetBatch(batch, requirementId, dto.remark, files).catch(async () => {

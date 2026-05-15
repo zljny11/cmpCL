@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthUser } from '../../types/auth-user';
+import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
@@ -47,6 +48,40 @@ export class RequirementsController {
     @Body() dto: CreateMessageDto,
   ) {
     return this.requirementsService.createMessage(BigInt(user.id), BigInt(id), user.role, dto);
+  }
+
+  @Get(':id/deliveries')
+  listDeliveries(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.requirementsService.listDeliveries(BigInt(user.id), BigInt(id), user.role);
+  }
+
+  @Post(':id/deliveries')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  createDelivery(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateDeliveryDto,
+    @UploadedFile() file?: { originalname: string; buffer: Buffer; mimetype: string },
+  ) {
+    return this.requirementsService.createDelivery(BigInt(user.id), BigInt(id), user.role, dto, file);
+  }
+
+  @Get(':id/deliveries/:deliveryId/file')
+  async downloadDeliveryFile(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('deliveryId', ParseIntPipe) deliveryId: number,
+    @Res() res: Response,
+  ) {
+    const file = await this.requirementsService.downloadDeliveryFile(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(deliveryId),
+      user.role,
+    );
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"`);
+    res.sendFile(file.path);
   }
 
   @Patch(':id/status')
