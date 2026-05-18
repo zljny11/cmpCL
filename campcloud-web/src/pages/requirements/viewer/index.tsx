@@ -148,7 +148,7 @@ export function RequirementViewerPage() {
       }
     }
 
-    loadStack();
+    void initAndLoad();
 
     return () => {
       cancelled = true;
