@@ -103,6 +103,27 @@ export const requirementsApi = {
     return response.data;
   },
 
+  async getViewerImageIds(seriesIds: string[]) {
+    const response = (await http.post('/getImgIdArr', { seriesIds })) as ApiResponse<string[][]>;
+    return response.data;
+  },
+
+  async getViewerDicomTags(seriesIds: string[]) {
+    const response = (await http.post('/getDICOMTagInfo', { seriesIds })) as ApiResponse<string[][][]>;
+    return response.data;
+  },
+
+  async downloadViewerSeries(
+    seriesIds: string[],
+    options?: { onDownloadProgress?: (event: AxiosProgressEvent) => void },
+  ) {
+    const blob = (await http.post('/downloadSeries', { seriesIds }, {
+      responseType: 'blob',
+      onDownloadProgress: options?.onDownloadProgress,
+    })) as unknown as Blob;
+    return blob;
+  },
+
   async deleteSeries(requirementId: string, seriesId: string) {
     const response = (await http.delete(`/requirements/${requirementId}/series/${seriesId}`)) as ApiResponse<{
       success: boolean;
