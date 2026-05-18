@@ -73,10 +73,9 @@ export function AdminRequirementDetailPage() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
-        <Typography.Title level={3} style={{ marginBottom: 8 }}>
+        <Typography.Title level={3} style={{ marginBottom: 0 }}>
           管理侧需求详情
         </Typography.Title>
-        <Typography.Text type="secondary">更新处理状态、回复用户补充信息，并跟踪当前需求进度。</Typography.Text>
       </div>
 
       {data ? (

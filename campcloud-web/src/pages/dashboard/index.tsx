@@ -8,32 +8,9 @@ import { notificationsApi } from '../../services/api/notifications';
 import { profileApi } from '../../services/api/profile';
 import { requirementsApi } from '../../services/api/requirements';
 import { RequirementListItem } from '../../types/requirements';
+import { isProfileComplete } from '../../utils/profileCompletion';
 import { renderRequirementStatus, renderRequirementType } from '../requirements/list/helpers';
 import './index.less';
-
-function isProfileComplete(profile?: {
-  realName?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  wechat?: string | null;
-  department?: string | null;
-  title?: string | null;
-  hospitalName?: string | null;
-} | null) {
-  if (!profile) {
-    return false;
-  }
-
-  return Boolean(
-    profile.realName &&
-      profile.email &&
-      profile.phone &&
-      profile.wechat &&
-      profile.hospitalName &&
-      profile.department &&
-      profile.title,
-  );
-}
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -93,7 +70,7 @@ export function DashboardPage() {
 
     Modal.info({
       title: '您的需求有回复了',
-      content: '请在消息通知栏目查看最新处理进展与留言回复。',
+      content: '请及时查看需求列表中的最新处理进展与留言回复。',
       okText: '知道了',
     });
   }, [isAdmin, unreadNotifications]);
@@ -160,7 +137,7 @@ export function DashboardPage() {
                   message={`有 ${waitingUserCount} 条需求待我响应`}
                   description="这些需求当前处于受理中（需补充数据），请尽快补充所需数据或说明。"
                   action={
-                    <Link to="/notifications">
+                    <Link to="/requirements">
                       <Button size="small">去查看</Button>
                     </Link>
                   }
@@ -173,7 +150,7 @@ export function DashboardPage() {
                   message={`有 ${unreadCount} 条未读提醒`}
                   description="建议优先查看最近有状态变化或留言更新的需求。"
                   action={
-                    <Link to="/notifications">
+                    <Link to="/requirements">
                       <Button size="small">去处理</Button>
                     </Link>
                   }
@@ -199,7 +176,7 @@ export function DashboardPage() {
                   message={`有 ${unreadNotifications.length} 条未读通知`}
                   description="这些通知来自用户补充留言或需求动态，请优先查看。"
                   action={
-                    <Link to="/notifications">
+                    <Link to="/admin/requirements">
                       <Button size="small">去查看</Button>
                     </Link>
                   }

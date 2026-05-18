@@ -69,10 +69,12 @@ const DEFAULT_FPS = 24;
 
 type ViewerMode = 'stack' | 'mpr' | 'mip';
 type ViewerOrientation = keyof typeof OrientationAxis;
+type TagQuadrants = string[][];
+type TagFrames = TagQuadrants[];
 
 type ViewerSeries = RequirementSeriesPreviewItem & {
   imageIds: string[];
-  tagInfo: string[][];
+  tagInfo: TagFrames;
   volumeId: string;
   previewImageId: string | null;
 };
@@ -174,6 +176,32 @@ function safeTagBlock(tagInfo: string[][] | undefined, index: number) {
   return Array.isArray(tagInfo?.[index]) ? tagInfo![index] : [];
 }
 
+function isTagQuadrants(value: unknown): value is TagQuadrants {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) => Array.isArray(item) && item.every((line) => typeof line === 'string'),
+    )
+  );
+}
+
+function normalizeTagFrames(value: unknown): TagFrames {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+
+  if (isTagQuadrants(value)) {
+    return [value];
+  }
+
+  if (value.every((frame) => isTagQuadrants(frame))) {
+    return value as TagFrames;
+  }
+
+  return [];
+}
+
 function triggerDownload(blob: Blob, fileName: string) {
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -271,11 +299,13 @@ function SeriesThumbnail({
   return (
     <div
       className={`cc-viewer-sider-item${active ? ' is-active' : ''}`}
-      draggable
-      onDragStart={(event) => event.dataTransfer.setData('seriesId', series.id)}
       onClick={onAssign}
     >
-      <div className="cc-viewer-sider-item__thumb">
+      <div
+        className="cc-viewer-sider-item__thumb"
+        draggable
+        onDragStart={(event) => event.dataTransfer.setData('seriesId', series.id)}
+      >
         <div ref={elementRef} className="cc-viewer-sider-item__thumb-canvas" />
       </div>
       <div className="cc-viewer-sider-item__meta">
@@ -468,18 +498,32 @@ function DicomViewport({
     const element = elementRef.current;
     if (!element) return;
 
-    const updateStack = (event: Event) => {
-      const detail = (event as CustomEvent<{ imageIdIndex?: number }>).detail;
-      if (typeof detail?.imageIdIndex === 'number') {
-        setRuntimeState((current) => ({ ...current, imageIndex: (detail.imageIdIndex ?? 0) + 1 }));
-      }
+    const updateStack = () => {
+      const renderingEngine = getRenderingEngine(RENDERING_ENGINE_ID);
+      const viewport = renderingEngine?.getViewport(viewportId) as csTypes.IStackViewport | undefined;
+      if (!viewport || viewport.type !== ViewportType.STACK) return;
+      const currentIndex = viewport.getCurrentImageIdIndex();
+      const imageIds = viewport.getImageIds();
+      setRuntimeState((current) => ({
+        ...current,
+        imageIndex: currentIndex + 1,
+        totalFrames: imageIds.length || current.totalFrames,
+      }));
     };
 
     const updateVolume = () => {
       const renderingEngine = getRenderingEngine(RENDERING_ENGINE_ID);
-      const viewport = renderingEngine?.getViewport(viewportId) as csTypes.IVolumeViewport | undefined;
-      if (!viewport || viewport.type === ViewportType.STACK) return;
-      const sliceData = csCoreUtils.getImageSliceDataForVolumeViewport(viewport);
+      const viewport = renderingEngine?.getViewport(viewportId) as
+        | csTypes.IVolumeViewport
+        | csTypes.IStackViewport
+        | undefined;
+      if (!viewport) return;
+      if (viewport.type === ViewportType.STACK) {
+        updateStack();
+        return;
+      }
+      const volumeViewport = viewport as csTypes.IVolumeViewport;
+      const sliceData = csCoreUtils.getImageSliceDataForVolumeViewport(volumeViewport);
       if (sliceData) {
         setRuntimeState((current) => ({
           ...current,
@@ -506,7 +550,7 @@ function DicomViewport({
       element.removeEventListener(Events.CAMERA_MODIFIED, updateVolume);
       element.removeEventListener(Events.IMAGE_LOAD_ERROR, imageLoadError);
     };
-  }, [viewportId]);
+  }, [viewportId, series?.id]);
 
   useEffect(() => {
     const element = elementRef.current;
@@ -564,7 +608,11 @@ function DicomViewport({
     csCoreUtils.jumpToSlice(viewport.element, { imageIndex: targetIndex });
   };
 
-  const tagInfo = series?.tagInfo ?? [];
+  const tagFrames = series?.tagInfo ?? [];
+  const tagInfo =
+    tagFrames[Math.max(runtimeState.imageIndex - 1, 0)] ??
+    tagFrames[0] ??
+    [];
 
   return (
     <div
@@ -716,7 +764,7 @@ export function RequirementViewerPage() {
         return {
           ...series,
           imageIds,
-          tagInfo: tagGroups[index] ?? [],
+          tagInfo: normalizeTagFrames(tagGroups[index]),
           volumeId: `${VOLUME_ID_PREFIX}${series.id}`,
           previewImageId: imageIds[Math.floor(imageIds.length / 2)] ?? null,
         };
@@ -857,6 +905,11 @@ export function RequirementViewerPage() {
       return;
     }
 
+    if (value === 'cancel') {
+      setViewportModes((current) => ({ ...current, [activeViewportId]: 'mpr' }));
+      return;
+    }
+
     const nextThickness = value === 'MAX' ? 999 : Number(value);
     setViewportMipThicknesses((current) => ({ ...current, [activeViewportId]: nextThickness }));
     setViewportModes((current) => ({ ...current, [activeViewportId]: 'mip' }));
@@ -938,9 +991,9 @@ export function RequirementViewerPage() {
     { key: 'cancel', label: '取消', onClick: () => handleMpr('cancel') },
   ];
 
-  const mipItems: MenuProps['items'] = ['5', '10', '30', 'MAX'].map((key) => ({
+  const mipItems: MenuProps['items'] = ['5', '10', '30', 'MAX', 'cancel'].map((key) => ({
     key,
-    label: key,
+    label: key === 'cancel' ? '取消' : key,
     onClick: () => handleMip(key),
   }));
 

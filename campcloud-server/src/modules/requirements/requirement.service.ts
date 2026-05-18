@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
+import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -39,6 +39,11 @@ type ParsedDicomRecord = {
   uploadedAt: Date | null;
   storagePath: string;
   originalname: string;
+};
+
+type FailedDatasetFileRecord = {
+  originalName: string;
+  reason: string;
 };
 
 @Injectable()
@@ -171,6 +176,158 @@ export class RequirementsService {
     return date;
   }
 
+  private formatUtcDate(value: Date | null | undefined) {
+    if (!value) {
+      return null;
+    }
+    return value.toISOString().slice(0, 10);
+  }
+
+  private formatUtcDateTime(value: Date | null | undefined) {
+    if (!value) {
+      return null;
+    }
+    return value.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  private formatPatientAge(value: string | undefined | null) {
+    const normalized = this.normalizeText(value);
+    if (!normalized) {
+      return null;
+    }
+    const matched = normalized.match(/^(\d+)([DWMY])$/i);
+    if (!matched) {
+      return normalized;
+    }
+    const [, amount, unit] = matched;
+    const suffixMap: Record<string, string> = {
+      D: 'D',
+      W: 'W',
+      M: 'M',
+      Y: 'Y',
+    };
+    return `${Number(amount)}${suffixMap[unit.toUpperCase()]}`;
+  }
+
+  private compactTagLines(values: Array<string | null | undefined>) {
+    return values
+      .map((value) => this.normalizeText(value))
+      .filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
+  }
+
+  private readDicomValue(dataSet: dicomParser.DataSet, tag: string) {
+    return this.normalizeText(dataSet.string(tag));
+  }
+
+  private readFirstDicomValue(dataSet: dicomParser.DataSet, tag: string) {
+    const value = this.readDicomValue(dataSet, tag);
+    if (!value) {
+      return null;
+    }
+    return value.split('\\').map((item) => item.trim()).find(Boolean) ?? null;
+  }
+
+  private formatCompactStudyDateTime(value: Date | null | undefined) {
+    if (!value) {
+      return null;
+    }
+    return value.toISOString().slice(0, 19).replace(/[-:T]/g, '');
+  }
+
+  private padTagNumber(value: string | null | undefined, width = 3) {
+    const normalized = this.normalizeText(value);
+    if (!normalized) {
+      return null;
+    }
+    const digits = normalized.replace(/\D/g, '');
+    if (!digits) {
+      return normalized;
+    }
+    return digits.slice(-width).padStart(width, '0');
+  }
+
+  private formatMeasurement(label: string, value: string | null | undefined) {
+    const normalized = this.readNumericToken(value);
+    return normalized ? `${label} ${normalized}` : null;
+  }
+
+  private readNumericToken(value: string | null | undefined) {
+    const normalized = this.normalizeText(value);
+    if (!normalized) {
+      return null;
+    }
+    return normalized.split('\\')[0]?.trim() || null;
+  }
+
+  private formatDurationTag(value: string | null | undefined) {
+    const numeric = Number(this.readNumericToken(value));
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return null;
+    }
+    const minutes = Math.floor(numeric / 60)
+      .toString()
+      .padStart(2, '0');
+    const seconds = (numeric % 60).toFixed(2).padStart(5, '0');
+    return `${minutes}.${seconds}`;
+  }
+
+  private formatFieldOfView(dataSet: dicomParser.DataSet, rows?: number, columns?: number) {
+    const reconstructionDiameter = Number(this.readNumericToken(this.readDicomValue(dataSet, 'x00181100')));
+    if (Number.isFinite(reconstructionDiameter) && reconstructionDiameter > 0) {
+      const formatted = Number.isInteger(reconstructionDiameter)
+        ? reconstructionDiameter.toString()
+        : reconstructionDiameter.toFixed(1);
+      return `FoV ${formatted}*${formatted}`;
+    }
+
+    const pixelSpacing = this.readDicomValue(dataSet, 'x00280030');
+    if (!pixelSpacing || !rows || !columns) {
+      return null;
+    }
+
+    const [rowSpacingRaw, columnSpacingRaw] = pixelSpacing.split('\\');
+    const rowSpacing = Number(rowSpacingRaw);
+    const columnSpacing = Number(columnSpacingRaw ?? rowSpacingRaw);
+    if (!Number.isFinite(rowSpacing) || !Number.isFinite(columnSpacing)) {
+      return null;
+    }
+
+    const height = rowSpacing * rows;
+    const width = columnSpacing * columns;
+    const format = (value: number) => (Number.isInteger(value) ? value.toString() : value.toFixed(1));
+    return `FoV ${format(width)}*${format(height)}`;
+  }
+
+  private deriveImageOrientationLabel(dataSet: dicomParser.DataSet) {
+    const orientation = this.readDicomValue(dataSet, 'x00200037');
+    if (!orientation) {
+      return null;
+    }
+
+    const values = orientation
+      .split('\\')
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item));
+    if (values.length < 6) {
+      return null;
+    }
+
+    const [rx, ry, rz, cx, cy, cz] = values;
+    const nx = ry * cz - rz * cy;
+    const ny = rz * cx - rx * cz;
+    const nz = rx * cy - ry * cx;
+    const abs = [Math.abs(nx), Math.abs(ny), Math.abs(nz)];
+    const max = Math.max(...abs);
+
+    if (max === abs[0]) {
+      return 'Sag';
+    }
+    if (max === abs[1]) {
+      return 'Cor';
+    }
+    return 'Ax';
+  }
+
   private buildFallbackUid(prefix: 'patient' | 'study' | 'series', values: Array<string | null>) {
     const source = values.map((value) => value ?? '').join('|');
     return `${prefix}_${createHash('sha1').update(source).digest('hex')}`;
@@ -184,6 +341,43 @@ export class RequirementsService {
     const extension = extname(originalname) || '.dcm';
     const base = originalname.slice(0, originalname.length - extension.length) || `file_${index + 1}`;
     return `${this.sanitizePathSegment(base)}${extension}`;
+  }
+
+  private getDatasetBatchRoot(requirementId: bigint, batchNo: number) {
+    return join(this.uploadRoots[0], requirementId.toString(), `batch-${batchNo}`);
+  }
+
+  private getFailedDatasetFilesManifestPath(requirementId: bigint, batchNo: number) {
+    return join(this.getDatasetBatchRoot(requirementId, batchNo), '_failed-files.json');
+  }
+
+  private async writeFailedDatasetFilesManifest(
+    requirementId: bigint,
+    batchNo: number,
+    records: FailedDatasetFileRecord[],
+  ) {
+    const manifestPath = this.getFailedDatasetFilesManifestPath(requirementId, batchNo);
+    await writeFile(manifestPath, JSON.stringify(records, null, 2), 'utf8');
+  }
+
+  private async readFailedDatasetFilesManifest(requirementId: bigint, batchNo: number) {
+    const manifestPath = this.getFailedDatasetFilesManifestPath(requirementId, batchNo);
+    try {
+      const raw = await readFile(manifestPath, 'utf8');
+      const parsed = JSON.parse(raw) as FailedDatasetFileRecord[];
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.filter(
+        (item) =>
+          typeof item?.originalName === 'string' &&
+          item.originalName.trim() &&
+          typeof item?.reason === 'string' &&
+          item.reason.trim(),
+      );
+    } catch {
+      return [];
+    }
   }
 
   private ensureSafePathInRoots(storagePath: string, roots: string[]) {
@@ -348,17 +542,132 @@ export class RequirementsService {
     }));
   }
 
-  private async parsePacsTagInfo(filePath: string) {
+  private async parsePacsTagInfo(
+    _series: {
+      seriesUid: string;
+      seriesDescription: string | null;
+      hospitalName: string | null;
+      study: {
+        modality: string | null;
+        studyDescription: string | null;
+        studyDate: Date | null;
+        patient: {
+          patientUid: string;
+          patientId: string | null;
+          patientName: string | null;
+          sex: string | null;
+          birthday: Date | null;
+        };
+      };
+    },
+    filePath: string,
+  ) {
     const file = await readFile(filePath);
     const dataSet = dicomParser.parseDicom(new Uint8Array(file));
     const rows = dataSet.uint16('x00280010');
     const columns = dataSet.uint16('x00280011');
+    const patientName = this.normalizePatientName(dataSet.string('x00100010'));
+    const patientId = this.readDicomValue(dataSet, 'x00100020');
+    const patientSex = this.readDicomValue(dataSet, 'x00100040');
+    const patientAge = this.formatPatientAge(dataSet.string('x00101010'));
+    const birthday = this.formatUtcDate(this.parseDicomDate(dataSet.string('x00100030')));
+    const institution = this.readDicomValue(dataSet, 'x00080080');
+    const modality = this.readDicomValue(dataSet, 'x00080060');
+    const seriesDescription = this.readDicomValue(dataSet, 'x0008103e');
+    const protocolName = this.readDicomValue(dataSet, 'x00181030');
+    const bodyPart = this.readDicomValue(dataSet, 'x00180015');
+    const manufacturer = this.readDicomValue(dataSet, 'x00080070');
+    const modelName = this.readDicomValue(dataSet, 'x00081090');
+    const softwareVersions = this.readDicomValue(dataSet, 'x00181020');
+    const studyIdTag = this.readDicomValue(dataSet, 'x00200010');
+    const accessionNumber = this.readDicomValue(dataSet, 'x00080050');
+    const rawStudyDate = this.readDicomValue(dataSet, 'x00080020');
+    const rawStudyTime = this.readDicomValue(dataSet, 'x00080030');
+    const sliceThickness = this.readDicomValue(dataSet, 'x00180050');
+    const studyDateTime = this.formatUtcDateTime(
+      this.parseDicomDateTime(dataSet.string('x00080020'), dataSet.string('x00080030')),
+    );
+    const compactStudyDateTime = this.formatCompactStudyDateTime(
+      this.parseDicomDateTime(dataSet.string('x00080020'), dataSet.string('x00080030')),
+    );
+    const windowCenter = this.readDicomValue(dataSet, 'x00281050');
+    const windowWidth = this.readDicomValue(dataSet, 'x00281051');
+    const repetitionTime = this.readDicomValue(dataSet, 'x00180080');
+    const echoTime = this.readDicomValue(dataSet, 'x00180081');
+    const privateAcquisitionTime = this.readDicomValue(dataSet, 'x0051100a');
+    const privateImageType = this.readDicomValue(dataSet, 'x00511016');
+    const privateFieldOfView = this.readDicomValue(dataSet, 'x0051100c');
+    const privateSpacing = this.readDicomValue(dataSet, 'x0051100d');
+    const privateCoil = this.readDicomValue(dataSet, 'x0051100f');
+    const privateOrientation = this.readDicomValue(dataSet, 'x0051100e');
+    const privateSliceThickness = this.readDicomValue(dataSet, 'x00511017');
+    const acquisitionDuration = this.formatDurationTag(
+      this.readDicomValue(dataSet, 'x00189073') ?? this.readDicomValue(dataSet, 'x00181063'),
+    );
+    const pixelBandwidth = this.readDicomValue(dataSet, 'x00180095');
+    const mrAcquisitionType = this.readDicomValue(dataSet, 'x00180023');
+    const receiveCoilName = this.readDicomValue(dataSet, 'x00181250');
+    const sequenceName = this.readDicomValue(dataSet, 'x00180024');
+    const spacingBetweenSlices = this.readDicomValue(dataSet, 'x00180088');
+    const imageOrientation = this.deriveImageOrientationLabel(dataSet);
+    const patientPosition = this.readDicomValue(dataSet, 'x00185100');
+    const instanceNumber = this.padTagNumber(this.readDicomValue(dataSet, 'x00200013'));
+    const fieldOfView = privateFieldOfView ?? this.formatFieldOfView(dataSet, rows, columns);
+    const imageTypeDescriptor =
+      privateImageType ??
+      this.readDicomValue(dataSet, 'x00080008')?.replace(/\\/g, '/');
+    const acquisitionDescriptor = [modality === 'MR' ? 'MR' : modality, mrAcquisitionType]
+      .filter(Boolean)
+      .join('/');
+    const diffusionDescriptor = [protocolName, imageTypeDescriptor]
+      .filter((value) => value && value !== 'None')
+      .join(' / ');
+    const patientMetaLine = [birthday ? birthday.replace(/-/g, '') : null, patientSex, patientAge]
+      .filter(Boolean)
+      .join(' , ');
+    const leftBottomTaLine = privateAcquisitionTime ?? (acquisitionDuration ? `TA ${acquisitionDuration}` : null);
+    const leftBottomImageType = diffusionDescriptor || acquisitionDescriptor || imageTypeDescriptor;
+    const rightBottomSpacing = privateSpacing ?? (spacingBetweenSlices ? `SP ${spacingBetweenSlices}` : null);
+    const rightBottomSliceThickness = privateSliceThickness ?? (sliceThickness ? `SL ${sliceThickness}` : null);
+    const rightBottomOrientation = privateOrientation ?? imageOrientation;
+    const rightBottomCoil = privateCoil;
+    const rightBottomSequence = sequenceName;
+    const rightBottomWindowWidth = this.readFirstDicomValue(dataSet, 'x00281051');
+    const rightBottomWindowCenter = this.readFirstDicomValue(dataSet, 'x00281050');
 
     return [
-      [rows ? `Rows: ${rows}` : null, columns ? `Columns: ${columns}` : null].filter(Boolean),
-      [dataSet.string('x00100020'), dataSet.string('x0008103e')].filter(Boolean),
-      [dataSet.string('x00180050')].filter(Boolean),
-      [dataSet.string('x00080080')].filter(Boolean),
+      this.compactTagLines([patientName, patientId, patientMetaLine, seriesDescription]),
+      this.compactTagLines([
+        studyIdTag ?? (compactStudyDateTime && modality ? `${modality}${compactStudyDateTime}` : compactStudyDateTime ?? modality),
+        rawStudyDate,
+        rawStudyTime,
+        accessionNumber ?? instanceNumber,
+        institution,
+        modelName,
+        softwareVersions,
+        patientPosition,
+      ]),
+      this.compactTagLines([
+        this.formatMeasurement('TR', repetitionTime),
+        this.formatMeasurement('TE', echoTime),
+        leftBottomTaLine,
+        this.formatMeasurement('BW', pixelBandwidth),
+        leftBottomImageType,
+      ]),
+      this.compactTagLines([
+        rightBottomCoil ?? (receiveCoilName ? `C:${receiveCoilName}` : null),
+        rightBottomSequence,
+        rightBottomSpacing,
+        rightBottomSliceThickness,
+        fieldOfView,
+        rightBottomOrientation,
+        this.formatMeasurement('W', rightBottomWindowWidth),
+        this.formatMeasurement('C', rightBottomWindowCenter),
+        protocolName && protocolName !== 'None' ? protocolName : null,
+        bodyPart,
+        manufacturer,
+        studyDateTime && !studyIdTag ? studyDateTime : null,
+      ]),
     ];
   }
 
@@ -434,6 +743,7 @@ export class RequirementsService {
   ) {
     const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo, files);
     const parsedRecords: ParsedDicomRecord[] = [];
+    const failedFiles: FailedDatasetFileRecord[] = [];
     let failedCount = 0;
 
     for (let index = 0; index < files.length; index += 1) {
@@ -446,10 +756,16 @@ export class RequirementsService {
         const storagePath = join(seriesDir, filename);
         await writeFile(storagePath, file.buffer);
         parsedRecords.push({ ...tempRecord, storagePath });
-      } catch {
+      } catch (error) {
         failedCount += 1;
+        failedFiles.push({
+          originalName: file.originalname,
+          reason: error instanceof Error ? error.message : 'DICOM解析失败',
+        });
       }
     }
+
+    await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, failedFiles);
 
     if (parsedRecords.length === 0) {
       await this.prisma.datasetBatch.update({
@@ -646,6 +962,14 @@ export class RequirementsService {
     const pageSize = query.pageSize ?? 10;
     const where: Prisma.RequirementWhereInput = {
       ...(role === UserRole.admin ? {} : { userId }),
+      ...(query.type ? { type: query.type } : {}),
+      ...(role === UserRole.admin && query.hospitalName
+        ? {
+            user: {
+              hospitalName: { contains: query.hospitalName },
+            },
+          }
+        : {}),
       ...(query.status ? { status: query.status as RequirementStatus } : {}),
       ...(query.keyword
         ? {
@@ -1369,9 +1693,9 @@ export class RequirementsService {
       orderedSeries.map(async (series) => {
         const files = await this.listSeriesFileEntries(series);
         if (files.length === 0) {
-          return [[], [], [], []];
+          return [];
         }
-        return this.parsePacsTagInfo(files[0].filePath);
+        return Promise.all(files.map((file) => this.parsePacsTagInfo(series, file.filePath)));
       }),
     );
   }
@@ -1776,24 +2100,83 @@ export class RequirementsService {
       throw new BadRequestException('请上传文件');
     }
 
-    const batch = await this.prisma.$transaction(async (tx) => {
-      const lastBatch = await tx.datasetBatch.findFirst({
-        where: { requirementId },
-        orderBy: { batchNo: 'desc' },
-        select: { batchNo: true },
-      });
+    const trimmedSourceName = dto.sourceName?.trim() || null;
+    const trimmedRemark = dto.remark?.trim() || null;
+    const retryBatchId = dto.retryBatchId ? BigInt(dto.retryBatchId) : null;
 
-      const created = await tx.datasetBatch.create({
-        data: {
-          requirementId,
-          uploadedBy: userId,
-          batchNo: (lastBatch?.batchNo ?? 0) + 1,
-          uploadType: lastBatch ? DatasetUploadType.supplement : DatasetUploadType.initial,
-          sourceName: dto.sourceName?.trim() || null,
-          remark: dto.remark?.trim() || null,
-          fileCount,
-        },
-      });
+    const batch = await this.prisma.$transaction(async (tx) => {
+      let createdOrUpdated:
+        | {
+            id: bigint;
+            batchNo: number;
+            status: DatasetBatchStatus;
+            fileCount: number;
+            uploadedAt: Date;
+          }
+        | null = null;
+
+      if (retryBatchId) {
+        const existingBatch = await tx.datasetBatch.findFirst({
+          where: {
+            id: retryBatchId,
+            requirementId,
+          },
+          select: {
+            id: true,
+            batchNo: true,
+            uploadType: true,
+            fileCount: true,
+          },
+        });
+
+        if (!existingBatch) {
+          throw new NotFoundException('重传批次不存在');
+        }
+
+        createdOrUpdated = await tx.datasetBatch.update({
+          where: { id: existingBatch.id },
+          data: {
+            uploadedBy: userId,
+            sourceName: trimmedSourceName,
+            remark: trimmedRemark,
+            status: 'uploaded',
+            fileCount: { increment: fileCount },
+            uploadedAt: new Date(),
+          },
+          select: {
+            id: true,
+            batchNo: true,
+            status: true,
+            fileCount: true,
+            uploadedAt: true,
+          },
+        });
+      } else {
+        const lastBatch = await tx.datasetBatch.findFirst({
+          where: { requirementId },
+          orderBy: { batchNo: 'desc' },
+          select: { batchNo: true },
+        });
+
+        createdOrUpdated = await tx.datasetBatch.create({
+          data: {
+            requirementId,
+            uploadedBy: userId,
+            batchNo: (lastBatch?.batchNo ?? 0) + 1,
+            uploadType: lastBatch ? DatasetUploadType.supplement : DatasetUploadType.initial,
+            sourceName: trimmedSourceName,
+            remark: trimmedRemark,
+            fileCount,
+          },
+          select: {
+            id: true,
+            batchNo: true,
+            status: true,
+            fileCount: true,
+            uploadedAt: true,
+          },
+        });
+      }
 
       if (role === UserRole.user) {
         const requirement = await tx.requirement.findUnique({
@@ -1810,19 +2193,19 @@ export class RequirementsService {
           requirementId,
           'data_upload',
           '收到新的用户数据上传，请在管理侧查看',
-          `需求「${requirement?.title || requirementId.toString()}」有新的数据上传，请及时处理。`,
+          `需求「${requirement?.title || requirementId.toString()}」有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
         );
       }
 
-      return created;
+      return createdOrUpdated;
     });
 
-    void this.processDatasetBatch(batch, requirementId, dto.remark, files).catch(async () => {
+    void this.processDatasetBatch(batch, requirementId, trimmedRemark, files).catch(async () => {
       await this.prisma.datasetBatch.update({
         where: { id: batch.id },
         data: {
           status: 'failed',
-          remark: dto.remark?.trim() ? `${dto.remark.trim()}；后台解析失败` : '后台解析失败',
+          remark: trimmedRemark ? `${trimmedRemark}；后台解析失败` : '后台解析失败',
         },
       });
     });
@@ -1866,24 +2249,64 @@ export class RequirementsService {
       }),
     ]);
 
+    const items = await Promise.all(
+      list.map(async (item) => {
+        const failedFiles = await this.readFailedDatasetFilesManifest(requirementId, item.batchNo);
+        return {
+          id: item.id.toString(),
+          batchNo: item.batchNo,
+          uploadType: item.uploadType,
+          sourceName: item.sourceName,
+          fileCount: item.fileCount,
+          failedFileCount: failedFiles.length,
+          status: item.status,
+          remark: item.remark,
+          uploadedAt: item.uploadedAt,
+          uploader: {
+            id: item.uploader.id.toString(),
+            username: item.uploader.username,
+          },
+        };
+      }),
+    );
+
     return {
-      list: list.map((item) => ({
-        id: item.id.toString(),
-        batchNo: item.batchNo,
-        uploadType: item.uploadType,
-        sourceName: item.sourceName,
-        fileCount: item.fileCount,
-        status: item.status,
-        remark: item.remark,
-        uploadedAt: item.uploadedAt,
-        uploader: {
-          id: item.uploader.id.toString(),
-          username: item.uploader.username,
-        },
-      })),
+      list: items,
       total,
       page,
       pageSize,
+    };
+  }
+
+  async listDatasetBatchFailedFiles(userId: bigint, requirementId: bigint, batchId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const batch = await this.prisma.datasetBatch.findFirst({
+      where: {
+        id: batchId,
+        requirementId,
+      },
+      select: {
+        id: true,
+        batchNo: true,
+        fileCount: true,
+        status: true,
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('批次不存在');
+    }
+
+    const files = await this.readFailedDatasetFilesManifest(requirementId, batch.batchNo);
+
+    return {
+      batchId: batch.id.toString(),
+      batchNo: batch.batchNo,
+      fileCount: batch.fileCount,
+      failedFileCount: files.length,
+      status: batch.status,
+      files,
     };
   }
 }

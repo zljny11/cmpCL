@@ -29,4 +29,16 @@ export class ListRequirementsDto {
   @IsString()
   @MaxLength(200)
   keyword?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  type?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  hospitalName?: string;
 }

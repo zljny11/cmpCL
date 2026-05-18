@@ -4,18 +4,30 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { requirementsApi } from '../../services/api/requirements';
-import { RequirementListItem } from '../../types/requirements';
+import { RequirementListItem, RequirementType } from '../../types/requirements';
 import { renderRequirementStatus, renderRequirementType } from '../requirements/list/helpers';
 
 export function AdminRequirementListPage() {
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [hospitalNameInput, setHospitalNameInput] = useState('');
+  const [hospitalName, setHospitalName] = useState('');
+  const [typeInput, setTypeInput] = useState<RequirementType | undefined>();
+  const [type, setType] = useState<RequirementType | undefined>();
   const [statusInput, setStatusInput] = useState<string | undefined>();
   const [status, setStatus] = useState<string | undefined>();
 
   const requirementsQuery = useQuery({
-    queryKey: ['admin', 'requirements', keyword, status],
-    queryFn: () => requirementsApi.list({ page: 1, pageSize: 100, keyword: keyword || undefined, status }),
+    queryKey: ['admin', 'requirements', keyword, hospitalName, type, status],
+    queryFn: () =>
+      requirementsApi.list({
+        page: 1,
+        pageSize: 100,
+        keyword: keyword || undefined,
+        hospitalName: hospitalName || undefined,
+        type,
+        status,
+      }),
   });
 
   const items = requirementsQuery.data?.list ?? [];
@@ -23,10 +35,9 @@ export function AdminRequirementListPage() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
-        <Typography.Title level={3} style={{ marginBottom: 8 }}>
+        <Typography.Title level={3} style={{ marginBottom: 0 }}>
           管理侧需求
         </Typography.Title>
-        <Typography.Text type="secondary">查看用户提交的需求、处理状态与最新留言。</Typography.Text>
       </div>
 
       <Card>
@@ -37,6 +48,31 @@ export function AdminRequirementListPage() {
             onChange={(event) => setKeywordInput(event.target.value)}
             allowClear
             style={{ width: 280 }}
+          />
+          <Input
+            placeholder="筛选医院"
+            value={hospitalNameInput}
+            onChange={(event) => setHospitalNameInput(event.target.value)}
+            allowClear
+            style={{ width: 220 }}
+          />
+          <Select
+            placeholder="筛选需求类型"
+            allowClear
+            value={typeInput}
+            onChange={setTypeInput}
+            style={{ width: 220 }}
+            options={[
+              { label: 'CT超高分辨率', value: 'CT_SUPER_RESOLUTION' },
+              { label: 'CT降噪', value: 'CT_DENOISE' },
+              { label: 'MR超分辨率', value: 'MR_SUPER_RESOLUTION' },
+              { label: 'MR降噪', value: 'MR_DENOISE' },
+              { label: 'PET降噪', value: 'PET_DENOISE' },
+              { label: 'PET超分辨率', value: 'PET_SUPER_RESOLUTION' },
+              { label: 'SPECT断层显像降噪', value: 'SPECT_TOMOGRAPHIC_DENOISE' },
+              { label: 'SPECT平面显像降噪', value: 'SPECT_PLANAR_DENOISE' },
+              { label: '其他 / 自定义', value: 'OTHER' },
+            ]}
           />
           <Select
             placeholder="筛选状态"
@@ -55,6 +91,8 @@ export function AdminRequirementListPage() {
             type="primary"
             onClick={() => {
               setKeyword(keywordInput.trim());
+              setHospitalName(hospitalNameInput.trim());
+              setType(typeInput);
               setStatus(statusInput);
             }}
           >
@@ -64,6 +102,10 @@ export function AdminRequirementListPage() {
             onClick={() => {
               setKeywordInput('');
               setKeyword('');
+              setHospitalNameInput('');
+              setHospitalName('');
+              setTypeInput(undefined);
+              setType(undefined);
               setStatusInput(undefined);
               setStatus(undefined);
             }}

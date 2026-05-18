@@ -173,6 +173,20 @@ export class RequirementsController {
   ) {
     return this.requirementsService.listDatasetBatches(BigInt(user.id), BigInt(id), user.role, query);
   }
+
+  @Get(':id/dataset-batches/:batchId/failed-files')
+  listDatasetBatchFailedFiles(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('batchId', ParseIntPipe) batchId: number,
+  ) {
+    return this.requirementsService.listDatasetBatchFailedFiles(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(batchId),
+      user.role,
+    );
+  }
 }
 
 @ApiTags('notifications')

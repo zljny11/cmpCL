@@ -4,6 +4,7 @@ import { ApiResponse, PaginatedData } from '../../types/api';
 import {
   CreateRequirementDeliveryPayload,
   CreateDatasetBatchPayload,
+  DatasetBatchFailedFilesPayload,
   RequirementMessageItem,
   RequirementDeliveryItem,
   CreateRequirementPayload,
@@ -109,7 +110,7 @@ export const requirementsApi = {
   },
 
   async getViewerDicomTags(seriesIds: string[]) {
-    const response = (await http.post('/getDICOMTagInfo', { seriesIds })) as ApiResponse<string[][][]>;
+    const response = (await http.post('/getDICOMTagInfo', { seriesIds })) as ApiResponse<string[][][][]>;
     return response.data;
   },
 
@@ -138,6 +139,13 @@ export const requirementsApi = {
     return response.data;
   },
 
+  async listDatasetBatchFailedFiles(requirementId: string, batchId: string) {
+    const response = (await http.get(
+      `/requirements/${requirementId}/dataset-batches/${batchId}/failed-files`,
+    )) as ApiResponse<DatasetBatchFailedFilesPayload>;
+    return response.data;
+  },
+
   async createDatasetBatch(
     id: string,
     payload: CreateDatasetBatchPayload,
@@ -149,6 +157,9 @@ export const requirementsApi = {
     }
     if (payload.remark?.trim()) {
       formData.append('remark', payload.remark.trim());
+    }
+    if (payload.retryBatchId) {
+      formData.append('retryBatchId', payload.retryBatchId);
     }
     payload.files.forEach((file) => formData.append('files', file));
 

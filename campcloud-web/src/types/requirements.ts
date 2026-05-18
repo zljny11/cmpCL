@@ -54,6 +54,8 @@ export interface RequirementListQuery {
   pageSize: number;
   keyword?: string;
   status?: string;
+  type?: RequirementType;
+  hospitalName?: string;
 }
 
 export interface RequirementDetail {
@@ -213,6 +215,7 @@ export interface DatasetBatchItem {
   uploadType: DatasetUploadType;
   sourceName: string | null;
   fileCount: number;
+  failedFileCount: number;
   status: DatasetBatchStatus;
   remark: string | null;
   uploadedAt: string;
@@ -222,9 +225,24 @@ export interface DatasetBatchItem {
   };
 }
 
+export interface FailedDatasetBatchFileItem {
+  originalName: string;
+  reason: string;
+}
+
+export interface DatasetBatchFailedFilesPayload {
+  batchId: string;
+  batchNo: number;
+  fileCount: number;
+  failedFileCount: number;
+  status: DatasetBatchStatus;
+  files: FailedDatasetBatchFileItem[];
+}
+
 export interface CreateDatasetBatchPayload {
   sourceName?: string;
   remark?: string;
+  retryBatchId?: string;
   files: File[];
 }
 

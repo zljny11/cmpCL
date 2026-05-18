@@ -32,10 +32,13 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { RequirementListItem } from '../../types/requirements';
+import { useAuth } from '../../app/providers/auth-provider';
+import { profileApi } from '../../services/api/profile';
+import type { FailedDatasetBatchFileItem, RequirementListItem } from '../../types/requirements';
 import { requirementsApi } from '../../services/api/requirements';
 import { queryClient } from '../../services/query-client';
 import { DatasetBatchItem, DatasetBatchStatus, DatasetUploadType } from '../../types/requirements';
+import { isProfileComplete } from '../../utils/profileCompletion';
 import { useRequirementDataTree } from '../requirements/list/hooks';
 import { PatientLevel } from '../requirements/list/components/PatientLevel';
 
@@ -51,9 +54,93 @@ const batchStatusLabelMap: Record<DatasetBatchStatus, string> = {
   failed: '解析失败',
 };
 
+function FailedFilesPanel({
+  requirementId,
+  batch,
+  onRetry,
+}: {
+  requirementId: string;
+  batch: DatasetBatchItem;
+  onRetry: (failedFiles: FailedDatasetBatchFileItem[]) => void;
+}) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['requirements', requirementId, 'dataset-batch-failed-files', batch.id],
+    queryFn: () => requirementsApi.listDatasetBatchFailedFiles(requirementId, batch.id),
+    enabled: batch.failedFileCount > 0,
+    staleTime: 30_000,
+  });
+
+  if (isLoading) {
+    return <Card size="small" loading />;
+  }
+
+  if (isError) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="失败文件明细加载失败"
+        action={<Button size="small" onClick={() => void refetch()}>重试</Button>}
+      />
+    );
+  }
+
+  const failedFiles = data?.files ?? [];
+  const hasLegacyFailure = batch.failedFileCount === 0 && (batch.status === 'failed' || batch.remark?.includes('解析失败'));
+
+  return (
+    <Card
+      size="small"
+      title={hasLegacyFailure ? '失败文件明细不可用' : `失败文件 ${failedFiles.length} 个`}
+      extra={
+        failedFiles.length ? (
+          <Button size="small" type="primary" onClick={() => onRetry(failedFiles)}>
+            重传失败文件
+          </Button>
+        ) : hasLegacyFailure ? (
+          <Button
+            size="small"
+            onClick={() => {
+              onRetry([]);
+            }}
+          >
+            重新上传本批次
+          </Button>
+        ) : null
+      }
+    >
+      {hasLegacyFailure ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="这是旧批次历史数据"
+          description="当时系统只记录了失败数量，没有保存失败文件名和原因，所以现在无法准确指出是哪一个文件失败。可以重新上传原始文件夹，或按你的本地记录手动补传。"
+        />
+      ) : null}
+      <List
+        size="small"
+        dataSource={failedFiles}
+        locale={{ emptyText: hasLegacyFailure ? '历史批次没有失败明细记录' : '没有失败文件明细' }}
+        renderItem={(item, index) => (
+          <List.Item>
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Typography.Text strong>
+                {index + 1}. {item.originalName}
+              </Typography.Text>
+              <Typography.Text type="secondary">{item.reason}</Typography.Text>
+            </Space>
+          </List.Item>
+        )}
+      />
+    </Card>
+  );
+}
+
 export function UploadCenterPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { id: routeRequirementId } = useParams();
   const [searchParams] = useSearchParams();
   const requirementId = routeRequirementId || searchParams.get('requirementId') || '';
@@ -63,10 +150,27 @@ export function UploadCenterPage() {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [batchPage, setBatchPage] = useState(1);
   const [batchPageSize, setBatchPageSize] = useState(10);
+  const [expandedBatchRowKeys, setExpandedBatchRowKeys] = useState<string[]>([]);
   const [pendingBatchPreview, setPendingBatchPreview] = useState<DatasetBatchItem | null>(null);
+  const [retryContext, setRetryContext] = useState<{
+    batchId: string;
+    batchNo: number;
+    sourceName: string | null;
+    failedFiles: FailedDatasetBatchFileItem[];
+  } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ percent: number; loaded: number; total: number | null } | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const hadPendingBatchRef = useRef(false);
+
+  const resetSelectedFiles = () => {
+    setFileList([]);
+    setShowAllSelectedFiles(false);
+    form.setFieldValue('selectedFiles', []);
+    void form.validateFields(['selectedFiles']).catch(() => undefined);
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
+  };
 
   const syncFilesToUploadList = (files: File[]) => {
     setFileList(
@@ -92,6 +196,11 @@ export function UploadCenterPage() {
     queryKey: ['requirement-detail', requirementId],
     queryFn: () => requirementsApi.detail(requirementId),
     enabled: Boolean(requirementId),
+  });
+  const profileQuery = useQuery({
+    queryKey: ['profile'],
+    queryFn: profileApi.getProfile,
+    enabled: user?.role === 'user',
   });
 
   const {
@@ -128,6 +237,7 @@ export function UploadCenterPage() {
         uploadType: nextUploadType,
         sourceName: values.sourceName?.trim() || null,
         fileCount: files.length,
+        failedFileCount: 0,
         status: 'uploaded',
         remark: values.remark?.trim() || null,
         uploadedAt: new Date().toISOString(),
@@ -144,6 +254,7 @@ export function UploadCenterPage() {
         {
           sourceName: values.sourceName,
           remark: values.remark,
+          retryBatchId: retryContext?.batchId,
           files,
         },
         {
@@ -160,13 +271,14 @@ export function UploadCenterPage() {
       setPendingBatchPreview(null);
       setIsUploadingFiles(false);
       setUploadProgress(null);
-      message.success(`已创建批次 #${result.batchNo}，后台正在异步解析`);
+      message.success(
+        retryContext
+          ? `已向批次 #${result.batchNo} 追加重传文件，后台正在异步解析`
+          : `已创建批次 #${result.batchNo}，后台正在异步解析`,
+      );
       form.resetFields();
-      setFileList([]);
-      setShowAllSelectedFiles(false);
-      if (folderInputRef.current) {
-        folderInputRef.current.value = '';
-      }
+      resetSelectedFiles();
+      setRetryContext(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'dataset-batches'] }),
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'data-tree'] }),
@@ -200,6 +312,13 @@ export function UploadCenterPage() {
       }`
     : '';
   const visibleSelectedFiles = showAllSelectedFiles ? fileList : fileList.slice(0, 8);
+  const profileCompleted =
+    user?.role === 'admin'
+      ? true
+      : isProfileComplete({
+          ...profileQuery.data,
+          hospitalName: user?.hospitalName ?? null,
+        });
   const batchSummary = useMemo(
     () => ({
       total: batchData?.total ?? 0,
@@ -307,9 +426,6 @@ export function UploadCenterPage() {
               <Typography.Title level={3} style={{ margin: 0 }}>
                 数据上传中心
               </Typography.Title>
-              <Typography.Text type="secondary">
-                当前页面围绕需求单管理上传批次，并把批次记录与三层结构预览放在同一视图中。
-              </Typography.Text>
               <Space wrap>
                 <Link to={`/requirements/${requirementId}`}>
                   <Button icon={<FileSearchOutlined />}>返回需求详情</Button>
@@ -362,10 +478,21 @@ export function UploadCenterPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <Card
-            title="创建上传批次"
-            extra={<Typography.Text type="secondary">legacy 仅复用上传交互，不复用旧模型</Typography.Text>}
-          >
+          <Card title="创建上传批次">
+            {!profileCompleted ? (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="请先完善资料"
+                description="上传数据前需要先补齐联系人、邮箱、电话、微信号、医院、科室和职称。"
+                action={
+                  <Button size="small" type="primary" onClick={() => navigate('/profile')}>
+                    去完善资料
+                  </Button>
+                }
+              />
+            ) : null}
             {createBatchMutation.isPending ? (
               <Alert
                 type="info"
@@ -379,7 +506,14 @@ export function UploadCenterPage() {
               form={form}
               layout="vertical"
               initialValues={{ selectedFiles: [] }}
-              onFinish={(values) => createBatchMutation.mutate(values)}
+              onFinish={(values) => {
+                if (!profileCompleted) {
+                  message.warning('请先完善资料后再上传数据');
+                  navigate('/profile');
+                  return;
+                }
+                createBatchMutation.mutate(values);
+              }}
             >
               <Form.Item label="上传类型">
                 <Input
@@ -417,6 +551,36 @@ export function UploadCenterPage() {
                 ]}
               >
                 <div>
+                  {retryContext ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={`正在为批次 #${retryContext.batchNo} 追加重传文件`}
+                      description={(
+                        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                          <Typography.Text>这次上传会按同一批次问题处理，不要求文件名和上次失败记录一致。</Typography.Text>
+                          {retryContext.failedFiles.length ? (
+                            <Typography.Text type="secondary">
+                              历史失败记录：{retryContext.failedFiles.map((item) => item.originalName).join('、')}
+                            </Typography.Text>
+                          ) : null}
+                          <Space>
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                setRetryContext(null);
+                                resetSelectedFiles();
+                                form.setFieldsValue({ sourceName: '', remark: '' });
+                              }}
+                            >
+                              退出重传模式
+                            </Button>
+                          </Space>
+                        </Space>
+                      )}
+                    />
+                  ) : null}
                   <input
                     ref={folderInputRef}
                     type="file"
@@ -432,13 +596,7 @@ export function UploadCenterPage() {
                     <Button onClick={() => folderInputRef.current?.click()}>选择文件夹</Button>
                     <Button
                       onClick={() => {
-                        setFileList([]);
-                        setShowAllSelectedFiles(false);
-                        form.setFieldValue('selectedFiles', []);
-                        void form.validateFields(['selectedFiles']);
-                        if (folderInputRef.current) {
-                          folderInputRef.current.value = '';
-                        }
+                        resetSelectedFiles();
                       }}
                     >
                       清空已选文件
@@ -501,12 +659,8 @@ export function UploadCenterPage() {
                   disabled={createBatchMutation.isPending}
                   onClick={() => {
                     form.resetFields();
-                    setFileList([]);
-                    setShowAllSelectedFiles(false);
-                    form.setFieldValue('selectedFiles', []);
-                    if (folderInputRef.current) {
-                      folderInputRef.current.value = '';
-                    }
+                    resetSelectedFiles();
+                    setRetryContext(null);
                   }}
                 >
                   清空
@@ -523,6 +677,33 @@ export function UploadCenterPage() {
               rowKey="id"
               loading={isBatchLoading}
               dataSource={batchItems}
+              expandable={{
+                expandedRowKeys: expandedBatchRowKeys,
+                onExpandedRowsChange: (expandedKeys) => setExpandedBatchRowKeys(expandedKeys.map((key) => String(key))),
+                rowExpandable: (record) =>
+                  record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('解析失败') === true,
+                expandedRowRender: (record) => (
+                  <FailedFilesPanel
+                    requirementId={requirementId}
+                    batch={record}
+                    onRetry={(failedFiles) => {
+                      setRetryContext({
+                        batchId: record.id,
+                        batchNo: record.batchNo,
+                        sourceName: record.sourceName,
+                        failedFiles,
+                      });
+                      resetSelectedFiles();
+                      form.setFieldsValue({
+                        sourceName: record.sourceName || `批次 #${record.batchNo} 失败文件重传`,
+                        remark: failedFiles.length
+                          ? `重传批次 #${record.batchNo} 失败文件`
+                          : `重新上传批次 #${record.batchNo} 原始文件`,
+                      });
+                    }}
+                  />
+                ),
+              }}
               pagination={{
                 current: batchPage,
                 pageSize: batchPageSize,
@@ -558,14 +739,41 @@ export function UploadCenterPage() {
                 },
                 {
                   title: '文件数',
-                  dataIndex: 'fileCount',
-                  width: 90,
+                  width: 120,
+                  render: (_, record) => (
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text>{record.fileCount}</Typography.Text>
+                      {record.failedFileCount > 0 ? (
+                        <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                          失败 {record.failedFileCount}
+                        </Typography.Text>
+                      ) : null}
+                    </Space>
+                  ),
                 },
                 {
                   title: '状态',
-                  width: 110,
+                  width: 140,
                   render: (_, record) => (
-                    <Tag color={batchStatusColorMap[record.status]}>{batchStatusLabelMap[record.status]}</Tag>
+                    <Space direction="vertical" size={4}>
+                      <Tag color={batchStatusColorMap[record.status]}>{batchStatusLabelMap[record.status]}</Tag>
+                      {(record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('解析失败')) ? (
+                        <Button
+                          type="link"
+                          size="small"
+                          style={{ padding: 0, height: 'auto', textAlign: 'left' }}
+                          onClick={() =>
+                            setExpandedBatchRowKeys((current) =>
+                              current.includes(record.id)
+                                ? current.filter((key) => key !== record.id)
+                                : [...current, record.id],
+                            )
+                          }
+                        >
+                          {expandedBatchRowKeys.includes(record.id) ? '收起处理' : '展开处理'}
+                        </Button>
+                      ) : null}
+                    </Space>
                   ),
                 },
                 {
@@ -587,10 +795,7 @@ export function UploadCenterPage() {
         </Col>
       </Row>
 
-      <Card
-        title="三层结构预览"
-        extra={<Typography.Text type="secondary">批次不作为第四层，来源信息保留在序列明细中</Typography.Text>}
-      >
+      <Card title="三层结构预览">
         {batchItems.some((item) => item.status === 'uploaded') ? (
           <Alert
             type="info"
@@ -607,7 +812,7 @@ export function UploadCenterPage() {
           <PatientLevel requirementId={requirementId} data={treeData.patients} onRefresh={() => void refetchTree()} />
         ) : (
           <Empty
-            description="当前需求单暂无三层结构数据。第 3 周期已先完成批次记录链路，后续解析落库后这里会自动呈现。"
+            description="当前需求单暂无三层结构数据"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         )}

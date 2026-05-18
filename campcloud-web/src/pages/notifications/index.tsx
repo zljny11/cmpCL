@@ -55,10 +55,9 @@ export function NotificationPage() {
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <div>
-          <Typography.Title level={3} style={{ marginBottom: 8 }}>
+          <Typography.Title level={3} style={{ marginBottom: 0 }}>
             消息通知
           </Typography.Title>
-          <Typography.Text type="secondary">查看需求状态更新、影动回复和补充说明提醒。</Typography.Text>
         </div>
         <Space wrap>
           <Segmented

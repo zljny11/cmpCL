@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { profileApi } from '../../services/api/profile';
 import { useAuth } from '../../app/providers/auth-provider';
 import { queryClient } from '../../services/query-client';
+import { isProfileComplete } from '../../utils/profileCompletion';
 
 export function ProfilePage() {
   const [form] = Form.useForm();
@@ -30,15 +31,10 @@ export function ProfilePage() {
     }
   }, [data, form]);
 
-  const profileCompleted = Boolean(
-    watchedValues?.realName &&
-      watchedValues?.email &&
-      watchedValues?.phone &&
-      watchedValues?.wechat &&
-      user?.hospitalName &&
-      watchedValues?.department &&
-      watchedValues?.title,
-  );
+  const profileCompleted = isProfileComplete({
+    ...watchedValues,
+    hospitalName: user?.hospitalName ?? null,
+  });
 
   return (
     <Card loading={isLoading} bordered={false}>

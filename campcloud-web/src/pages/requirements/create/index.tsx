@@ -1,7 +1,10 @@
-import { useMutation } from '@tanstack/react-query';
-import { Button, Card, Form, Input, Select, Space, Typography, message } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Card, Form, Input, Select, Space, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../app/providers/auth-provider';
+import { profileApi } from '../../../services/api/profile';
 import { requirementsApi } from '../../../services/api/requirements';
+import { isProfileComplete } from '../../../utils/profileCompletion';
 
 const requirementTypeOptions = [
   { label: 'CT超高分辨率', value: 'CT_SUPER_RESOLUTION' },
@@ -18,6 +21,19 @@ const requirementTypeOptions = [
 export function RequirementCreatePage() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const profileQuery = useQuery({
+    queryKey: ['profile'],
+    queryFn: profileApi.getProfile,
+    enabled: user?.role === 'user',
+  });
+  const profileCompleted =
+    user?.role === 'admin'
+      ? true
+      : isProfileComplete({
+          ...profileQuery.data,
+          hospitalName: user?.hospitalName ?? null,
+        });
   const mutation = useMutation({
     mutationFn: requirementsApi.create,
     onSuccess: (data) => {
@@ -33,16 +49,36 @@ export function RequirementCreatePage() {
           <Typography.Title level={3}>新建科研需求</Typography.Title>
         </div>
 
+        {!profileCompleted ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="请先完善资料"
+            description="提交需求前需要先补齐联系人、邮箱、电话、微信号、医院、科室和职称。"
+            action={
+              <Button size="small" type="primary" onClick={() => navigate('/profile')}>
+                去完善资料
+              </Button>
+            }
+          />
+        ) : null}
+
         <Card title="需求表单" size="small">
           <Form
             form={form}
             layout="vertical"
-            onFinish={(values) =>
+            onFinish={(values) => {
+              if (!profileCompleted) {
+                message.warning('请先完善资料后再创建需求');
+                navigate('/profile');
+                return;
+              }
+
               mutation.mutate({
                 ...values,
                 typeCustom: values.type === 'OTHER' ? values.typeCustom : null,
-              })
-            }
+              });
+            }}
           >
             <Form.Item label="需求类型" name="type" rules={[{ required: true, message: '请选择需求类型' }]}>
               <Select options={requirementTypeOptions} placeholder="请选择最贴近当前图像质量问题的需求类型" />
