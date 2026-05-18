@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Col, Empty, List, Modal, Row, Space, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/auth-provider';
 import { notificationsApi } from '../../services/api/notifications';
 import { profileApi } from '../../services/api/profile';
@@ -14,6 +14,7 @@ import './index.less';
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const requirementsQuery = useQuery({
     queryKey: ['dashboard', 'requirements'],
@@ -71,9 +72,10 @@ export function DashboardPage() {
     Modal.info({
       title: '您的需求有回复了',
       content: '请及时查看需求列表中的最新处理进展与留言回复。',
-      okText: '知道了',
+      okText: '去查看通知',
+      onOk: () => navigate('/notifications'),
     });
-  }, [isAdmin, unreadNotifications]);
+  }, [isAdmin, navigate, unreadNotifications]);
 
   const dashboardSummary = isAdmin
     ? [
@@ -150,7 +152,7 @@ export function DashboardPage() {
                   message={`有 ${unreadCount} 条未读提醒`}
                   description="建议优先查看最近有状态变化或留言更新的需求。"
                   action={
-                    <Link to="/requirements">
+                    <Link to="/notifications">
                       <Button size="small">去处理</Button>
                     </Link>
                   }
@@ -176,7 +178,7 @@ export function DashboardPage() {
                   message={`有 ${unreadNotifications.length} 条未读通知`}
                   description="这些通知来自用户补充留言或需求动态，请优先查看。"
                   action={
-                    <Link to="/admin/requirements">
+                    <Link to="/notifications">
                       <Button size="small">去查看</Button>
                     </Link>
                   }

@@ -19,6 +19,12 @@ async function main() {
       hospitalName: 'admin',
       profile: { realName: '示例用户', department: '放射科', title: '主治医师' },
     },
+    {
+      username: 'demo2',
+      role: UserRole.user,
+      hospitalName: '协和医院',
+      profile: { realName: '第二测试用户', department: '影像科', title: '住院医师' },
+    },
   ];
 
   for (const item of users) {

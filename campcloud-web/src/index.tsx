@@ -14,12 +14,6 @@ if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
     console.error('[campcloud][unhandledrejection]', event.reason);
   });
-
-  console.log('[campcloud] bootstrap start', {
-    href: window.location.href,
-    userAgent: window.navigator.userAgent,
-  });
-  debugger;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

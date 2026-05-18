@@ -1,6 +1,6 @@
 import { LoadingOutlined } from '@ant-design/icons';
-import { message } from 'antd';
-import { KeyboardEvent, useEffect, useState } from 'react';
+import { App } from 'antd';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/auth-provider';
 import loginIllustration from './assets/1.png';
@@ -10,17 +10,17 @@ import './login.less';
 export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { message } = App.useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [hospitalName, setHospitalName] = useState('');
   const [logging, setLogging] = useState(false);
 
-  useEffect(() => {
-    console.log('[campcloud] login page mounted');
-    debugger;
-  }, []);
-
   const handleLogin = async () => {
+    if (logging) {
+      return;
+    }
+
     if (!username.trim() || !password.trim() || !hospitalName.trim()) {
       if (!username.trim() && !password.trim() && !hospitalName.trim()) {
         message.warning('请输入用户名、密码和医院名称');
@@ -41,17 +41,15 @@ export function LoginPage() {
         password: password.trim(),
         hospitalName: hospitalName.trim(),
       });
-      message.success('登录成功');
+      message.success({
+        content: '已登录',
+        duration: 1.2,
+        key: 'login-success',
+      });
       navigate('/', { replace: true });
     } catch {
       message.error('登录失败，请检查用户名、密码和医院名称');
       setLogging(false);
-    }
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      void handleLogin();
     }
   };
 
@@ -78,7 +76,6 @@ export function LoginPage() {
                   autoComplete="username"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  onKeyDown={handleKeyDown}
                 />
                 <input
                   type="password"
@@ -88,7 +85,6 @@ export function LoginPage() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  onKeyDown={handleKeyDown}
                 />
                 <input
                   type="text"
@@ -98,7 +94,6 @@ export function LoginPage() {
                   autoComplete="organization"
                   value={hospitalName}
                   onChange={(event) => setHospitalName(event.target.value)}
-                  onKeyDown={handleKeyDown}
                 />
                 <button className="btn" type="submit" disabled={logging}>
                   {logging ? <LoadingOutlined /> : 'Log In'}
