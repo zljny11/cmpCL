@@ -10,10 +10,17 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const logger = app.get(Logger);
   const reflector = app.get(Reflector);
+  const corsOriginRaw = process.env.CORS_ORIGIN?.trim();
+  const corsOrigin =
+    corsOriginRaw === '*'
+      ? true
+      : corsOriginRaw
+        ? corsOriginRaw.split(',').map((origin) => origin.trim()).filter(Boolean)
+        : ['http://127.0.0.1:5173', 'http://localhost:5173'];
 
   app.useLogger(logger);
   app.enableCors({
-    origin: ['http://127.0.0.1:5173', 'http://localhost:5173'],
+    origin: corsOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
