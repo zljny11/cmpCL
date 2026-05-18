@@ -1,0 +1,136 @@
+.requirement-list-toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.requirement-list-toolbar .ant-input,
+.requirement-list-toolbar .ant-select {
+  min-width: 220px;
+}
+
+.requirement-list-hero {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.requirement-list-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.requirement-list-summary-card {
+  padding: 18px 20px;
+  border: 1px solid #e8eef4;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbfe 100%);
+}
+
+.requirement-list-summary-card p {
+  margin: 0 0 8px;
+  color: #7c8b97;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  opacity: 1;
+}
+
+.requirement-list-summary-card strong {
+  color: #163247;
+  font-size: 28px;
+  line-height: 1;
+}
+
+@media (max-width: 960px) {
+  .requirement-list-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .requirement-list-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pacs-tree {
+  display: grid;
+  gap: 10px;
+}
+
+.pacs-tree-summary {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 4px 4px 0;
+  color: #667784;
+  font-size: 12px;
+}
+
+.pacs-tree-table.ant-table-wrapper {
+  margin: 0;
+}
+
+.pacs-tree-table .ant-table {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e5eaef;
+}
+
+.pacs-tree-table .ant-table-container {
+  border-inline-start: none !important;
+  border-top: none !important;
+}
+
+.pacs-tree-table .ant-table-thead > tr > th {
+  background: #d9d6d6;
+  color: #222;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #d0d8df;
+}
+
+.pacs-tree-table .ant-table-tbody > tr > td {
+  padding: 10px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid #edf1f4;
+}
+
+.pacs-tree-table .ant-table-expanded-row > td {
+  background: #fff !important;
+  padding: 0 0 0 16px !important;
+}
+
+.pacs-tree-table .ant-table-expanded-row .ant-table-wrapper {
+  margin: 0;
+}
+
+.pacs-tree-table .pacs-expanded-row > td {
+  background: #dcedfb !important;
+}
+
+.pacs-patient-table .ant-table-row-expand-icon,
+.pacs-study-table .ant-table-row-expand-icon {
+  border-radius: 999px;
+  border-color: #c8d1d8;
+}
+
+.pacs-study-table,
+.pacs-series-table {
+  padding-top: 4px;
+}
+
+.pacs-link-button.ant-btn {
+  padding-inline: 0;
+  height: auto;
+  font-size: 12px;
+}
+
+.pacs-danger-link.ant-btn {
+  color: #ff4d4f;
+}

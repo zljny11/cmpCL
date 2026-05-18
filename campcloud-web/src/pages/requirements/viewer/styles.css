@@ -1,0 +1,126 @@
+.cc-viewer-page {
+  height: calc(100vh - 0px);
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0a;
+  color: #f5f5f5;
+}
+
+.cc-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.cc-viewer-header__title {
+  font-size: 14px;
+  color: #d9d9d9;
+}
+
+.cc-viewer-header__tools {
+  display: flex;
+  gap: 8px;
+}
+
+.cc-viewer-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.cc-viewer-sider {
+  width: 240px;
+  background: #141414;
+  border-right: 1px solid #2a2a2a;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.cc-viewer-series-item {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  color: #d9d9d9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cc-viewer-series-item:hover {
+  background: #1f1f1f;
+}
+
+.cc-viewer-series-item--active {
+  background: #15395b;
+  border-color: #1668dc;
+  color: #fff;
+}
+
+.cc-viewer-series-item__desc {
+  font-weight: 500;
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+
+.cc-viewer-series-item__meta {
+  color: #8c8c8c;
+  font-size: 11px;
+}
+
+.cc-viewer-main {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  background: #000;
+}
+
+.cc-viewer-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+}
+
+.cc-viewer-canvas:focus,
+.cc-viewer-canvas *:focus {
+  outline: none;
+}
+
+.cc-viewer-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 12px;
+  color: #d9d9d9;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cc-viewer-overlay--br {
+  top: auto;
+  left: auto;
+  bottom: 12px;
+  right: 12px;
+}
+
+.cc-viewer-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  color: #d9d9d9;
+  z-index: 3;
+}
