@@ -1737,3 +1737,13 @@ sprint 3：第 5 周期结束
 - 邮箱电话有效性正则检查
 - admin详细dashboard
 - pacs端推送cloud 走dicom协议
+
+### 23.5 开发补充说明
+
+为减少本地开发阶段“服务已启动但页面不可用”这类问题，补充以下约定：
+
+- CampCloud 本地启动统一使用仓库脚本：`./scripts/start-campcloud-dev.sh`
+- CampCloud 本地停止统一使用仓库脚本：`./scripts/stop-campcloud-dev.sh`
+- 前端在提交前至少执行一次检查：`cd campcloud-web && npm run check`
+- `npm run check` 的目标是尽早发现 TypeScript 编译失败、Vite 构建失败、懒加载页面不可编译等问题，避免只在运行时点开页面才暴露
+- `requirements/:id/viewer` 属于懒加载路由，历史上出现过“模块编译失败后浏览器仅显示动态导入失败”的情况；当前已为该路由补充错误边界，但后续涉及 `viewer`、Cornerstone、worker、wasm 相关改动时，仍应在本地手动验证一次该页面是否可正常进入

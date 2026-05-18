@@ -9,6 +9,7 @@
 !/campcloud-web/
 !/scripts/
 !/scripts/start-campcloud-dev.sh
+!/scripts/stop-campcloud-dev.sh
 
 # Ignore common generated files inside the included projects.
 campcloud-server/node_modules/

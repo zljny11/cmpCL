@@ -13,6 +13,7 @@ import { UploadCenterPage } from '../../pages/uploads';
 import { NotificationPage } from '../../pages/notifications';
 import { AdminRequirementListPage } from '../../pages/admin/RequirementListPage';
 import { AdminRequirementDetailPage } from '../../pages/admin/RequirementDetailPage';
+import { LazyRouteErrorBoundary } from './LazyRouteErrorBoundary';
 
 const RequirementViewerPage = lazy(() =>
   import('../../pages/requirements/viewer').then((module) => ({ default: module.RequirementViewerPage })),
@@ -74,9 +75,11 @@ function RouterContainer() {
         {
           path: 'requirements/:id/viewer',
           element: (
-            <Suspense fallback={<Spin fullscreen />}>
-              <RequirementViewerPage />
-            </Suspense>
+            <LazyRouteErrorBoundary routeName="Viewer">
+              <Suspense fallback={<Spin fullscreen />}>
+                <RequirementViewerPage />
+              </Suspense>
+            </LazyRouteErrorBoundary>
           ),
         },
       ],
