@@ -341,6 +341,20 @@ export class RequirementsService {
     return `${this.sanitizePathSegment(base)}${extension}`;
   }
 
+  private shouldIgnoreUploadedFile(originalname: string) {
+    const normalized = originalname.replace(/\\/g, '/').trim();
+    if (!normalized) {
+      return true;
+    }
+
+    const segments = normalized.split('/').filter(Boolean);
+    if (segments.length === 0) {
+      return true;
+    }
+
+    return segments.some((segment) => segment === '__MACOSX' || segment === '.__MACOSX' || segment.startsWith('.'));
+  }
+
   private getDatasetBatchRoot(requirementId: bigint, batchNo: number) {
     return join(this.uploadRoots[0], requirementId.toString(), `batch-${batchNo}`);
   }
@@ -746,6 +760,9 @@ export class RequirementsService {
 
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
+      if (this.shouldIgnoreUploadedFile(file.originalname)) {
+        continue;
+      }
       try {
         const tempRecord = this.parseDicomFile(file, '');
         const seriesDir = join(batchRoot, this.sanitizePathSegment(tempRecord.seriesUid));
@@ -2092,12 +2109,13 @@ export class RequirementsService {
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
 
-    const fileCount = files.length;
+    const validFiles = files.filter((file) => !this.shouldIgnoreUploadedFile(file.originalname));
+    const fileCount = validFiles.length;
     if (!dto.sourceName?.trim()) {
       throw new BadRequestException('请填写来源说明');
     }
     if (fileCount === 0) {
-      throw new BadRequestException('请上传文件');
+      throw new BadRequestException('请上传有效文件，系统会自动忽略 .DS_Store 和其他隐藏文件');
     }
 
     const trimmedSourceName = dto.sourceName?.trim() || null;
@@ -2218,7 +2236,7 @@ export class RequirementsService {
       return createdOrUpdated;
     });
 
-    void this.processDatasetBatch(batch, requirementId, trimmedRemark, files).catch(async () => {
+    void this.processDatasetBatch(batch, requirementId, trimmedRemark, validFiles).catch(async () => {
       await this.prisma.datasetBatch.update({
         where: { id: batch.id },
         data: {

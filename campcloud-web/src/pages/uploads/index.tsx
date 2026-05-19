@@ -160,11 +160,13 @@ export function UploadCenterPage() {
   } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ percent: number; loaded: number; total: number | null } | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [showFileSelectionError, setShowFileSelectionError] = useState(false);
   const hadPendingBatchRef = useRef(false);
 
   const resetSelectedFiles = () => {
     setFileList([]);
     setShowAllSelectedFiles(false);
+    setShowFileSelectionError(false);
     if (folderInputRef.current) {
       folderInputRef.current.value = '';
     }
@@ -178,16 +180,34 @@ export function UploadCenterPage() {
     return `${relativePath}::${file.size}::${file.lastModified}`;
   };
 
+  const shouldIgnoreSelectedFile = (file: File) => {
+    const relativePath =
+      'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+        ? file.webkitRelativePath
+        : file.name;
+    const segments = relativePath
+      .replace(/\\/g, '/')
+      .split('/')
+      .filter(Boolean);
+
+    if (segments.length === 0) {
+      return true;
+    }
+
+    return segments.some((segment) => segment === '__MACOSX' || segment === '.__MACOSX' || segment.startsWith('.'));
+  };
+
   const syncFilesToUploadList = (files: File[], options?: { append?: boolean }) => {
     const append = options?.append ?? false;
+    const visibleFiles = files.filter((file) => !shouldIgnoreSelectedFile(file));
     const nextFiles = append
       ? [
           ...fileList
             .map((file) => file.originFileObj)
             .filter((file): file is RcFile => Boolean(file)),
-          ...files,
+          ...visibleFiles,
         ]
-      : files;
+      : visibleFiles;
     const uniqueFiles = Array.from(new Map(nextFiles.map((file) => [buildFileKey(file), file])).values());
 
     setFileList(
@@ -202,6 +222,7 @@ export function UploadCenterPage() {
       })),
     );
     setShowAllSelectedFiles(false);
+    setShowFileSelectionError(false);
   };
 
   const { data: requirement, isLoading: isRequirementLoading, isError: isRequirementError } = useQuery({
@@ -286,7 +307,7 @@ export function UploadCenterPage() {
       message.success(
         retryContext
           ? `已向批次 #${result.batchNo} 追加重传文件，后台正在异步解析`
-          : `已创建批次 #${result.batchNo}，后台正在异步解析`,
+          : `已上传 #${result.batchNo}，后台正在异步解析`,
       );
       form.resetFields();
       resetSelectedFiles();
@@ -309,7 +330,7 @@ export function UploadCenterPage() {
       const errorMessage = axios.isAxiosError(error)
         ? (error.response?.data as { message?: string } | undefined)?.message
         : undefined;
-      message.error(errorMessage || '批次创建失败');
+      message.error(errorMessage || '上传失败');
     },
   });
 
@@ -493,7 +514,7 @@ export function UploadCenterPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <Card title="创建上传批次">
+          <Card title="上传">
             {!profileCompleted ? (
               <Alert
                 type="warning"
@@ -527,9 +548,11 @@ export function UploadCenterPage() {
                   return;
                 }
                 if (fileList.length === 0) {
+                  setShowFileSelectionError(true);
                   message.warning('请先选择至少一个文件夹');
                   return;
                 }
+                setShowFileSelectionError(false);
                 createBatchMutation.mutate(values);
               }}
             >
@@ -541,10 +564,10 @@ export function UploadCenterPage() {
               </Form.Item>
               <Form.Item
                 name="sourceName"
-                label="来源说明"
-                rules={[{ required: true, message: '请输入来源说明' }]}
+                label="数据标签"
+                rules={[{ required: true, message: '请输入数据标签' }]}
               >
-                <Input placeholder="例如：心内科 2026-05 第一次导出" maxLength={255} />
+                <Input placeholder="例如男性/女性/肿瘤/肺结节" maxLength={255} />
               </Form.Item>
               <Form.Item name="remark" label="批次备注">
                 <Input.TextArea
@@ -556,8 +579,12 @@ export function UploadCenterPage() {
               <Form.Item
                 label="上传文件"
                 required
-                validateStatus={fileList.length === 0 ? 'error' : undefined}
-                help={fileList.length === 0 ? '请先选择至少一个文件夹' : `当前已选择 ${fileList.length} 个文件`}
+                validateStatus={showFileSelectionError && fileList.length === 0 ? 'error' : undefined}
+                help={
+                  showFileSelectionError && fileList.length === 0
+                    ? '请先选择至少一个文件夹'
+                    : `当前已选择 ${fileList.length} 个文件`
+                }
               >
                 <div>
                   {retryContext ? (
@@ -671,11 +698,10 @@ export function UploadCenterPage() {
                   type="primary"
                   htmlType="submit"
                   loading={createBatchMutation.isPending}
-                  disabled={fileList.length === 0}
                 >
                   {createBatchMutation.isPending
                     ? `正在上传${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`
-                    : '创建批次'}
+                    : '上传'}
                 </Button>
                 <Button
                   disabled={createBatchMutation.isPending}
@@ -751,10 +777,10 @@ export function UploadCenterPage() {
                   ),
                 },
                 {
-                  title: '来源说明',
+                  title: '数据标签',
                   render: (_, record) => (
                     <Space direction="vertical" size={2}>
-                      <Typography.Text>{record.sourceName || '未填写来源说明'}</Typography.Text>
+                      <Typography.Text>{record.sourceName || '未填写数据标签'}</Typography.Text>
                       <Typography.Text type="secondary">{record.remark || '无备注'}</Typography.Text>
                     </Space>
                   ),
@@ -817,7 +843,7 @@ export function UploadCenterPage() {
         </Col>
       </Row>
 
-      <Card title="三层结构预览">
+      <Card title="文件预览">
         {batchItems.some((item) => item.status === 'uploaded') ? (
           <Alert
             type="info"
@@ -827,14 +853,14 @@ export function UploadCenterPage() {
             description="上传请求已完成，后台正在异步解析并落库，列表和三层结构会自动刷新。"
           />
         ) : null}
-        {isTreeError ? <Alert type="error" showIcon message="三层结构加载失败" /> : null}
+        {isTreeError ? <Alert type="error" showIcon message="文件预览加载失败" /> : null}
         {isTreeLoading ? (
           <Card loading />
         ) : treeData?.patients?.length ? (
           <PatientLevel requirementId={requirementId} data={treeData.patients} onRefresh={() => void refetchTree()} />
         ) : (
           <Empty
-            description="当前需求单暂无三层结构数据"
+            description="当前需求单暂无可预览文件"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         )}
