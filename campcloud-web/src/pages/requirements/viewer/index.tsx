@@ -866,13 +866,47 @@ export function RequirementViewerPage() {
       return;
     }
 
-    const defaults = viewport.getDefaultProperties();
-    if (defaults.voiRange) {
-      viewport.setProperties({ voiRange: defaults.voiRange });
+    if ('resetProperties' in viewport && typeof viewport.resetProperties === 'function') {
+      if (viewport.type !== ViewportType.STACK) {
+        viewport.resetProperties(activeViewportSeries?.volumeId);
+      } else {
+        viewport.resetProperties();
+      }
+    } else {
+      const defaults = 'getDefaultProperties' in viewport ? viewport.getDefaultProperties() : undefined;
+      if (defaults?.voiRange) {
+        viewport.setProperties({ voiRange: defaults.voiRange });
+      }
     }
     viewport.resetCamera();
     viewport.render();
-  }, [activeViewportId]);
+  }, [activeViewportId, activeViewportSeries]);
+
+  const wwWlPresetMap = useMemo(
+    () =>
+      new Map<string, { lower: number; upper: number }>(
+        WW_WL_PRESETS.map((preset) => [
+          preset.label,
+          preset.value,
+        ]),
+      ),
+    [],
+  );
+
+  const handleWwWlMenuClick = useCallback(
+    ({ key }: { key: string }) => {
+      if (key === 'reset') {
+        resetActiveViewport();
+        return;
+      }
+
+      const preset = wwWlPresetMap.get(key);
+      if (preset) {
+        applyWwWlPreset(preset.lower, preset.upper);
+      }
+    },
+    [applyWwWlPreset, resetActiveViewport, wwWlPresetMap],
+  );
 
   const handleMpr = useCallback((value: string) => {
     if (!activeViewportSeries) {
@@ -973,16 +1007,19 @@ export function RequirementViewerPage() {
   const activeMode = viewportModes[activeViewportId] ?? 'stack';
   const mprOrMip = activeMode === 'stack' ? 'none' : activeMode === 'mpr' ? 'MPR' : 'MIP';
 
-  const wwWlItems: MenuProps['items'] = WW_WL_PRESETS.map((preset) => ({
-    key: preset.label,
-    label: (
-      <div className="cc-viewer-dropdown-item">
-        <span>{preset.label}</span>
-        <span>{preset.value.lower}/{preset.value.upper}</span>
-      </div>
-    ),
-    onClick: () => applyWwWlPreset(preset.value.lower, preset.value.upper),
-  }));
+  const wwWlItems: MenuProps['items'] = [
+    ...WW_WL_PRESETS.map((preset) => ({
+      key: preset.label,
+      label: (
+        <div className="cc-viewer-dropdown-item">
+          <span>{preset.label}</span>
+          <span>{preset.value.lower}/{preset.value.upper}</span>
+        </div>
+      ),
+    })),
+    { type: 'divider' as const },
+    { key: 'reset', label: '重置' },
+  ];
 
   const mprItems: MenuProps['items'] = [
     { key: 'AXIAL', label: 'AXIAL', onClick: () => handleMpr('AXIAL') },
@@ -1082,7 +1119,7 @@ export function RequirementViewerPage() {
 
           <div className="cc-viewer-toolbar">
             <Tooltip title="WW/WL">
-              <Dropdown menu={{ items: wwWlItems }} trigger={['click']}>
+              <Dropdown menu={{ items: wwWlItems, onClick: handleWwWlMenuClick }} trigger={['click']}>
                 <Button
                   className={`cc-viewer-toolbar-btn${activeTool === 'WindowLevel' ? ' is-active' : ''}`}
                   onClick={() => handleToolChange('WindowLevel')}

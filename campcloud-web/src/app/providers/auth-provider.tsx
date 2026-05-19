@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { Spin } from 'antd';
 import { authApi } from '../../services/api/auth';
+import { queryClient } from '../../services/query-client';
 import { clearToken, getToken, setToken } from '../../services/http';
 import { AuthUser, LoginPayload } from '../../types/auth';
 
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const login = async (payload: LoginPayload) => {
+    queryClient.clear();
     const result = await authApi.login(payload);
     setToken(result.token);
     const me = await authApi.getMe();
@@ -59,6 +61,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   };
 
   const logout = () => {
+    queryClient.clear();
     clearToken();
     setUser(null);
   };

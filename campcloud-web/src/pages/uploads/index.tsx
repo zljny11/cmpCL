@@ -144,7 +144,7 @@ export function UploadCenterPage() {
   const { id: routeRequirementId } = useParams();
   const [searchParams] = useSearchParams();
   const requirementId = routeRequirementId || searchParams.get('requirementId') || '';
-  const [form] = Form.useForm<{ sourceName: string; remark?: string; selectedFiles: string[] }>();
+  const [form] = Form.useForm<{ sourceName: string; remark?: string }>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [showAllSelectedFiles, setShowAllSelectedFiles] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -165,16 +165,33 @@ export function UploadCenterPage() {
   const resetSelectedFiles = () => {
     setFileList([]);
     setShowAllSelectedFiles(false);
-    form.setFieldValue('selectedFiles', []);
-    void form.validateFields(['selectedFiles']).catch(() => undefined);
     if (folderInputRef.current) {
       folderInputRef.current.value = '';
     }
   };
 
-  const syncFilesToUploadList = (files: File[]) => {
+  const buildFileKey = (file: File) => {
+    const relativePath =
+      'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+        ? file.webkitRelativePath
+        : file.name;
+    return `${relativePath}::${file.size}::${file.lastModified}`;
+  };
+
+  const syncFilesToUploadList = (files: File[], options?: { append?: boolean }) => {
+    const append = options?.append ?? false;
+    const nextFiles = append
+      ? [
+          ...fileList
+            .map((file) => file.originFileObj)
+            .filter((file): file is RcFile => Boolean(file)),
+          ...files,
+        ]
+      : files;
+    const uniqueFiles = Array.from(new Map(nextFiles.map((file) => [buildFileKey(file), file])).values());
+
     setFileList(
-      files.map((file, index) => ({
+      uniqueFiles.map((file, index) => ({
         uid: `${file.name}-${file.size}-${index}`,
         name:
           'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
@@ -185,11 +202,6 @@ export function UploadCenterPage() {
       })),
     );
     setShowAllSelectedFiles(false);
-    form.setFieldValue(
-      'selectedFiles',
-      files.length > 0 ? files.map((file, index) => `${file.name}-${file.size}-${index}`) : [],
-    );
-    void form.validateFields(['selectedFiles']);
   };
 
   const { data: requirement, isLoading: isRequirementLoading, isError: isRequirementError } = useQuery({
@@ -224,7 +236,7 @@ export function UploadCenterPage() {
   );
 
   const createBatchMutation = useMutation({
-    mutationFn: async (values: { sourceName: string; remark?: string; selectedFiles: string[] }) => {
+    mutationFn: async (values: { sourceName: string; remark?: string }) => {
       const files = fileList
         .map((file) => file.originFileObj)
         .filter((file): file is RcFile => Boolean(file));
@@ -399,7 +411,7 @@ export function UploadCenterPage() {
             正在上传文件夹
           </Typography.Title>
           <Typography.Text type="secondary">
-            文件正在上传到服务器，请不要关闭页面。上传完成后会自动进入后台异步解析。
+            文件正在上传到服务器，请不要关闭页面。支持将多个文件夹累计到同一批次后统一上传，上传完成后会自动进入后台异步解析。
           </Typography.Text>
           <Progress percent={uploadProgress?.percent ?? 0} status="active" />
           <Typography.Text>
@@ -498,18 +510,21 @@ export function UploadCenterPage() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={`正在上传文件夹${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`}
+                message={`正在上传文件${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`}
                 description={`文件正在异步上传，请不要关闭页面。${uploadProgressText ? ` 当前进度：${uploadProgressText}` : ''} 上传完成后会自动进入后台异步解析。`}
               />
             ) : null}
             <Form
               form={form}
               layout="vertical"
-              initialValues={{ selectedFiles: [] }}
               onFinish={(values) => {
                 if (!profileCompleted) {
                   message.warning('请先完善资料后再上传数据');
                   navigate('/profile');
+                  return;
+                }
+                if (fileList.length === 0) {
+                  message.warning('请先选择至少一个文件夹');
                   return;
                 }
                 createBatchMutation.mutate(values);
@@ -537,18 +552,9 @@ export function UploadCenterPage() {
               </Form.Item>
               <Form.Item
                 label="上传文件"
-                name="selectedFiles"
                 required
-                rules={[
-                  {
-                    validator: async (_, value: string[] | undefined) => {
-                      if (value && value.length > 0) {
-                        return;
-                      }
-                      throw new Error('请上传文件');
-                    },
-                  },
-                ]}
+                validateStatus={fileList.length === 0 ? 'error' : undefined}
+                help={fileList.length === 0 ? '请先选择至少一个文件夹' : `当前已选择 ${fileList.length} 个文件`}
               >
                 <div>
                   {retryContext ? (
@@ -589,11 +595,16 @@ export function UploadCenterPage() {
                     {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
                     onChange={(event) => {
                       const files = Array.from(event.target.files ?? []);
-                      syncFilesToUploadList(files);
+                      syncFilesToUploadList(files, { append: true });
+                      if (folderInputRef.current) {
+                        folderInputRef.current.value = '';
+                      }
                     }}
                   />
                   <Space style={{ marginBottom: 12 }} wrap>
-                    <Button onClick={() => folderInputRef.current?.click()}>选择文件夹</Button>
+                    <Button onClick={() => folderInputRef.current?.click()}>
+                      {fileList.length > 0 ? '继续添加文件夹' : '选择文件夹'}
+                    </Button>
                     <Button
                       onClick={() => {
                         resetSelectedFiles();
@@ -611,6 +622,9 @@ export function UploadCenterPage() {
                             {showAllSelectedFiles ? '收起文件列表' : `展开全部文件 (${fileList.length})`}
                           </Button>
                         </Space>
+                        <Typography.Text type="secondary">
+                          可多次点击“{fileList.length > 0 ? '继续添加文件夹' : '选择文件夹'}”累计选择多个文件夹；重复文件会自动去重。
+                        </Typography.Text>
                         <List
                           size="small"
                           dataSource={visibleSelectedFiles}
@@ -650,7 +664,12 @@ export function UploadCenterPage() {
                 </div>
               </Form.Item>
               <Space>
-                <Button type="primary" htmlType="submit" loading={createBatchMutation.isPending}>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={createBatchMutation.isPending}
+                  disabled={fileList.length === 0}
+                >
                   {createBatchMutation.isPending
                     ? `正在上传${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`
                     : '创建批次'}

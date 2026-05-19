@@ -1,13 +1,14 @@
 import { useMutation } from '@tanstack/react-query';
 import { App, Button, Popconfirm, Space, Table, Typography } from 'antd';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
 import { RequirementPatientNode, RequirementStudyNode } from '../../../../types/requirements';
 import { SeriesLevel } from './SeriesLevel';
 import { withTextFilter } from './pacsTableFilters';
+import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
 
 interface Props {
   requirementId: string;
@@ -30,7 +31,8 @@ export function StudyLevel({
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+  const expandedStorageKey = `campcloud:tree:studies:${requirementId}:${patient.id}`;
+  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
   const selectedStudyKeys = useMemo(
     () =>
       data
@@ -38,6 +40,15 @@ export function StudyLevel({
         .map((study) => study.id),
     [data, selectedSeriesKeys],
   );
+
+  useEffect(() => {
+    const validKeys = new Set(data.map((study) => study.id));
+    setExpandedRowKeys((current) => current.filter((key) => validKeys.has(String(key))));
+  }, [data]);
+
+  useEffect(() => {
+    saveExpandedKeys(expandedStorageKey, expandedRowKeys);
+  }, [expandedRowKeys, expandedStorageKey]);
 
   const deleteStudyMutation = useMutation({
     mutationFn: (studyId: string) => requirementsApi.deleteStudy(requirementId, studyId),

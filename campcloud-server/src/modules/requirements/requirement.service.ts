@@ -898,6 +898,11 @@ export class RequirementsService {
   }
 
   async create(userId: bigint, dto: CreateRequirementDto) {
+    const expectedGoal = this.normalizeText(dto.expectedGoal);
+    if (!expectedGoal) {
+      throw new BadRequestException('期望目标不能为空');
+    }
+
     const requirement = await this.prisma.$transaction(async (tx) => {
       const created = await tx.requirement.create({
         data: {
@@ -906,7 +911,7 @@ export class RequirementsService {
           typeCustom: dto.typeCustom ?? null,
           title: dto.title,
           description: dto.description,
-          expectedGoal: dto.expectedGoal,
+          expectedGoal,
           remark: dto.remark,
           status: RequirementStatus.pending,
           submittedAt: new Date(),

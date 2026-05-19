@@ -25,7 +25,7 @@ export interface CreateRequirementPayload {
   typeCustom: string | null;
   title: string;
   description: string;
-  expectedGoal?: string;
+  expectedGoal: string;
   remark?: string;
 }
 

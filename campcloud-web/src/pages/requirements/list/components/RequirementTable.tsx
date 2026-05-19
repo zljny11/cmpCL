@@ -1,9 +1,11 @@
 import { Button, Space, Table, Typography } from 'antd';
 import dayjs from 'dayjs';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RequirementTableRecord } from '../types';
 import { renderRequirementStatus, renderRequirementType } from '../helpers';
 import { RequirementExpandPanel } from './RequirementExpandPanel';
+import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
 
 interface Props {
   data: RequirementTableRecord[];
@@ -15,6 +17,18 @@ interface Props {
 }
 
 export function RequirementTable({ data, loading, page, pageSize, total, onPageChange }: Props) {
+  const expandedStorageKey = 'campcloud:tree:requirements';
+  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
+
+  useEffect(() => {
+    const validKeys = new Set(data.map((record) => record.id));
+    setExpandedRowKeys((current) => current.filter((key) => validKeys.has(String(key))));
+  }, [data]);
+
+  useEffect(() => {
+    saveExpandedKeys(expandedStorageKey, expandedRowKeys);
+  }, [expandedRowKeys]);
+
   return (
     <Table<RequirementTableRecord>
       rowKey="id"
@@ -29,6 +43,8 @@ export function RequirementTable({ data, loading, page, pageSize, total, onPageC
         onChange: onPageChange,
       }}
       expandable={{
+        expandedRowKeys,
+        onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
         expandedRowRender: (record, _index, indent, expanded) => (
           <RequirementExpandPanel requirementId={record.id} expanded={expanded} />
         ),

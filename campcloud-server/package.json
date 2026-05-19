@@ -8,6 +8,7 @@
     "start:dev": "node scripts/dev-server.js",
     "start:debug": "node scripts/dev-server.js --inspect",
     "clear:upload-data": "node scripts/clear-upload-data.js",
+    "reset:demo-state": "node scripts/reset-demo-state.js",
     "lint": "eslint \"{src,prisma,test}/**/*.ts\"",
     "format": "prettier --write \"{src,prisma,test}/**/*.ts\"",
     "test": "jest --passWithNoTests",

@@ -1,15 +1,25 @@
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const projectRoot = path.resolve(__dirname, '..');
 const tscBin = path.join(projectRoot, 'node_modules', '.bin', 'tsc');
+const prismaBin = path.join(projectRoot, 'node_modules', '.bin', 'prisma');
 const serverEntry = path.join(projectRoot, 'dist', 'src', 'main.js');
+const generatedPrismaClientEntry = path.join(
+  projectRoot,
+  'node_modules',
+  '.prisma',
+  'client',
+  'default.js',
+);
 const inspectEnabled = process.argv.includes('--inspect');
 
 let serverProcess = null;
 let compileSucceeded = false;
 let shuttingDown = false;
 let restartTimer = null;
+let prismaGenerateProcess = null;
 
 function stopServer() {
   if (!serverProcess) {
@@ -20,8 +30,49 @@ function stopServer() {
   serverProcess = null;
 }
 
+function ensurePrismaClientGenerated() {
+  if (fs.existsSync(generatedPrismaClientEntry)) {
+    return true;
+  }
+
+  if (prismaGenerateProcess) {
+    return false;
+  }
+
+  console.warn('[dev-server] Prisma client artifacts missing, regenerating...');
+
+  prismaGenerateProcess = spawn(prismaBin, ['generate'], {
+    cwd: projectRoot,
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  prismaGenerateProcess.on('exit', (code, signal) => {
+    prismaGenerateProcess = null;
+
+    if (shuttingDown) {
+      return;
+    }
+
+    if (code === 0) {
+      startServer();
+      return;
+    }
+
+    console.error(
+      `[dev-server] prisma generate failed, code=${code} signal=${signal}`,
+    );
+  });
+
+  return false;
+}
+
 function startServer() {
   stopServer();
+
+  if (!ensurePrismaClientGenerated()) {
+    return;
+  }
 
   const nodeArgs = [];
   if (inspectEnabled) {
@@ -79,6 +130,10 @@ function shutdown(code = 0) {
     restartTimer = null;
   }
   stopServer();
+  if (prismaGenerateProcess) {
+    prismaGenerateProcess.kill('SIGTERM');
+    prismaGenerateProcess = null;
+  }
   watcher.kill('SIGTERM');
   process.exit(code);
 }

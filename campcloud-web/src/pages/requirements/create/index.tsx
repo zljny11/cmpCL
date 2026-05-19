@@ -112,7 +112,11 @@ export function RequirementCreatePage() {
                 placeholder="请写清当前数据来源、现有问题、期望合作方式，以及为什么需要这个方向的模型能力。"
               />
             </Form.Item>
-            <Form.Item label="期望目标" name="expectedGoal">
+            <Form.Item
+              label="期望目标"
+              name="expectedGoal"
+              rules={[{ required: true, message: '请输入期望目标' }]}
+            >
               <Input.TextArea
                 rows={4}
                 placeholder="请重点描述你希望看到的最终结果，例如提升图像质量、支持后续科研分析或医生阅片。"

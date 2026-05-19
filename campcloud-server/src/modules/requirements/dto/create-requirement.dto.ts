@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateRequirementDto {
   @ApiProperty()
@@ -22,10 +22,10 @@ export class CreateRequirementDto {
   @IsString()
   description!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
   @IsString()
-  expectedGoal?: string;
+  @IsNotEmpty()
+  expectedGoal!: string;
 
   @ApiPropertyOptional()
   @IsOptional()
