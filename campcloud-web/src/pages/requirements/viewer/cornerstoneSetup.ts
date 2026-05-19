@@ -13,9 +13,9 @@ import {
 import dicomLoaderInit from '@cornerstonejs/dicom-image-loader';
 import { getToken } from '../../../services/http';
 
-export const RENDERING_ENGINE_ID = 'CAMPCLOUD_VIEWER_ENGINE';
-export const STACK_TOOL_GROUP_ID = 'CAMPCLOUD_VIEWER_STACK_TOOL_GROUP';
-export const VOLUME_TOOL_GROUP_ID = 'CAMPCLOUD_VIEWER_VOLUME_TOOL_GROUP';
+export const RENDERING_ENGINE_ID = 'AICampCloud_VIEWER_ENGINE';
+export const STACK_TOOL_GROUP_ID = 'AICampCloud_VIEWER_STACK_TOOL_GROUP';
+export const VOLUME_TOOL_GROUP_ID = 'AICampCloud_VIEWER_VOLUME_TOOL_GROUP';
 
 export const WW_WL_PRESETS = [
   { label: 'Abdomen', value: { lower: 60, upper: 400 } },

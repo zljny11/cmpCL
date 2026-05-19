@@ -26,18 +26,6 @@ describe('Requirement Status Machine (P1)', () => {
       expect(isValidStatusTransition(currentStatus, nextStatus)).toBe(true);
     });
 
-    it('pending → rejected 应该允许', () => {
-      const currentStatus = RequirementStatus.pending;
-      const nextStatus = RequirementStatus.rejected;
-      expect(isValidStatusTransition(currentStatus, nextStatus)).toBe(true);
-    });
-
-    it('processing → rejected 应该允许', () => {
-      const currentStatus = RequirementStatus.processing;
-      const nextStatus = RequirementStatus.rejected;
-      expect(isValidStatusTransition(currentStatus, nextStatus)).toBe(true);
-    });
-
     it('任意状态 → pending 应该被禁止', () => {
       const targetStatus = RequirementStatus.pending;
       expect(isValidStatusTransition(RequirementStatus.processing, targetStatus)).toBe(false);
@@ -50,11 +38,6 @@ describe('Requirement Status Machine (P1)', () => {
       expect(isValidStatusTransition(currentStatus, RequirementStatus.waiting_user)).toBe(false);
     });
 
-    it('rejected 状态应该是终态，不允许转移', () => {
-      const currentStatus = RequirementStatus.rejected;
-      expect(isValidStatusTransition(currentStatus, RequirementStatus.processing)).toBe(false);
-      expect(isValidStatusTransition(currentStatus, RequirementStatus.completed)).toBe(false);
-    });
   });
 
   describe('状态日志记录', () => {
@@ -80,25 +63,20 @@ function isValidStatusTransition(from: RequirementStatus, to: RequirementStatus)
     return false;
   }
 
-  // completed 和 rejected 是终态
-  if (from === RequirementStatus.completed || from === RequirementStatus.rejected) {
+  // completed 是终态
+  if (from === RequirementStatus.completed) {
     return false;
   }
 
   // 允许的转移路径
   const validTransitions: Record<RequirementStatus, RequirementStatus[]> = {
-    [RequirementStatus.pending]: [
-      RequirementStatus.processing,
-      RequirementStatus.rejected,
-    ],
+    [RequirementStatus.pending]: [RequirementStatus.processing],
     [RequirementStatus.processing]: [
       RequirementStatus.waiting_user,
       RequirementStatus.completed,
-      RequirementStatus.rejected,
     ],
     [RequirementStatus.waiting_user]: [RequirementStatus.processing],
     [RequirementStatus.completed]: [],
-    [RequirementStatus.rejected]: [],
   };
 
   return validTransitions[from]?.includes(to) ?? false;

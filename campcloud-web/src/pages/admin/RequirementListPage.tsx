@@ -84,7 +84,6 @@ export function AdminRequirementListPage() {
               { label: '受理中（需等待）', value: 'processing' },
               { label: '受理中（需补充数据）', value: 'waiting_user' },
               { label: '已完成', value: 'completed' },
-              { label: '已拒绝', value: 'rejected' },
             ]}
           />
           <Button

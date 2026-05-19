@@ -13,8 +13,7 @@ export type RequirementStatus =
   | 'pending'
   | 'processing'
   | 'waiting_user'
-  | 'completed'
-  | 'rejected';
+  | 'completed';
 
 export type DatasetUploadType = 'initial' | 'supplement';
 

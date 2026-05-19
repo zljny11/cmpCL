@@ -4,6 +4,7 @@ import { PropsWithChildren } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/auth-provider';
 import radioDynamicLogo from '../../pages/auth/assets/logo.png';
+import { UserRequirementJourneyCard } from './UserRequirementJourneyCard';
 
 const { Header, Content, Sider } = Layout;
 
@@ -47,6 +48,7 @@ export function AppShell({ children }: PropsWithChildren) {
           onClick={({ key }) => navigate(key)}
           style={{ borderInlineEnd: 'none' }}
         />
+        {user?.role === 'user' ? <UserRequirementJourneyCard /> : null}
       </Sider>
       <Layout>
         <Header
@@ -78,7 +80,7 @@ export function AppShell({ children }: PropsWithChildren) {
                 fontFamily: '"Avenir Next", "Helvetica Neue", sans-serif',
               }}
             >
-              Camp Cloud
+              AICampCloud
             </Typography.Title>
             <Typography.Text
               style={{

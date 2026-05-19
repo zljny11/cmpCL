@@ -8,11 +8,11 @@ import './index.less';
 
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (event) => {
-    console.error('[campcloud][window.error]', event.error ?? event.message, event);
+    console.error('[AICampCloud][window.error]', event.error ?? event.message, event);
   });
 
   window.addEventListener('unhandledrejection', (event) => {
-    console.error('[campcloud][unhandledrejection]', event.reason);
+    console.error('[AICampCloud][unhandledrejection]', event.reason);
   });
 }
 

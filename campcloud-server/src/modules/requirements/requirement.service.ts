@@ -105,8 +105,6 @@ export class RequirementsService {
         return '受理中（需补充数据）';
       case RequirementStatus.completed:
         return '已完成';
-      case RequirementStatus.rejected:
-        return '已拒绝';
       default:
         return status;
     }
@@ -1314,10 +1312,7 @@ export class RequirementsService {
       throw new BadRequestException('留言内容不能为空');
     }
 
-    if (
-      role === UserRole.user &&
-      (requirement.status === RequirementStatus.pending || requirement.status === RequirementStatus.rejected)
-    ) {
+    if (role === UserRole.user && requirement.status === RequirementStatus.pending) {
       throw new BadRequestException('需求受理后才可以继续留言');
     }
 
@@ -2186,8 +2181,26 @@ export class RequirementsService {
       if (role === UserRole.user) {
         const requirement = await tx.requirement.findUnique({
           where: { id: requirementId },
-          select: { title: true },
+          select: { title: true, status: true },
         });
+
+        if (requirement?.status === RequirementStatus.waiting_user) {
+          await tx.requirement.update({
+            where: { id: requirementId },
+            data: { status: RequirementStatus.processing },
+          });
+          await tx.requirementStatusLog.create({
+            data: {
+              requirementId,
+              fromStatus: RequirementStatus.waiting_user,
+              toStatus: RequirementStatus.processing,
+              changedBy: userId,
+              changedRole: role,
+              reason: '用户已补充上传数据，需求继续处理中',
+            },
+          });
+        }
+
         const admins = await tx.user.findMany({
           where: { role: UserRole.admin },
           select: { id: true },

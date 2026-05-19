@@ -295,6 +295,9 @@ export function UploadCenterPage() {
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'dataset-batches'] }),
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'data-tree'] }),
         queryClient.invalidateQueries({ queryKey: ['requirement-detail', requirementId] }),
+        queryClient.invalidateQueries({ queryKey: ['user-journey', 'dataset-batches', requirementId] }),
+        queryClient.invalidateQueries({ queryKey: ['user-journey', 'requirement-detail', requirementId] }),
+        queryClient.invalidateQueries({ queryKey: ['user-journey', 'latest-requirement'] }),
       ]);
       void refetchBatches();
       void refetchTree();

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../app/providers/auth-provider';
 import { profileApi } from '../../../services/api/profile';
 import { requirementsApi } from '../../../services/api/requirements';
+import { queryClient } from '../../../services/query-client';
 import { isProfileComplete } from '../../../utils/profileCompletion';
 
 const requirementTypeOptions = [
@@ -36,7 +37,12 @@ export function RequirementCreatePage() {
         });
   const mutation = useMutation({
     mutationFn: requirementsApi.create,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['requirements'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'requirements'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-journey', 'latest-requirement'] }),
+      ]);
       message.success('需求单已创建');
       navigate(`/requirements/${data.id}`);
     },

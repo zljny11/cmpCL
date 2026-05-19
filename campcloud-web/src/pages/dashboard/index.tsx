@@ -59,7 +59,7 @@ export function DashboardPage() {
       return;
     }
 
-    const popupKey = 'campcloud_notification_popup_seen_ids';
+    const popupKey = 'AICampCloud_notification_popup_seen_ids';
     const seenIds = new Set<string>(JSON.parse(localStorage.getItem(popupKey) ?? '[]') as string[]);
     const pendingPopups = unreadNotifications.filter((item) => !seenIds.has(item.id));
     if (pendingPopups.length === 0) {

@@ -36,6 +36,8 @@ export function RequirementDetailPage() {
         queryClient.invalidateQueries({ queryKey: ['requirements'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard', 'requirements'] }),
         queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-journey', 'requirement-detail', id] }),
+        queryClient.invalidateQueries({ queryKey: ['user-journey', 'latest-requirement'] }),
       ]);
     },
   });
@@ -44,7 +46,7 @@ export function RequirementDetailPage() {
     return <Result status="error" title="需求详情加载失败" />;
   }
 
-  const canUserLeaveMessage = user?.role === 'admin' || (data ? !['pending', 'rejected'].includes(data.status) : false);
+  const canUserLeaveMessage = user?.role === 'admin' || (data ? data.status !== 'pending' : false);
 
   return (
     <Card loading={isLoading} bordered={false}>

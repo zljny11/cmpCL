@@ -54,13 +54,13 @@ export function LoginPage() {
   };
 
   return (
-    <section className="campcloud-login">
-      <h1>Camp Cloud</h1>
+    <section className="AICampCloud-login">
+      <h1>AICampCloud</h1>
       <div className="container">
         <div className="workinghny-form-grid">
           <div className="main-hotair">
             <div className="content-wthree">
-              <img src={radioDynamicLogo} alt="影动医疗" className="campcloud-login-logo" />
+              <img src={radioDynamicLogo} alt="影动医疗" className="AICampCloud-login-logo" />
               <form
                 onSubmit={(event) => {
                   event.preventDefault();

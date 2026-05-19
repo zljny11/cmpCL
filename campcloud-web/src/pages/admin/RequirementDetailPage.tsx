@@ -13,7 +13,6 @@ const statusOptions: Array<{ label: string; value: RequirementStatus }> = [
   { label: '受理中（需等待）', value: 'processing' },
   { label: '受理中（需补充数据）', value: 'waiting_user' },
   { label: '已完成', value: 'completed' },
-  { label: '已拒绝', value: 'rejected' },
 ];
 
 export function AdminRequirementDetailPage() {

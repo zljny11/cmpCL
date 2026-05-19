@@ -63,7 +63,7 @@ import type {
 } from '../../../types/requirements';
 
 const { ViewportType, OrientationAxis, BlendModes, Events } = csEnums;
-const VOLUME_ID_PREFIX = 'cornerstoneStreamingImageVolume:campcloud:';
+const VOLUME_ID_PREFIX = 'cornerstoneStreamingImageVolume:AICampCloud:';
 const DEFAULT_LAYOUT: [number, number] = [1, 1];
 const DEFAULT_FPS = 24;
 

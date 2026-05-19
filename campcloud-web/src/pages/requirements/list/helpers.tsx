@@ -19,7 +19,6 @@ const REQUIREMENT_STATUS_CONFIG: Record<RequirementStatus, { label: string; colo
   processing: { label: '受理中（需等待）', color: 'processing' },
   waiting_user: { label: '受理中（需补充数据）', color: 'warning' },
   completed: { label: '已完成', color: 'success' },
-  rejected: { label: '已拒绝', color: 'error' },
 };
 
 export function renderRequirementType(type: string, typeCustom?: string | null): string {

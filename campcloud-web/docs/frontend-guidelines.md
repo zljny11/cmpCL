@@ -1,8 +1,8 @@
-# CampCloud Frontend Guidelines
+# AICampCloud Frontend Guidelines
 
 ## 1. 目的
 
-本文件用于约束 `campcloud-web` 的前端实现方式。内容严格依据 [CampCloud开发技术文档.v5](../../campcloud-server/docs/CampCloud开发技术文档.v5.md) 整理，不额外扩展新的架构层、表单方案或页面模型。
+本文件用于约束 `campcloud-web` 的前端实现方式。内容严格依据 [AICampCloud开发技术文档.v5](../../campcloud-server/docs/CampCloud开发技术文档.v5.md) 整理，不额外扩展新的架构层、表单方案或页面模型。
 
 ## 2. 技术栈
 

@@ -22,7 +22,6 @@ enum RequirementStatus {
   processing
   waiting_user
   completed
-  rejected
 }
 
 enum DatasetUploadType {

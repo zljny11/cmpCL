@@ -31,7 +31,7 @@ export function StudyLevel({
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const expandedStorageKey = `campcloud:tree:studies:${requirementId}:${patient.id}`;
+  const expandedStorageKey = `AICampCloud:tree:studies:${requirementId}:${patient.id}`;
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
   const selectedStudyKeys = useMemo(
     () =>

@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function PatientLevel({ requirementId, data, onRefresh, readOnly = false }: Props) {
-  const expandedStorageKey = `campcloud:tree:patients:${requirementId}`;
+  const expandedStorageKey = `AICampCloud:tree:patients:${requirementId}`;
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
   const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<React.Key[]>([]);
 

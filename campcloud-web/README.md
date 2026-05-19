@@ -1,6 +1,6 @@
-# campcloud-web
+# AICampCloud-web
 
-CampCloud 前端代码库。
+AICampCloud 前端代码库。
 
 当前约束：
 

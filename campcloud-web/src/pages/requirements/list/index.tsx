@@ -72,7 +72,6 @@ export function RequirementListPage() {
             { label: '待我响应', value: 'waiting_user' },
             { label: '处理中', value: 'processing' },
             { label: '已完成', value: 'completed' },
-            { label: '已拒绝', value: 'rejected' },
           ]}
         />
         <Space>

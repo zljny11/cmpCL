@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { appConfig } from '../app/config/env';
 
-const TOKEN_KEY = 'campcloud_token';
+const TOKEN_KEY = 'AICampCloud_token';
 
 export const http = axios.create({
   baseURL: appConfig.apiBaseUrl,

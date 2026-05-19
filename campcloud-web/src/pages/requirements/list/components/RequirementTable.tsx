@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function RequirementTable({ data, loading, page, pageSize, total, onPageChange }: Props) {
-  const expandedStorageKey = 'campcloud:tree:requirements';
+  const expandedStorageKey = 'AICampCloud:tree:requirements';
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
 
   useEffect(() => {
