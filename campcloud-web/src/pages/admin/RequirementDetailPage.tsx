@@ -1,7 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { App, Button, Card, Descriptions, Empty, Form, Input, List, Result, Select, Space, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { requirementsApi } from '../../services/api/requirements';
 import { queryClient } from '../../services/query-client';
@@ -9,7 +8,6 @@ import { RequirementStatus } from '../../types/requirements';
 import { RequirementDeliveryPanel } from '../requirements/detail/components/RequirementDeliveryPanel';
 import { RequirementExpandPanel } from '../requirements/list/components/RequirementExpandPanel';
 import { renderRequirementStatus, renderRequirementType } from '../requirements/list/helpers';
-import './RequirementDetailPage.less';
 
 const statusOptions: Array<{ label: string; value: RequirementStatus }> = [
   { label: '受理中（需等待）', value: 'processing' },
@@ -22,34 +20,6 @@ export function AdminRequirementDetailPage() {
   const { message } = App.useApp();
   const [messageForm] = Form.useForm<{ content: string }>();
   const [statusForm] = Form.useForm<{ status: RequirementStatus; reason?: string }>();
-  const dataScrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollMetrics, setScrollMetrics] = useState({ top: 0, height: 0, visible: false });
-
-  const syncScrollMetrics = useCallback(() => {
-    const element = dataScrollRef.current;
-    if (!element) {
-      return;
-    }
-
-    const { scrollTop, scrollHeight, clientHeight } = element;
-    const hasOverflow = scrollHeight > clientHeight + 1;
-    if (!hasOverflow) {
-      setScrollMetrics({ top: 0, height: 0, visible: false });
-      return;
-    }
-
-    const ratio = clientHeight / scrollHeight;
-    const thumbHeight = Math.max(72, ratio * clientHeight);
-    const trackTravel = Math.max(clientHeight - thumbHeight, 0);
-    const maxScrollTop = Math.max(scrollHeight - clientHeight, 1);
-    const thumbTop = (scrollTop / maxScrollTop) * trackTravel;
-
-    setScrollMetrics({
-      top: thumbTop,
-      height: thumbHeight,
-      visible: true,
-    });
-  }, []);
 
   const detailQuery = useQuery({
     queryKey: ['admin', 'requirement-detail', id],
@@ -93,26 +63,6 @@ export function AdminRequirementDetailPage() {
     },
   });
   const data = detailQuery.data;
-
-  useEffect(() => {
-    syncScrollMetrics();
-    const element = dataScrollRef.current;
-    if (!element) {
-      return;
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      syncScrollMetrics();
-    });
-    resizeObserver.observe(element);
-
-    window.addEventListener('resize', syncScrollMetrics);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', syncScrollMetrics);
-    };
-  }, [data, syncScrollMetrics]);
 
   if (detailQuery.isError) {
     return <Result status="error" title="需求详情加载失败" />;
@@ -158,26 +108,7 @@ export function AdminRequirementDetailPage() {
           </Descriptions>
 
           <Card title="需求数据详情">
-            <div className="admin-requirement-data-scroll-frame">
-              <div
-                ref={dataScrollRef}
-                className="admin-requirement-data-scroll-shell"
-                onScroll={syncScrollMetrics}
-              >
-                <RequirementExpandPanel requirementId={id} expanded readOnly />
-              </div>
-              {scrollMetrics.visible ? (
-                <div className="admin-requirement-data-scroll-indicator" aria-hidden="true">
-                  <div
-                    className="admin-requirement-data-scroll-thumb"
-                    style={{
-                      height: scrollMetrics.height,
-                      transform: `translateY(${scrollMetrics.top}px)`,
-                    }}
-                  />
-                </div>
-              ) : null}
-            </div>
+            <RequirementExpandPanel requirementId={id} expanded readOnly />
           </Card>
 
           <Card title="更新状态">

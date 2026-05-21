@@ -104,10 +104,13 @@
 .pacs-tree-table .ant-table-expanded-row > td {
   background: #fff !important;
   padding: 0 0 0 16px !important;
+  max-width: 0;
 }
 
 .pacs-tree-table .ant-table-expanded-row .ant-table-wrapper {
   margin: 0;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .pacs-tree-table .pacs-expanded-row > td {
@@ -125,6 +128,14 @@
   padding-top: 4px;
 }
 
+.pacs-series-table .ant-table-header {
+  overflow-y: hidden !important;
+}
+
+.pacs-series-table .ant-table-body {
+  overflow-y: auto !important;
+}
+
 .pacs-tree-scroll-shell {
   width: 100%;
   max-width: 100%;
@@ -135,21 +146,83 @@
   overscroll-behavior-x: contain;
 }
 
+@media (max-width: 768px) {
+  .pacs-tree-scroll-shell {
+    max-height: 400px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pacs-tree-scroll-shell {
+    max-height: 300px;
+  }
+}
+
 .pacs-tree-scroll-content {
   width: max-content;
   min-width: 100%;
+}
+
+.pacs-nested-scroll-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.pacs-nested-scroll-content {
+  width: max-content;
+  min-width: 100%;
+  max-width: 100%;
 }
 
 .pacs-patient-table table {
   min-width: 1080px;
 }
 
+@media (max-width: 768px) {
+  .pacs-patient-table table {
+    min-width: 800px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pacs-patient-table table {
+    min-width: 600px;
+  }
+}
+
 .pacs-study-table table {
   min-width: 860px;
 }
 
+@media (max-width: 768px) {
+  .pacs-study-table table {
+    min-width: 650px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pacs-study-table table {
+    min-width: 500px;
+  }
+}
+
 .pacs-series-table table {
   min-width: 1240px;
+}
+
+@media (max-width: 768px) {
+  .pacs-series-table table {
+    min-width: 900px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pacs-series-table table {
+    min-width: 700px;
+  }
 }
 
 .pacs-tree-scroll-shell::-webkit-scrollbar {
@@ -179,13 +252,28 @@
 .pacs-series-scroll-wrapper {
   max-height: 400px;
   overflow-y: scroll;
-  overflow-x: hidden;
+  overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
   border-radius: 4px;
   scrollbar-gutter: stable;
 }
 
+@media (max-width: 768px) {
+  .pacs-series-scroll-wrapper {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pacs-series-scroll-wrapper {
+    max-height: 250px;
+  }
+}
+
 .pacs-series-scroll-wrapper .ant-table-wrapper {
   width: 100%;
+  min-width: 0;
 }
 
 .pacs-series-scroll-wrapper::-webkit-scrollbar {

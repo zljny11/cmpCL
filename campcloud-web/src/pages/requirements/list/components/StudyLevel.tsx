@@ -89,7 +89,9 @@ export function StudyLevel({
   };
 
   return (
-    <Table<RequirementStudyNode>
+    <div className="pacs-nested-scroll-shell">
+      <div className="pacs-nested-scroll-content">
+        <Table<RequirementStudyNode>
         className="pacs-tree-table pacs-study-table"
         rowKey="id"
         size="small"
@@ -222,5 +224,7 @@ export function StudyLevel({
           },
         ]}
       />
+      </div>
+    </div>
   );
 }

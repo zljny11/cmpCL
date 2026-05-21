@@ -33,6 +33,23 @@ export function SeriesLevel({
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [downloadingSeriesId, setDownloadingSeriesId] = useState<string | null>(null);
+
+  // 根据屏幕大小和模式动态计算滚动高度
+  const getVerticalScrollHeight = () => {
+    if (readOnly) {
+      return 'calc(100vh - 290px)';
+    }
+
+    const width = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    if (width <= 480) {
+      return 200;
+    } else if (width <= 768) {
+      return 250;
+    }
+    return 320;
+  };
+
+  const verticalScrollHeight = getVerticalScrollHeight();
   const selectedRowKeys = useMemo(
     () => data.map((item) => item.id).filter((id) => selectedSeriesKeys.includes(id)),
     [data, selectedSeriesKeys],
@@ -71,13 +88,15 @@ export function SeriesLevel({
   });
 
   return (
-    <Table<RequirementSeriesNode>
+    <div className="pacs-nested-scroll-shell">
+      <div className="pacs-nested-scroll-content">
+        <Table<RequirementSeriesNode>
         className="pacs-tree-table pacs-series-table"
         rowKey="id"
         dataSource={data}
         pagination={false}
         size="small"
-        scroll={{ y: 320 }}
+        scroll={{ y: verticalScrollHeight }}
         rowSelection={
           readOnly
             ? undefined
@@ -191,5 +210,7 @@ export function SeriesLevel({
           },
         ]}
       />
+      </div>
+    </div>
   );
 }
