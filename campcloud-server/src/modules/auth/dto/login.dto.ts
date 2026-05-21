@@ -13,10 +13,4 @@ export class LoginDto {
   @MinLength(6)
   @MaxLength(64)
   password!: string;
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(128)
-  hospitalName!: string;
 }

@@ -13,7 +13,6 @@ export function LoginPage() {
   const { message } = App.useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [hospitalName, setHospitalName] = useState('');
   const [logging, setLogging] = useState(false);
 
   const handleLogin = async () => {
@@ -21,13 +20,11 @@ export function LoginPage() {
       return;
     }
 
-    if (!username.trim() || !password.trim() || !hospitalName.trim()) {
-      if (!username.trim() && !password.trim() && !hospitalName.trim()) {
-        message.warning('请输入用户名、密码和医院名称');
+    if (!username.trim() || !password.trim()) {
+      if (!username.trim() && !password.trim()) {
+        message.warning('请输入用户名和密码');
       } else if (!username.trim()) {
         message.warning('请输入用户名');
-      } else if (!hospitalName.trim()) {
-        message.warning('请输入医院名称');
       } else {
         message.warning('请输入密码');
       }
@@ -39,7 +36,6 @@ export function LoginPage() {
       await login({
         username: username.trim(),
         password: password.trim(),
-        hospitalName: hospitalName.trim(),
       });
       message.success({
         content: '已登录',
@@ -48,7 +44,7 @@ export function LoginPage() {
       });
       navigate('/', { replace: true });
     } catch {
-      message.error('登录失败，请检查用户名、密码和医院名称');
+      message.error('登录失败，请检查用户名和密码');
       setLogging(false);
     }
   };
@@ -85,15 +81,6 @@ export function LoginPage() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                />
-                <input
-                  type="text"
-                  className="text"
-                  placeholder="Hospital Name"
-                  required
-                  autoComplete="organization"
-                  value={hospitalName}
-                  onChange={(event) => setHospitalName(event.target.value)}
                 />
                 <button className="btn" type="submit" disabled={logging}>
                   {logging ? <LoadingOutlined /> : 'Log In'}

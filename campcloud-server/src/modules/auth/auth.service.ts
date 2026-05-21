@@ -21,10 +21,6 @@ export class AuthService {
       throw new UnauthorizedException('用户名或密码错误');
     }
 
-    if (dto.hospitalName && dto.hospitalName !== user.hospitalName) {
-      throw new UnauthorizedException('医院信息不匹配');
-    }
-
     const matched = await compare(dto.password, user.passwordHash);
 
     if (!matched) {

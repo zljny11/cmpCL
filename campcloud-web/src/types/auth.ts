@@ -20,7 +20,6 @@ export interface AuthUser {
 export interface LoginPayload {
   username: string;
   password: string;
-  hospitalName?: string;
 }
 
 export interface LoginResponse {
