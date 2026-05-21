@@ -10,9 +10,11 @@ import { RequirementCreatePage } from '../../pages/requirements/create';
 import { RequirementListPage } from '../../pages/requirements/list';
 import { RequirementDetailPage } from '../../pages/requirements/detail';
 import { UploadCenterPage } from '../../pages/uploads';
+import { UploadRequirementDataPage } from '../../pages/uploads/UploadRequirementDataPage';
 import { NotificationPage } from '../../pages/notifications';
 import { AdminRequirementListPage } from '../../pages/admin/RequirementListPage';
 import { AdminRequirementDetailPage } from '../../pages/admin/RequirementDetailPage';
+import { AdminRequirementDataPage } from '../../pages/admin/AdminRequirementDataPage';
 import { LazyRouteErrorBoundary } from './LazyRouteErrorBoundary';
 
 const RequirementViewerPage = lazy(() =>
@@ -94,7 +96,9 @@ function RouterContainer() {
         { path: 'requirements/create', element: <RequirementCreatePage /> },
         { path: 'requirements/:id', element: <RequirementDetailPage /> },
         { path: 'requirements/:id/upload', element: <UploadCenterPage /> },
+        { path: 'requirements/:id/upload/data', element: <UploadRequirementDataPage /> },
         { path: 'uploads', element: <UploadCenterPage /> },
+        { path: 'uploads/data', element: <UploadRequirementDataPage /> },
         { path: 'notifications', element: <NotificationPage /> },
         {
           path: 'admin',
@@ -102,6 +106,7 @@ function RouterContainer() {
           children: [
             { path: 'requirements', element: <AdminRequirementListPage /> },
             { path: 'requirements/:id', element: <AdminRequirementDetailPage /> },
+            { path: 'requirements/:id/data', element: <AdminRequirementDataPage /> },
           ],
         },
       ],

@@ -859,7 +859,16 @@ export function UploadCenterPage() {
         </Col>
       </Row>
 
-      <Card title="文件预览">
+      <Card
+        title={
+          <Space size={12} wrap>
+            <span>文件预览</span>
+            <Button type="primary" onClick={() => navigate(`/requirements/${requirementId}/upload/data`)}>
+              完整数据页
+            </Button>
+          </Space>
+        }
+      >
         {batchItems.some((item) => item.status === 'uploaded') ? (
           <Alert
             type="info"

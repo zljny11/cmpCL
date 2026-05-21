@@ -9,8 +9,23 @@ import { profileApi } from '../../services/api/profile';
 import { requirementsApi } from '../../services/api/requirements';
 import { RequirementListItem } from '../../types/requirements';
 import { isProfileComplete } from '../../utils/profileCompletion';
-import { renderRequirementStatus, renderRequirementType } from '../requirements/list/helpers';
+import { renderRequirementType } from '../requirements/list/helpers';
 import './index.less';
+
+function renderDashboardRequirementStatus(status: RequirementListItem['status']) {
+  switch (status) {
+    case 'pending':
+      return <Tag>待响应</Tag>;
+    case 'processing':
+      return <Tag color="processing">受理中（需等待）</Tag>;
+    case 'waiting_user':
+      return <Tag color="warning">受理中（需补充数据）</Tag>;
+    case 'completed':
+      return <Tag color="success">已完成</Tag>;
+    default:
+      return <Tag>{status}</Tag>;
+  }
+}
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -215,7 +230,7 @@ export function DashboardPage() {
                   >
                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
                       <Space wrap>
-                        {renderRequirementStatus(item.status)}
+                        {renderDashboardRequirementStatus(item.status)}
                         <Tag color="blue">{renderRequirementType(item.type)}</Tag>
                         {!isAdmin && item.unreadNotificationCount > 0 ? (
                           <Tag color="red">未读 {item.unreadNotificationCount}</Tag>

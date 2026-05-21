@@ -252,9 +252,7 @@
 .pacs-series-scroll-wrapper {
   max-height: 400px;
   overflow-y: scroll;
-  overflow-x: auto;
-  min-width: 0;
-  max-width: 100%;
+  overflow-x: hidden;
   border-radius: 4px;
   scrollbar-gutter: stable;
 }
@@ -269,11 +267,6 @@
   .pacs-series-scroll-wrapper {
     max-height: 250px;
   }
-}
-
-.pacs-series-scroll-wrapper .ant-table-wrapper {
-  width: 100%;
-  min-width: 0;
 }
 
 .pacs-series-scroll-wrapper::-webkit-scrollbar {

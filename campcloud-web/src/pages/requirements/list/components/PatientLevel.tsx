@@ -1,6 +1,6 @@
 import { Button, Empty, Space, Table, Typography, message } from 'antd';
 import dayjs from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RequirementPatientNode } from '../../../../types/requirements';
 import { StudyLevel } from './StudyLevel';
 import { withTextFilter } from './pacsTableFilters';
@@ -17,6 +17,7 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
   const expandedStorageKey = `AICampCloud:tree:patients:${requirementId}`;
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
   const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<React.Key[]>([]);
+  const scrollShellRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const validKeys = new Set(data.map((patient) => patient.id));
@@ -47,6 +48,17 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
     [data, selectedSeriesKeys],
   );
 
+  const scrollToRightEdge = useCallback(() => {
+    const shell = scrollShellRef.current;
+    if (!shell) return;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        shell.scrollLeft = shell.scrollWidth;
+      });
+    });
+  }, []);
+
   return (
     <div className="pacs-tree">
       <div className="pacs-tree-summary">
@@ -54,7 +66,7 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
         <Typography.Text>检查 {totalStudies}</Typography.Text>
         <Typography.Text>序列 {totalSeries}</Typography.Text>
       </div>
-      <div className="pacs-tree-scroll-shell">
+      <div ref={scrollShellRef} className="pacs-tree-scroll-shell">
         <div className="pacs-tree-scroll-content">
           <Table<RequirementPatientNode>
             className="pacs-tree-table pacs-patient-table"
@@ -99,6 +111,7 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
                   patient={record}
                   data={record.studies}
                   onRefresh={onRefresh}
+                  onSeriesExpand={scrollToRightEdge}
                   selectedSeriesKeys={selectedSeriesKeys}
                   onSelectedSeriesKeysChange={setSelectedSeriesKeys}
                   readOnly={readOnly}

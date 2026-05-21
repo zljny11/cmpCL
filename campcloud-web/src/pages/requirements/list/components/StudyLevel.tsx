@@ -16,6 +16,7 @@ interface Props {
   patient: RequirementPatientNode;
   data: RequirementStudyNode[];
   onRefresh?: () => void;
+  onSeriesExpand?: () => void;
   selectedSeriesKeys: React.Key[];
   onSelectedSeriesKeysChange: (keys: React.Key[]) => void;
   readOnly?: boolean;
@@ -26,6 +27,7 @@ export function StudyLevel({
   patient,
   data,
   onRefresh,
+  onSeriesExpand,
   selectedSeriesKeys,
   onSelectedSeriesKeysChange,
   readOnly = false,
@@ -102,6 +104,9 @@ export function StudyLevel({
           setExpandedRowKeys((current) =>
             expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
           );
+          if (expanded) {
+            onSeriesExpand?.();
+          }
         }}
         rowSelection={
           readOnly
@@ -129,18 +134,16 @@ export function StudyLevel({
         rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
         expandable={{
           expandedRowRender: (record) => (
-            <div className="pacs-series-scroll-wrapper">
-              <SeriesLevel
-                requirementId={requirementId}
-                patient={patient}
-                study={record}
-                data={record.series}
-                onRefresh={onRefresh}
-                selectedSeriesKeys={selectedSeriesKeys}
-                onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
-                readOnly={readOnly}
-              />
-            </div>
+            <SeriesLevel
+              requirementId={requirementId}
+              patient={patient}
+              study={record}
+              data={record.series}
+              onRefresh={onRefresh}
+              selectedSeriesKeys={selectedSeriesKeys}
+              onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
+              readOnly={readOnly}
+            />
           ),
           rowExpandable: (record) => record.series.length > 0,
         }}

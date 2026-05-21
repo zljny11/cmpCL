@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { App, Button, Card, Descriptions, Empty, Form, Input, List, Result, Select, Space, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { requirementsApi } from '../../services/api/requirements';
 import { queryClient } from '../../services/query-client';
 import { RequirementStatus } from '../../types/requirements';
@@ -17,6 +17,7 @@ const statusOptions: Array<{ label: string; value: RequirementStatus }> = [
 
 export function AdminRequirementDetailPage() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const { message } = App.useApp();
   const [messageForm] = Form.useForm<{ content: string }>();
   const [statusForm] = Form.useForm<{ status: RequirementStatus; reason?: string }>();
@@ -107,29 +108,18 @@ export function AdminRequirementDetailPage() {
             </Descriptions.Item>
           </Descriptions>
 
-          <Card title="需求数据详情">
+          <Card
+            title={
+              <Space size={12} wrap>
+                <span>需求数据详情</span>
+                <Button type="primary" onClick={() => navigate(`/admin/requirements/${id}/data`)}>
+                  完整数据页
+                </Button>
+              </Space>
+            }
+          >
             <RequirementExpandPanel requirementId={id} expanded readOnly />
           </Card>
-
-          <Card title="更新状态">
-            <Form
-              form={statusForm}
-              layout="vertical"
-              onFinish={(values) => updateStatusMutation.mutate(values)}
-            >
-              <Form.Item label="目标状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
-                <Select options={statusOptions} placeholder="请选择要更新到的状态" />
-              </Form.Item>
-              <Form.Item label="通知说明" name="reason">
-                <Input.TextArea rows={3} placeholder="例如：需求已受理，正在安排处理；需要用户补充某类扫描数据等" />
-              </Form.Item>
-              <Button type="primary" htmlType="submit" loading={updateStatusMutation.isPending}>
-                更新状态并通知用户
-              </Button>
-            </Form>
-          </Card>
-
-          <RequirementDeliveryPanel requirementId={id} canUpload />
 
           <Card title="留言沟通" loading={messagesQuery.isLoading}>
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -175,6 +165,26 @@ export function AdminRequirementDetailPage() {
               </Form>
             </Space>
           </Card>
+
+          <Card title="更新状态">
+            <Form
+              form={statusForm}
+              layout="vertical"
+              onFinish={(values) => updateStatusMutation.mutate(values)}
+            >
+              <Form.Item label="目标状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
+                <Select options={statusOptions} placeholder="请选择要更新到的状态" />
+              </Form.Item>
+              <Form.Item label="通知说明" name="reason">
+                <Input.TextArea rows={3} placeholder="例如：需求已受理，正在安排处理；需要用户补充某类扫描数据等" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" loading={updateStatusMutation.isPending}>
+                更新状态并通知用户
+              </Button>
+            </Form>
+          </Card>
+
+          <RequirementDeliveryPanel requirementId={id} canUpload />
         </>
       ) : null}
     </Space>
