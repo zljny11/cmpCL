@@ -8,6 +8,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
@@ -48,7 +49,10 @@ type FailedDatasetFileRecord = {
 
 @Injectable()
 export class RequirementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   private readonly uploadRoots = [
     resolve(process.cwd(), 'storage', 'uploads'),
@@ -1184,7 +1188,7 @@ export class RequirementsService {
       createdAt: item.createdAt,
       sender: {
         id: item.sender.id.toString(),
-        username: item.sender.username,
+        username: item.sender.role === UserRole.admin ? '影动' : item.sender.username,
         role: item.sender.role,
         hospitalName: item.sender.hospitalName,
       },
@@ -1217,7 +1221,7 @@ export class RequirementsService {
       createdAt: item.createdAt,
       uploader: {
         id: item.uploader.id.toString(),
-        username: item.uploader.username,
+        username: item.uploader.role === UserRole.admin ? '影动' : item.uploader.username,
         role: item.uploader.role,
       },
     }));
@@ -1234,7 +1238,6 @@ export class RequirementsService {
       throw new ForbiddenException('仅管理员可上传交付');
     }
 
-    const requirement = await this.ensureRequirementAccess(userId, requirementId, role);
     const title = dto.title.trim();
     if (!title) {
       throw new BadRequestException('交付标题不能为空');
@@ -1252,6 +1255,15 @@ export class RequirementsService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const requirement = await tx.requirement.findUnique({
+          where: { id: requirementId },
+          select: { id: true, userId: true, title: true, status: true },
+        });
+
+        if (!requirement) {
+          throw new NotFoundException('需求单不存在');
+        }
+
         const created = await tx.delivery.create({
           data: {
             requirementId,
@@ -1301,6 +1313,14 @@ export class RequirementsService {
           ? `需求「${requirement.title}」已收到最终交付：${title}`
           : `需求「${requirement.title}」已收到新的交付：${title}`;
         await this.createNotifications(tx, [requirement.userId], requirementId, 'delivery', notificationTitle, notificationContent);
+        await this.mailService.queueRequirementUserNotification(tx, {
+          requirementId,
+          type: 'delivery',
+          subject: isFinal ? '【CampCloud】您的需求已收到最终交付' : '【CampCloud】您的需求有新交付',
+          requirementTitle: requirement.title,
+          actionLabel: isFinal ? '最终交付' : '新增交付',
+          summary: notificationContent,
+        });
 
         return {
           id: created.id.toString(),
@@ -1323,13 +1343,25 @@ export class RequirementsService {
   }
 
   async createMessage(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateMessageDto) {
-    const requirement = await this.ensureRequirementAccess(userId, requirementId, role);
     const content = dto.content.trim();
     if (!content) {
       throw new BadRequestException('留言内容不能为空');
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const requirement = await tx.requirement.findUnique({
+        where: { id: requirementId },
+        select: { id: true, userId: true, title: true, status: true },
+      });
+
+      if (!requirement) {
+        throw new NotFoundException('需求单不存在');
+      }
+
+      if (role !== UserRole.admin && requirement.userId !== userId) {
+        throw new ForbiddenException('无权访问该需求单');
+      }
+
       const created = await tx.message.create({
         data: {
           requirementId,
@@ -1384,6 +1416,14 @@ export class RequirementsService {
 
       if (role === UserRole.admin) {
         await this.createNotifications(tx, [requirement.userId], requirementId, 'message_reply', notificationTitle, notificationContent);
+        await this.mailService.queueRequirementUserNotification(tx, {
+          requirementId,
+          type: 'message_reply',
+          subject: '【CampCloud】您的需求有新留言',
+          requirementTitle: requirement.title,
+          actionLabel: '管理员留言',
+          summary: notificationContent,
+        });
       } else {
         const admins = await tx.user.findMany({
           where: { role: UserRole.admin },
@@ -1421,23 +1461,23 @@ export class RequirementsService {
       throw new BadRequestException('管理侧不支持将需求状态更新为待我响应');
     }
 
-    const requirement = await this.prisma.requirement.findUnique({
-      where: { id: requirementId },
-      select: {
-        id: true,
-        userId: true,
-        title: true,
-        status: true,
-      },
-    });
-
-    if (!requirement) {
-      throw new NotFoundException('需求单不存在');
-    }
-
     const reason = this.normalizeText(dto.reason);
 
     return this.prisma.$transaction(async (tx) => {
+      const requirement = await tx.requirement.findUnique({
+        where: { id: requirementId },
+        select: {
+          id: true,
+          userId: true,
+          title: true,
+          status: true,
+        },
+      });
+
+      if (!requirement) {
+        throw new NotFoundException('需求单不存在');
+      }
+
       const updated = await tx.requirement.update({
         where: { id: requirementId },
         data: { status: dto.status },
@@ -1465,6 +1505,14 @@ export class RequirementsService {
         '您的需求状态有更新，请在消息通知栏目查看',
         content,
       );
+      await this.mailService.queueRequirementUserNotification(tx, {
+        requirementId,
+        type: 'status_update',
+        subject: '【CampCloud】您的需求状态已更新',
+        requirementTitle: requirement.title,
+        actionLabel: '状态更新',
+        summary: content,
+      });
 
       return {
         id: updated.id.toString(),
@@ -2275,6 +2323,7 @@ export class RequirementsService {
             select: {
               id: true,
               username: true,
+              role: true,
             },
           },
         },
@@ -2296,7 +2345,7 @@ export class RequirementsService {
           uploadedAt: item.uploadedAt,
           uploader: {
             id: item.uploader.id.toString(),
-            username: item.uploader.username,
+            username: item.uploader.role === UserRole.admin ? '影动' : item.uploader.username,
           },
         };
       }),

@@ -8,10 +8,16 @@ async function main() {
 
   const users = [
     {
-      username: 'admin',
+      username: 'admin1',
       role: UserRole.admin,
-      hospitalName: 'admin',
-      profile: { realName: '管理员', department: '平台运营', title: '系统管理员' },
+      hospitalName: 'CampCloud',
+      profile: { realName: '管理员1', department: '平台运营', title: '系统管理员' },
+    },
+    {
+      username: 'admin2',
+      role: UserRole.admin,
+      hospitalName: 'CampCloud',
+      profile: { realName: '管理员2', department: '平台运营', title: '系统管理员' },
     },
     {
       username: 'demo',

@@ -35,6 +35,12 @@ enum DatasetBatchStatus {
   failed
 }
 
+enum MailJobStatus {
+  pending
+  sent
+  failed
+}
+
 model User {
   id            BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
   username      String         @unique @db.VarChar(64)
@@ -52,6 +58,7 @@ model User {
   deliveries    Delivery[]
   notifications Notification[]
   statusLogs    RequirementStatusLog[]
+  mailJobs      MailJob[]
 
   @@map("users")
 }
@@ -95,6 +102,7 @@ model Requirement {
   deliveries              Delivery[]
   requirementStatusLogs   RequirementStatusLog[]
   notifications           Notification[]
+  mailJobs                MailJob[]
 
   @@index([userId])
   @@index([status])
@@ -244,4 +252,28 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@map("notifications")
+}
+
+model MailJob {
+  id            BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  userId        BigInt        @map("user_id") @db.UnsignedBigInt
+  requirementId BigInt?       @map("requirement_id") @db.UnsignedBigInt
+  type          String        @db.VarChar(32)
+  toEmail       String        @map("to_email") @db.VarChar(128)
+  subject       String        @db.VarChar(200)
+  html          String        @db.Text
+  text          String?       @db.Text
+  status        MailJobStatus @default(pending)
+  retryCount    Int           @default(0) @map("retry_count")
+  lastError     String?       @map("last_error") @db.VarChar(500)
+  sentAt        DateTime?     @map("sent_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requirement   Requirement?  @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+
+  @@index([status, retryCount, createdAt])
+  @@index([userId])
+  @@index([requirementId])
+  @@map("mail_jobs")
 }
