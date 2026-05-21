@@ -89,10 +89,10 @@ export function ProfilePage() {
                   name="phone"
                   rules={[
                     { required: true, message: '请输入电话' },
-                    { pattern: /^[0-9\-+() ]{6,32}$/, message: '请输入有效的电话' },
+                    { pattern: /^1[3-9]\d{9}$/, message: '请输入中国大陆 11 位手机号' },
                   ]}
                 >
-                  <Input placeholder="请输入工作手机号或办公电话" />
+                  <Input placeholder="请输入中国大陆 11 位手机号" maxLength={11} />
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>

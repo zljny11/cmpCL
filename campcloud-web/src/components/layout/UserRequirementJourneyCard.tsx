@@ -134,15 +134,21 @@ function getJourneyState(params: {
       hint: hasRequirement
         ? isDelivered
           ? '交付已完成，可前往需求详情查看交付内容'
-          : '处理完成后会进入最终交付'
+        : '处理完成后会进入最终交付'
         : hasAnyRequirement
           ? '请进入某个具体需求页，查看该需求是否已完成交付'
           : '需求处理完成后会进入最终交付',
     },
   ];
 
+  const currentIndex = steps.findIndex((step) => step.current);
+  const normalizedSteps = steps.map((step, index) => ({
+    ...step,
+    done: currentIndex > 0 && index < currentIndex ? true : step.done,
+  }));
+
   return {
-    steps,
+    steps: normalizedSteps,
     nextAction,
     trackedTitle: requirement?.title ?? null,
   };

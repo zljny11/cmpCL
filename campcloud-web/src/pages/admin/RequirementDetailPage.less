@@ -1,0 +1,49 @@
+.admin-requirement-data-scroll-frame {
+  position: relative;
+  padding-right: 18px;
+}
+
+.admin-requirement-data-scroll-shell {
+  min-height: 720px;
+  max-height: 78vh;
+  overflow: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: auto;
+  scrollbar-color: #9fb8cd #edf3f7;
+}
+
+.admin-requirement-data-scroll-shell::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.admin-requirement-data-scroll-shell::-webkit-scrollbar-thumb {
+  background: #9fb8cd;
+  border-radius: 999px;
+  border: 2px solid #edf3f7;
+}
+
+.admin-requirement-data-scroll-shell::-webkit-scrollbar-track {
+  background: #edf3f7;
+  border-radius: 999px;
+}
+
+.admin-requirement-data-scroll-indicator {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 10px;
+  height: 100%;
+  border-radius: 999px;
+  background: #edf3f7;
+  pointer-events: none;
+}
+
+.admin-requirement-data-scroll-thumb {
+  width: 100%;
+  min-height: 72px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #aac3d7 0%, #7fabc9 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}

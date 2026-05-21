@@ -125,6 +125,47 @@
   padding-top: 4px;
 }
 
+.pacs-tree-scroll-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  max-height: 500px;
+  overflow-x: scroll;
+  overflow-y: auto;
+  overscroll-behavior-x: contain;
+}
+
+.pacs-tree-scroll-content {
+  width: max-content;
+  min-width: 100%;
+}
+
+.pacs-patient-table table {
+  min-width: 1080px;
+}
+
+.pacs-study-table table {
+  min-width: 860px;
+}
+
+.pacs-series-table table {
+  min-width: 1240px;
+}
+
+.pacs-tree-scroll-shell::-webkit-scrollbar {
+  height: 10px;
+}
+
+.pacs-tree-scroll-shell::-webkit-scrollbar-thumb {
+  background: #c7d6e2;
+  border-radius: 999px;
+}
+
+.pacs-tree-scroll-shell::-webkit-scrollbar-track {
+  background: #eef4f8;
+  border-radius: 999px;
+}
+
 .pacs-link-button.ant-btn {
   padding-inline: 0;
   height: auto;
@@ -133,4 +174,30 @@
 
 .pacs-danger-link.ant-btn {
   color: #ff4d4f;
+}
+
+.pacs-series-scroll-wrapper {
+  max-height: 400px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  border-radius: 4px;
+  scrollbar-gutter: stable;
+}
+
+.pacs-series-scroll-wrapper .ant-table-wrapper {
+  width: 100%;
+}
+
+.pacs-series-scroll-wrapper::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pacs-series-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: #c7d6e2;
+  border-radius: 999px;
+}
+
+.pacs-series-scroll-wrapper::-webkit-scrollbar-track {
+  background: #eef4f8;
+  border-radius: 999px;
 }

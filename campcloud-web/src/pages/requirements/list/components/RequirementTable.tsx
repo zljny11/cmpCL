@@ -6,6 +6,7 @@ import { RequirementTableRecord } from '../types';
 import { renderRequirementStatus, renderRequirementType } from '../helpers';
 import { RequirementExpandPanel } from './RequirementExpandPanel';
 import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
+import '../index.less';
 
 interface Props {
   data: RequirementTableRecord[];

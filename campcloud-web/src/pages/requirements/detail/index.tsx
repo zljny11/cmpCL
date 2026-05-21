@@ -46,7 +46,7 @@ export function RequirementDetailPage() {
     return <Result status="error" title="需求详情加载失败" />;
   }
 
-  const canUserLeaveMessage = user?.role === 'admin' || (data ? data.status !== 'pending' : false);
+  const canUserLeaveMessage = Boolean(data);
 
   return (
     <Card loading={isLoading} bordered={false}>
@@ -120,26 +120,6 @@ export function RequirementDetailPage() {
                 </Space>
               </Card>
             </Col>
-            <Col xs={24} lg={12}>
-              <Card title="最近留言摘要" size="small">
-                {data.latestMessage ? (
-                  <Space direction="vertical" size={8}>
-                    <Typography.Text strong>{data.latestMessage.sender.username}</Typography.Text>
-                    <Typography.Paragraph style={{ marginBottom: 0 }}>
-                      {data.latestMessage.content}
-                    </Typography.Paragraph>
-                    <Typography.Text type="secondary">
-                      {dayjs(data.latestMessage.createdAt).format('YYYY-MM-DD HH:mm')}
-                    </Typography.Text>
-                  </Space>
-                ) : (
-                  <Empty description="暂无留言" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                )}
-              </Card>
-            </Col>
-            <Col xs={24}>
-              <RequirementDeliveryPanel requirementId={id} />
-            </Col>
             <Col xs={24}>
               <Card title="需求留言与补充" size="small" loading={messagesQuery.isLoading}>
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -180,13 +160,6 @@ export function RequirementDetailPage() {
                       })
                     }
                   >
-                    {!canUserLeaveMessage ? (
-                      <Alert
-                        type="info"
-                        showIcon
-                        message={data?.status === 'pending' ? '管理员受理后才可以继续留言' : '当前需求状态不支持继续留言'}
-                      />
-                    ) : null}
                     <Form.Item
                       label="补充回复"
                       name="content"
@@ -200,6 +173,9 @@ export function RequirementDetailPage() {
                   </Form>
                 </Space>
               </Card>
+            </Col>
+            <Col xs={24}>
+              <RequirementDeliveryPanel requirementId={id} />
             </Col>
           </Row>
         </Space>

@@ -140,7 +140,7 @@ export function DashboardPage() {
                   description="这些需求当前处于受理中（需补充数据），请尽快补充所需数据或说明。"
                   action={
                     <Link to="/requirements">
-                      <Button size="small">去查看</Button>
+                      <Button size="small">去处理</Button>
                     </Link>
                   }
                 />
@@ -153,7 +153,7 @@ export function DashboardPage() {
                   description="建议优先查看最近有状态变化或留言更新的需求。"
                   action={
                     <Link to="/notifications">
-                      <Button size="small">去处理</Button>
+                      <Button size="small">去查看</Button>
                     </Link>
                   }
                 />

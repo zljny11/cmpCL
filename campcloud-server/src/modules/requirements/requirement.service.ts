@@ -1329,10 +1329,6 @@ export class RequirementsService {
       throw new BadRequestException('留言内容不能为空');
     }
 
-    if (role === UserRole.user && requirement.status === RequirementStatus.pending) {
-      throw new BadRequestException('需求受理后才可以继续留言');
-    }
-
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.message.create({
         data: {

@@ -62,14 +62,20 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
     },
   });
 
-  const handleDownload = async (deliveryId: string, fileName: string) => {
+  const buildCustomerFileName = (title: string, isFinal: boolean, fileName: string | null) => {
+    const normalizedTitle = title.trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || (isFinal ? '最终交付' : '阶段交付');
+    const extension = fileName?.includes('.') ? `.${fileName.split('.').pop()}` : '';
+    return `${normalizedTitle}${extension}`;
+  };
+
+  const handleDownload = async (deliveryId: string, fileName: string, downloadName?: string) => {
     setDownloadingId(deliveryId);
     try {
       const blob = await requirementsApi.downloadDelivery(requirementId, deliveryId);
       const objectUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = fileName;
+      link.download = downloadName || fileName;
       link.click();
       window.URL.revokeObjectURL(objectUrl);
     } catch {
@@ -150,7 +156,13 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                           type="link"
                           icon={<DownloadOutlined />}
                           loading={downloadingId === item.id}
-                          onClick={() => handleDownload(item.id, item.fileName!)}
+                          onClick={() =>
+                            handleDownload(
+                              item.id,
+                              item.fileName!,
+                              canUpload ? item.fileName! : buildCustomerFileName(item.title, item.isFinal, item.fileName),
+                            )
+                          }
                         >
                           下载
                         </Button>,
@@ -162,7 +174,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                   <Space wrap>
                     <Typography.Text strong>{item.title}</Typography.Text>
                     {item.isFinal ? <Tag color="success">最终交付</Tag> : <Tag color="blue">阶段交付</Tag>}
-                    <Tag icon={<InboxOutlined />}>{item.fileName || '未命名文件'}</Tag>
+                    {canUpload ? <Tag icon={<InboxOutlined />}>{item.fileName || '未命名文件'}</Tag> : null}
                   </Space>
                   {item.description ? <Typography.Paragraph style={{ marginBottom: 0 }}>{item.description}</Typography.Paragraph> : null}
                   <Typography.Text type="secondary">

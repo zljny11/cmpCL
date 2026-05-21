@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
 import { RequirementPatientNode, RequirementStudyNode } from '../../../../types/requirements';
+import { downloadRequirementDicomZip } from './downloadDicomZip';
 import { SeriesLevel } from './SeriesLevel';
 import { withTextFilter } from './pacsTableFilters';
 import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
@@ -33,6 +34,7 @@ export function StudyLevel({
   const navigate = useNavigate();
   const expandedStorageKey = `AICampCloud:tree:studies:${requirementId}:${patient.id}`;
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
+  const [downloadingStudyId, setDownloadingStudyId] = useState<string | null>(null);
   const selectedStudyKeys = useMemo(
     () =>
       data
@@ -66,6 +68,26 @@ export function StudyLevel({
     },
   });
 
+  const handleDownloadStudy = async (record: RequirementStudyNode) => {
+    if (record.series.length === 0) {
+      message.warning('当前检查下没有可下载的序列');
+      return;
+    }
+
+    try {
+      setDownloadingStudyId(record.id);
+      await downloadRequirementDicomZip(
+        record.series.map((series) => series.id),
+        record.studyId || record.studyDescription || record.studyUid || `study_${record.id}`,
+      );
+      message.success('DICOM 下载成功');
+    } catch {
+      message.error('DICOM 下载失败');
+    } finally {
+      setDownloadingStudyId(null);
+    }
+  };
+
   return (
     <Table<RequirementStudyNode>
         className="pacs-tree-table pacs-study-table"
@@ -73,7 +95,6 @@ export function StudyLevel({
         size="small"
         pagination={false}
         dataSource={data}
-        scroll={{ x: 860 }}
         expandedRowKeys={expandedRowKeys}
         onExpand={(expanded, record) => {
           setExpandedRowKeys((current) =>
@@ -106,16 +127,18 @@ export function StudyLevel({
         rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
         expandable={{
           expandedRowRender: (record) => (
-            <SeriesLevel
-              requirementId={requirementId}
-              patient={patient}
-              study={record}
-              data={record.series}
-              onRefresh={onRefresh}
-              selectedSeriesKeys={selectedSeriesKeys}
-              onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
-              readOnly={readOnly}
-            />
+            <div className="pacs-series-scroll-wrapper">
+              <SeriesLevel
+                requirementId={requirementId}
+                patient={patient}
+                study={record}
+                data={record.series}
+                onRefresh={onRefresh}
+                selectedSeriesKeys={selectedSeriesKeys}
+                onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
+                readOnly={readOnly}
+              />
+            </div>
           ),
           rowExpandable: (record) => record.series.length > 0,
         }}
@@ -153,7 +176,7 @@ export function StudyLevel({
           },
           {
             title: '操作',
-            width: 140,
+            width: readOnly ? 190 : 140,
             render: (_: unknown, record: RequirementStudyNode) => (
               <Space size={4}>
                 <Button
@@ -164,6 +187,17 @@ export function StudyLevel({
                 >
                   查看
                 </Button>
+                {readOnly ? (
+                  <Button
+                    type="link"
+                    size="small"
+                    className="pacs-link-button"
+                    loading={downloadingStudyId === record.id}
+                    onClick={() => void handleDownloadStudy(record)}
+                  >
+                    下载
+                  </Button>
+                ) : null}
                 {readOnly ? null : (
                   <Popconfirm
                     title="删除检查"

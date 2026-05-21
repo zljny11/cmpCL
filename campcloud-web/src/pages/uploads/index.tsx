@@ -138,7 +138,7 @@ function FailedFilesPanel({
 }
 
 export function UploadCenterPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { id: routeRequirementId } = useParams();
@@ -263,6 +263,7 @@ export function UploadCenterPage() {
         .filter((file): file is RcFile => Boolean(file));
 
       const nextUploadType: DatasetUploadType = (batchData?.total ?? 0) > 0 ? 'supplement' : 'initial';
+      const shouldShowInitialUploadNotice = user?.role === 'user' && !retryContext && nextUploadType === 'initial';
 
       setPendingBatchPreview({
         id: `pending-${Date.now()}`,
@@ -282,7 +283,7 @@ export function UploadCenterPage() {
       setIsUploadingFiles(true);
       setUploadProgress({ percent: 0, loaded: 0, total: null });
 
-      return requirementsApi.createDatasetBatch(
+      const result = await requirementsApi.createDatasetBatch(
         requirementId,
         {
           sourceName: values.sourceName,
@@ -299,8 +300,13 @@ export function UploadCenterPage() {
           },
         },
       );
+
+      return {
+        result,
+        shouldShowInitialUploadNotice,
+      };
     },
-    onSuccess: async (result) => {
+    onSuccess: async ({ result, shouldShowInitialUploadNotice }) => {
       setPendingBatchPreview(null);
       setIsUploadingFiles(false);
       setUploadProgress(null);
@@ -322,6 +328,14 @@ export function UploadCenterPage() {
       ]);
       void refetchBatches();
       void refetchTree();
+      if (shouldShowInitialUploadNotice) {
+        modal.info({
+          title: '上传完成',
+          content: '您已完成上传，请耐心等待处理，如有新内容也可分批次补充',
+          okText: '我知道了',
+          centered: true,
+        });
+      }
     },
     onError: (error) => {
       setPendingBatchPreview(null);
@@ -765,12 +779,12 @@ export function UploadCenterPage() {
                 {
                   title: '批次',
                   width: 90,
-                  render: (_, record) => <Typography.Text strong>#{record.batchNo}</Typography.Text>,
+                  render: (_: unknown, record: DatasetBatchItem) => <Typography.Text strong>#{record.batchNo}</Typography.Text>,
                 },
                 {
                   title: '上传类型',
                   width: 110,
-                  render: (_, record) => (
+                  render: (_: unknown, record: DatasetBatchItem) => (
                     <Tag color={record.uploadType === 'initial' ? 'geekblue' : 'gold'}>
                       {record.uploadType === 'initial' ? '首次上传' : '补充上传'}
                     </Tag>
@@ -778,17 +792,18 @@ export function UploadCenterPage() {
                 },
                 {
                   title: '数据标签',
-                  render: (_, record) => (
-                    <Space direction="vertical" size={2}>
-                      <Typography.Text>{record.sourceName || '未填写数据标签'}</Typography.Text>
-                      <Typography.Text type="secondary">{record.remark || '无备注'}</Typography.Text>
-                    </Space>
+                  width: 360,
+                  render: (_: unknown, record: DatasetBatchItem) => (
+                    <Typography.Text ellipsis style={{ display: 'block' }}>
+                      {record.sourceName || '未填写数据标签'}
+                      {record.remark ? ` / ${record.remark}` : ''}
+                    </Typography.Text>
                   ),
                 },
                 {
                   title: '文件数',
                   width: 120,
-                  render: (_, record) => (
+                  render: (_: unknown, record: DatasetBatchItem) => (
                     <Space direction="vertical" size={0}>
                       <Typography.Text>{record.fileCount}</Typography.Text>
                       {record.failedFileCount > 0 ? (
@@ -802,7 +817,7 @@ export function UploadCenterPage() {
                 {
                   title: '状态',
                   width: 140,
-                  render: (_, record) => (
+                  render: (_: unknown, record: DatasetBatchItem) => (
                     <Space direction="vertical" size={4}>
                       <Tag color={batchStatusColorMap[record.status]}>{batchStatusLabelMap[record.status]}</Tag>
                       {(record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('解析失败')) ? (
@@ -827,14 +842,15 @@ export function UploadCenterPage() {
                 {
                   title: '上传人',
                   width: 120,
-                  render: (_, record) => record.uploader.username,
+                  render: (_: unknown, record: DatasetBatchItem) => record.uploader.username,
+                  hidden: user?.role === 'user',
                 },
                 {
                   title: '上传时间',
                   width: 168,
-                  render: (_, record) => dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm'),
+                  render: (_: unknown, record: DatasetBatchItem) => dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm'),
                 },
-              ]}
+              ].filter((column) => !('hidden' in column) || !column.hidden)}
               locale={{
                 emptyText: <Empty description="当前需求单还没有上传批次" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
               }}

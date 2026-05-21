@@ -1,11 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
 import { App, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
 import { RequirementPatientNode, RequirementSeriesNode, RequirementStudyNode } from '../../../../types/requirements';
+import { downloadRequirementDicomZip } from './downloadDicomZip';
 import { withTextFilter } from './pacsTableFilters';
 
 interface Props {
@@ -31,10 +32,26 @@ export function SeriesLevel({
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
+  const [downloadingSeriesId, setDownloadingSeriesId] = useState<string | null>(null);
   const selectedRowKeys = useMemo(
     () => data.map((item) => item.id).filter((id) => selectedSeriesKeys.includes(id)),
     [data, selectedSeriesKeys],
   );
+
+  const handleDownloadSeries = async (record: RequirementSeriesNode) => {
+    try {
+      setDownloadingSeriesId(record.id);
+      await downloadRequirementDicomZip(
+        [record.id],
+        record.seriesDescription || record.seriesUid || `series_${record.id}`,
+      );
+      message.success('DICOM 下载成功');
+    } catch {
+      message.error('DICOM 下载失败');
+    } finally {
+      setDownloadingSeriesId(null);
+    }
+  };
 
   const deleteSeriesMutation = useMutation({
     mutationFn: (seriesId: string) => requirementsApi.deleteSeries(requirementId, seriesId),
@@ -60,7 +77,7 @@ export function SeriesLevel({
         dataSource={data}
         pagination={false}
         size="small"
-        scroll={{ x: 1240, y: data.length > 8 ? 430 : undefined }}
+        scroll={{ y: 320 }}
         rowSelection={
           readOnly
             ? undefined
@@ -128,7 +145,7 @@ export function SeriesLevel({
           ),
           {
             title: '操作',
-            width: 140,
+            width: readOnly ? 190 : 140,
             render: (_: unknown, record: RequirementSeriesNode) => (
               <Space size={4}>
                 <Button
@@ -139,6 +156,17 @@ export function SeriesLevel({
                 >
                   查看
                 </Button>
+                {readOnly ? (
+                  <Button
+                    type="link"
+                    size="small"
+                    className="pacs-link-button"
+                    loading={downloadingSeriesId === record.id}
+                    onClick={() => void handleDownloadSeries(record)}
+                  >
+                    下载
+                  </Button>
+                ) : null}
                 {readOnly ? null : (
                   <Popconfirm
                     title="删除序列"

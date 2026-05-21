@@ -54,108 +54,112 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
         <Typography.Text>检查 {totalStudies}</Typography.Text>
         <Typography.Text>序列 {totalSeries}</Typography.Text>
       </div>
-      <Table<RequirementPatientNode>
-        className="pacs-tree-table pacs-patient-table"
-        rowKey="id"
-        size="small"
-        pagination={false}
-        dataSource={data}
-        scroll={{ x: 1080 }}
-        expandedRowKeys={expandedRowKeys}
-        onExpand={(expanded, record) => {
-          setExpandedRowKeys((current) =>
-            expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
-          );
-        }}
-        rowSelection={
-          readOnly
-            ? undefined
-            : {
-                selectedRowKeys: selectedPatientKeys,
-                columnWidth: 44,
-                onSelect: (record, selected) => {
-                  const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
-                  const nextKeys = selected
-                    ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
-                    : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
-                  setSelectedSeriesKeys(nextKeys);
+      <div className="pacs-tree-scroll-shell">
+        <div className="pacs-tree-scroll-content">
+          <Table<RequirementPatientNode>
+            className="pacs-tree-table pacs-patient-table"
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={data}
+            expandedRowKeys={expandedRowKeys}
+            onExpand={(expanded, record) => {
+              setExpandedRowKeys((current) =>
+                expanded ? [...current, record.id] : current.filter((key) => key !== record.id),
+              );
+            }}
+            rowSelection={
+              readOnly
+                ? undefined
+                : {
+                    selectedRowKeys: selectedPatientKeys,
+                    columnWidth: 44,
+                    onSelect: (record, selected) => {
+                      const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
+                      const nextKeys = selected
+                        ? [...new Set([...selectedSeriesKeys, ...seriesIds])]
+                        : selectedSeriesKeys.filter((key) => !seriesIds.includes(String(key)));
+                      setSelectedSeriesKeys(nextKeys);
+                    },
+                    getCheckboxProps: (record) => {
+                      const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
+                      const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
+                      return {
+                        indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
+                        disabled: seriesIds.length === 0,
+                      };
+                    },
+                  }
+            }
+            rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
+            expandable={{
+              expandedRowRender: (record) => (
+                <StudyLevel
+                  requirementId={requirementId}
+                  patient={record}
+                  data={record.studies}
+                  onRefresh={onRefresh}
+                  selectedSeriesKeys={selectedSeriesKeys}
+                  onSelectedSeriesKeysChange={setSelectedSeriesKeys}
+                  readOnly={readOnly}
+                />
+              ),
+              rowExpandable: (record) => record.studies.length > 0,
+            }}
+            columns={[
+              withTextFilter<RequirementPatientNode>('姓名', (record) => record.patientName || record.patientUid, {
+                width: 240,
+                render: (_: unknown, record: RequirementPatientNode) => (
+                  <div>
+                    <Typography.Text strong>{record.patientName || '未命名患者'}</Typography.Text>
+                  </div>
+                ),
+              }),
+              {
+                title: '性别',
+                width: 90,
+                render: (_: unknown, record: RequirementPatientNode) => record.sex || '未知',
+              },
+              withTextFilter<RequirementPatientNode>(
+                '生日',
+                (record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : null),
+                {
+                  width: 140,
+                  render: (_: unknown, record: RequirementPatientNode) =>
+                    record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : '-',
                 },
-                getCheckboxProps: (record) => {
-                  const seriesIds = record.studies.flatMap((study) => study.series.map((series) => series.id));
-                  const selectedCount = seriesIds.filter((id) => selectedSeriesKeys.includes(id)).length;
-                  return {
-                    indeterminate: selectedCount > 0 && selectedCount < seriesIds.length,
-                    disabled: seriesIds.length === 0,
-                  };
-                },
-              }
-        }
-        rowClassName={(record) => (expandedRowKeys.includes(record.id) ? 'pacs-expanded-row' : '')}
-        expandable={{
-          expandedRowRender: (record) => (
-            <StudyLevel
-              requirementId={requirementId}
-              patient={record}
-              data={record.studies}
-              onRefresh={onRefresh}
-              selectedSeriesKeys={selectedSeriesKeys}
-              onSelectedSeriesKeysChange={setSelectedSeriesKeys}
-              readOnly={readOnly}
-            />
-          ),
-          rowExpandable: (record) => record.studies.length > 0,
-        }}
-        columns={[
-          withTextFilter<RequirementPatientNode>('姓名', (record) => record.patientName || record.patientUid, {
-            width: 240,
-            render: (_: unknown, record: RequirementPatientNode) => (
-              <div>
-                <Typography.Text strong>{record.patientName || '未命名患者'}</Typography.Text>
-              </div>
-            ),
-          }),
-          {
-            title: '性别',
-            width: 90,
-            render: (_: unknown, record: RequirementPatientNode) => record.sex || '未知',
-          },
-          withTextFilter<RequirementPatientNode>(
-            '生日',
-            (record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : null),
-            {
-            width: 140,
-            render: (_: unknown, record: RequirementPatientNode) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : '-'),
-            },
-          ),
-          withTextFilter<RequirementPatientNode>('患者 ID', (record) => record.patientId, {
-            dataIndex: 'patientId',
-            width: 160,
-            render: (value: string | null) => value || '-',
-          }),
-          {
-            title: '图像总张数',
-            dataIndex: 'imageCount',
-            width: 120,
-          },
-          {
-            title: '操作',
-            width: 140,
-            render: (_: unknown, record: RequirementPatientNode) => (
-              <Space size={4}>
-                <Button
-                  type="link"
-                  size="small"
-                  className="pacs-link-button"
-                  onClick={() => message.info(`患者 ${record.patientName || record.patientId || record.patientUid} 暂无下载能力`)}
-                >
-                  下载
-                </Button>
-              </Space>
-            ),
-            hidden: readOnly,
-          },
-        ].filter((column) => !('hidden' in column) || !column.hidden)}
-      />
+              ),
+              withTextFilter<RequirementPatientNode>('患者 ID', (record) => record.patientId, {
+                dataIndex: 'patientId',
+                width: 160,
+                render: (value: string | null) => value || '-',
+              }),
+              {
+                title: '图像总张数',
+                dataIndex: 'imageCount',
+                width: 120,
+              },
+              {
+                title: '操作',
+                width: 140,
+                render: (_: unknown, record: RequirementPatientNode) => (
+                  <Space size={4}>
+                    <Button
+                      type="link"
+                      size="small"
+                      className="pacs-link-button"
+                      onClick={() => message.info(`患者 ${record.patientName || record.patientId || record.patientUid} 暂无下载能力`)}
+                    >
+                      下载
+                    </Button>
+                  </Space>
+                ),
+                hidden: readOnly,
+              },
+            ].filter((column) => !('hidden' in column) || !column.hidden)}
+          />
+        </div>
+      </div>
     </div>
   );
 }
