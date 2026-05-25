@@ -217,6 +217,11 @@ export interface DatasetBatchItem {
   failedFileCount: number;
   status: DatasetBatchStatus;
   remark: string | null;
+  modality: string | null;
+  bodyPart: string | null;
+  diagnosis: string[] | null;
+  clinicalTags: string[] | null;
+  annotationStatus: string | null;
   uploadedAt: string;
   uploader: {
     id: string;
@@ -241,6 +246,11 @@ export interface DatasetBatchFailedFilesPayload {
 export interface CreateDatasetBatchPayload {
   sourceName?: string;
   remark?: string;
+  modality: string;
+  bodyPart: string;
+  diagnosis?: string[];
+  clinicalTags?: string[];
+  annotationStatus?: string;
   retryBatchId?: string;
   files: File[];
 }

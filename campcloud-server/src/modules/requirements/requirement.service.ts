@@ -2155,8 +2155,11 @@ export class RequirementsService {
 
     const validFiles = files.filter((file) => !this.shouldIgnoreUploadedFile(file.originalname));
     const fileCount = validFiles.length;
-    if (!dto.sourceName?.trim()) {
-      throw new BadRequestException('请填写来源说明');
+    if (!dto.modality?.trim()) {
+      throw new BadRequestException('请选择影像模态');
+    }
+    if (!dto.bodyPart?.trim()) {
+      throw new BadRequestException('请选择检查部位');
     }
     if (fileCount === 0) {
       throw new BadRequestException('请上传有效文件，系统会自动忽略 .DS_Store 和其他隐藏文件');
@@ -2164,6 +2167,8 @@ export class RequirementsService {
 
     const trimmedSourceName = dto.sourceName?.trim() || null;
     const trimmedRemark = dto.remark?.trim() || null;
+    const trimmedModality = dto.modality?.trim() || null;
+    const trimmedBodyPart = dto.bodyPart?.trim() || null;
     const retryBatchId = dto.retryBatchId ? BigInt(dto.retryBatchId) : null;
 
     const batch = await this.prisma.$transaction(async (tx) => {
@@ -2201,6 +2206,11 @@ export class RequirementsService {
             uploadedBy: userId,
             sourceName: trimmedSourceName,
             remark: trimmedRemark,
+            modality: trimmedModality,
+            bodyPart: trimmedBodyPart,
+            diagnosis: dto.diagnosis && dto.diagnosis.length > 0 ? dto.diagnosis : undefined,
+            clinicalTags: dto.clinicalTags && dto.clinicalTags.length > 0 ? dto.clinicalTags : undefined,
+            annotationStatus: dto.annotationStatus?.trim() || null,
             status: 'uploaded',
             fileCount: { increment: fileCount },
             uploadedAt: new Date(),
@@ -2228,6 +2238,11 @@ export class RequirementsService {
             uploadType: lastBatch ? DatasetUploadType.supplement : DatasetUploadType.initial,
             sourceName: trimmedSourceName,
             remark: trimmedRemark,
+            modality: trimmedModality,
+            bodyPart: trimmedBodyPart,
+            diagnosis: dto.diagnosis && dto.diagnosis.length > 0 ? dto.diagnosis : undefined,
+            clinicalTags: dto.clinicalTags && dto.clinicalTags.length > 0 ? dto.clinicalTags : undefined,
+            annotationStatus: dto.annotationStatus?.trim() || null,
             fileCount,
           },
           select: {
@@ -2342,6 +2357,11 @@ export class RequirementsService {
           failedFileCount: failedFiles.length,
           status: item.status,
           remark: item.remark,
+          modality: item.modality,
+          bodyPart: item.bodyPart,
+          diagnosis: item.diagnosis,
+          clinicalTags: item.clinicalTags,
+          annotationStatus: item.annotationStatus,
           uploadedAt: item.uploadedAt,
           uploader: {
             id: item.uploader.id.toString(),

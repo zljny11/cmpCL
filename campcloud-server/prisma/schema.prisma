@@ -111,21 +111,26 @@ model Requirement {
 }
 
 model DatasetBatch {
-  id            BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
-  requirementId BigInt             @map("requirement_id") @db.UnsignedBigInt
-  uploadedBy    BigInt             @map("uploaded_by") @db.UnsignedBigInt
-  batchNo       Int                @map("batch_no")
-  uploadType    DatasetUploadType  @map("upload_type")
-  sourceName    String?            @map("source_name") @db.VarChar(255)
-  fileCount     Int                @default(0) @map("file_count")
-  status        DatasetBatchStatus @default(uploaded)
-  remark        String?            @db.VarChar(255)
-  uploadedAt    DateTime           @default(now()) @map("uploaded_at")
-  createdAt     DateTime           @default(now()) @map("created_at")
-  updatedAt     DateTime           @updatedAt @map("updated_at")
-  requirement   Requirement        @relation(fields: [requirementId], references: [id], onDelete: Cascade)
-  uploader      User               @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
-  series        Series[]
+  id                BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId     BigInt             @map("requirement_id") @db.UnsignedBigInt
+  uploadedBy        BigInt             @map("uploaded_by") @db.UnsignedBigInt
+  batchNo           Int                @map("batch_no")
+  uploadType        DatasetUploadType  @map("upload_type")
+  sourceName        String?            @map("source_name") @db.VarChar(255)
+  fileCount         Int                @default(0) @map("file_count")
+  status            DatasetBatchStatus @default(uploaded)
+  remark            String?            @db.VarChar(255)
+  modality          String?            @db.VarChar(32)
+  bodyPart          String?            @map("body_part") @db.VarChar(64)
+  diagnosis         Json?
+  clinicalTags      Json?              @map("clinical_tags")
+  annotationStatus  String?            @map("annotation_status") @db.VarChar(32)
+  uploadedAt        DateTime           @default(now()) @map("uploaded_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  requirement       Requirement        @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  uploader          User               @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  series            Series[]
 
   @@index([requirementId])
   @@map("dataset_batches")

@@ -158,6 +158,17 @@ export const requirementsApi = {
     if (payload.remark?.trim()) {
       formData.append('remark', payload.remark.trim());
     }
+    formData.append('modality', payload.modality);
+    formData.append('bodyPart', payload.bodyPart);
+    if (payload.diagnosis && payload.diagnosis.length > 0) {
+      formData.append('diagnosis', JSON.stringify(payload.diagnosis));
+    }
+    if (payload.clinicalTags && payload.clinicalTags.length > 0) {
+      formData.append('clinicalTags', JSON.stringify(payload.clinicalTags));
+    }
+    if (payload.annotationStatus?.trim()) {
+      formData.append('annotationStatus', payload.annotationStatus.trim());
+    }
     if (payload.retryBatchId) {
       formData.append('retryBatchId', payload.retryBatchId);
     }

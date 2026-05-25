@@ -42,6 +42,7 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@cornerstonejs/dicom-image-loader'],
     include: [
+      '@cornerstonejs/core',
       '@cornerstonejs/codec-libjpeg-turbo-8bit/decodewasmjs',
       '@cornerstonejs/codec-charls/decodewasmjs',
       '@cornerstonejs/codec-openjpeg/decodewasmjs',
@@ -51,5 +52,6 @@ export default defineConfig({
     esbuildOptions: {
       plugins: [stubNodeBuiltinsForCodecs],
     },
+    noDiscovery: false,
   },
 });

@@ -8,6 +8,7 @@ import { requirementsApi } from '../../../services/api/requirements';
 import { queryClient } from '../../../services/query-client';
 import { renderRequirementType, renderRequirementStatus } from '../list/helpers';
 import { RequirementDeliveryPanel } from './components/RequirementDeliveryPanel';
+import { RequirementPreviewPanel } from './components/RequirementPreviewPanel';
 
 export function RequirementDetailPage() {
   const { id = '' } = useParams();
@@ -96,6 +97,7 @@ export function RequirementDetailPage() {
               {data.description}
             </Descriptions.Item>
           </Descriptions>
+          <RequirementPreviewPanel requirementId={id} />
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={14}>
               <Card title="创建人信息" size="small">

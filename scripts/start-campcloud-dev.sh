@@ -181,9 +181,10 @@ start_frontend() {
     return 0
   fi
 
-  log 'Resetting Vite optimize cache'
+  log 'Resetting Vite cache and dependency optimization'
   rm -rf "$WEB_DIR/node_modules/.vite"
-  mkdir -p "$WEB_DIR/node_modules/.vite"
+  rm -rf "$WEB_DIR/.vite"
+  find "$WEB_DIR/node_modules" -name ".vite-dep-*.json" -delete 2>/dev/null || true
 
   log "Starting frontend on port ${FRONTEND_PORT}"
   (
@@ -192,10 +193,22 @@ start_frontend() {
     echo $! >"$FRONTEND_PID_FILE"
   )
 
-  wait_for_http "http://127.0.0.1:${FRONTEND_PORT}/" 60 1 || {
-    tail -n 80 "$FRONTEND_LOG" >&2 || true
-    fail 'Frontend did not become ready in time'
-  }
+  # Wait for server to start and optimization to complete
+  sleep 4
+
+  local index
+  for ((index = 1; index <= 120; index += 1)); do
+    local status_code
+    status_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${FRONTEND_PORT}/" 2>/dev/null || true)"
+    if [[ "$status_code" == "200" ]]; then
+      log 'Frontend ready'
+      return 0
+    fi
+    sleep 1
+  done
+
+  tail -n 80 "$FRONTEND_LOG" >&2 || true
+  fail 'Frontend did not become ready in time'
 }
 
 print_summary() {

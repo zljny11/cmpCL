@@ -11,6 +11,7 @@ import {
   App,
   Button,
   Card,
+  Checkbox,
   Col,
   Empty,
   Form,
@@ -18,6 +19,7 @@ import {
   List,
   Modal,
   Progress,
+  Radio,
   Row,
   Select,
   Space,
@@ -33,12 +35,14 @@ import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../app/providers/auth-provider';
+import { ANNOTATION_STATUS_MAP, ANNOTATION_STATUS_OPTIONS, BODY_PART_MAP, BODY_PART_OPTIONS, CLINICAL_TAG_MAP, CLINICAL_TAG_OPTIONS, MODALITY_MAP, MODALITY_OPTIONS } from '../../constants/dicom';
 import { profileApi } from '../../services/api/profile';
 import type { FailedDatasetBatchFileItem, RequirementListItem } from '../../types/requirements';
 import { requirementsApi } from '../../services/api/requirements';
 import { queryClient } from '../../services/query-client';
 import { DatasetBatchItem, DatasetBatchStatus, DatasetUploadType } from '../../types/requirements';
 import { isProfileComplete } from '../../utils/profileCompletion';
+import { findAndParseDicomInFiles } from '../../utils/dicom-parser';
 import { useRequirementDataTree } from '../requirements/list/hooks';
 import { PatientLevel } from '../requirements/list/components/PatientLevel';
 
@@ -144,7 +148,7 @@ export function UploadCenterPage() {
   const { id: routeRequirementId } = useParams();
   const [searchParams] = useSearchParams();
   const requirementId = routeRequirementId || searchParams.get('requirementId') || '';
-  const [form] = Form.useForm<{ sourceName: string; remark?: string }>();
+  const [form] = Form.useForm<{ modality: string; bodyPart: string; diagnosis?: string[]; clinicalTags?: string[]; annotationStatus?: string; remark?: string }>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [showAllSelectedFiles, setShowAllSelectedFiles] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -155,12 +159,13 @@ export function UploadCenterPage() {
   const [retryContext, setRetryContext] = useState<{
     batchId: string;
     batchNo: number;
-    sourceName: string | null;
     failedFiles: FailedDatasetBatchFileItem[];
   } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ percent: number; loaded: number; total: number | null } | null>(null);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [showFileSelectionError, setShowFileSelectionError] = useState(false);
+  const [modalityCustom, setModalityCustom] = useState('');
+  const [bodyPartCustom, setBodyPartCustom] = useState('');
   const hadPendingBatchRef = useRef(false);
 
   const resetSelectedFiles = () => {
@@ -197,9 +202,13 @@ export function UploadCenterPage() {
     return segments.some((segment) => segment === '__MACOSX' || segment === '.__MACOSX' || segment.startsWith('.'));
   };
 
-  const syncFilesToUploadList = (files: File[], options?: { append?: boolean }) => {
+  const syncFilesToUploadList = async (files: File[], options?: { append?: boolean }) => {
     const append = options?.append ?? false;
+    console.log('[Upload] syncFilesToUploadList called with', files.length, 'files, append=', append);
+
     const visibleFiles = files.filter((file) => !shouldIgnoreSelectedFile(file));
+    console.log('[Upload] after filter:', visibleFiles.length, 'visible files');
+
     const nextFiles = append
       ? [
           ...fileList
@@ -223,6 +232,21 @@ export function UploadCenterPage() {
     );
     setShowAllSelectedFiles(false);
     setShowFileSelectionError(false);
+
+    // 自动解析DICOM元数据并填充表单
+    if (!append && visibleFiles.length > 0) {
+      console.log('[Upload] Starting DICOM parse for', visibleFiles.length, 'files');
+      const metadata = await findAndParseDicomInFiles(visibleFiles);
+      console.log('[Upload] DICOM parse result:', metadata);
+      if (metadata.modality || metadata.bodyPart) {
+        form.setFieldsValue({
+          modality: metadata.modality || form.getFieldValue('modality'),
+          bodyPart: metadata.bodyPart || form.getFieldValue('bodyPart'),
+        });
+      }
+    } else {
+      console.log('[Upload] Skip DICOM parse: append=', append, ', visibleFiles.length=', visibleFiles.length);
+    }
   };
 
   const { data: requirement, isLoading: isRequirementLoading, isError: isRequirementError } = useQuery({
@@ -257,7 +281,7 @@ export function UploadCenterPage() {
   );
 
   const createBatchMutation = useMutation({
-    mutationFn: async (values: { sourceName: string; remark?: string }) => {
+    mutationFn: async (values: { modality: string; bodyPart: string; diagnosis?: string[]; clinicalTags?: string[]; annotationStatus?: string; remark?: string }) => {
       const files = fileList
         .map((file) => file.originFileObj)
         .filter((file): file is RcFile => Boolean(file));
@@ -269,7 +293,12 @@ export function UploadCenterPage() {
         id: `pending-${Date.now()}`,
         batchNo: 0,
         uploadType: nextUploadType,
-        sourceName: values.sourceName?.trim() || null,
+        sourceName: null,
+        modality: values.modality,
+        bodyPart: values.bodyPart,
+        diagnosis: values.diagnosis || null,
+        clinicalTags: values.clinicalTags || null,
+        annotationStatus: values.annotationStatus || null,
         fileCount: files.length,
         failedFileCount: 0,
         status: 'uploaded',
@@ -286,7 +315,11 @@ export function UploadCenterPage() {
       const result = await requirementsApi.createDatasetBatch(
         requirementId,
         {
-          sourceName: values.sourceName,
+          modality: values.modality,
+          bodyPart: values.bodyPart,
+          diagnosis: values.diagnosis,
+          clinicalTags: values.clinicalTags,
+          annotationStatus: values.annotationStatus,
           remark: values.remark,
           retryBatchId: retryContext?.batchId,
           files,
@@ -316,6 +349,8 @@ export function UploadCenterPage() {
           : `已上传 #${result.batchNo}，后台正在异步解析`,
       );
       form.resetFields();
+      setModalityCustom('');
+      setBodyPartCustom('');
       resetSelectedFiles();
       setRetryContext(null);
       await Promise.all([
@@ -566,8 +601,23 @@ export function UploadCenterPage() {
                   message.warning('请先选择至少一个文件夹');
                   return;
                 }
+                // 检查自定义值
+                if (values.modality === 'Other' && !modalityCustom) {
+                  message.warning('请输入自定义影像模态');
+                  return;
+                }
+                if (values.bodyPart === '其他' && !bodyPartCustom) {
+                  message.warning('请输入自定义检查部位');
+                  return;
+                }
                 setShowFileSelectionError(false);
-                createBatchMutation.mutate(values);
+                // 将自定义值合并到表单值中
+                const submitValues = {
+                  ...values,
+                  modality: values.modality === 'Other' ? modalityCustom : values.modality,
+                  bodyPart: values.bodyPart === '其他' ? bodyPartCustom : values.bodyPart,
+                };
+                createBatchMutation.mutate(submitValues);
               }}
             >
               <Form.Item label="上传类型">
@@ -576,13 +626,92 @@ export function UploadCenterPage() {
                   disabled
                 />
               </Form.Item>
-              <Form.Item
-                name="sourceName"
-                label="数据标签"
-                rules={[{ required: true, message: '请输入数据标签' }]}
-              >
-                <Input placeholder="例如男性/女性/肿瘤/肺结节" maxLength={255} />
-              </Form.Item>
+              <Card size="small" title="自动解析元数据" style={{ marginBottom: 16 }}>
+                <Alert
+                  type="success"
+                  showIcon
+                  message="选择 DICOM 文件夹后，影像模态和检查部位将自动识别并填充"
+                  description="系统会读取 DICOM 文件头中的信息自动填充这两个必填项，您可进行修改。其他字段请手工补充。"
+                  style={{ marginBottom: 0 }}
+                />
+              </Card>
+              <Card size="small" title="人工补充科研标签" style={{ marginBottom: 16 }}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Form.Item
+                    name="modality"
+                    label="影像模态"
+                    rules={[{ required: true, message: '请选择影像模态' }]}
+                  >
+                    <Select placeholder="选择影像模态" options={MODALITY_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prevValues, currentValues) => prevValues.modality !== currentValues.modality}
+                  >
+                    {({ getFieldValue }) =>
+                      getFieldValue('modality') === 'Other' ? (
+                        <Form.Item
+                          label="自定义影像模态"
+                          required
+                          validateStatus={!modalityCustom ? 'error' : undefined}
+                          help={!modalityCustom ? '请输入自定义影像模态' : ''}
+                        >
+                          <Input
+                            placeholder="例如：PET、SPECT 等"
+                            value={modalityCustom}
+                            onChange={(e) => setModalityCustom(e.target.value)}
+                            maxLength={64}
+                          />
+                        </Form.Item>
+                      ) : null
+                    }
+                  </Form.Item>
+
+                  <Form.Item
+                    name="bodyPart"
+                    label="检查部位"
+                    rules={[{ required: true, message: '请选择检查部位' }]}
+                  >
+                    <Select placeholder="选择检查部位" options={BODY_PART_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prevValues, currentValues) => prevValues.bodyPart !== currentValues.bodyPart}
+                  >
+                    {({ getFieldValue }) =>
+                      getFieldValue('bodyPart') === '其他' ? (
+                        <Form.Item
+                          label="自定义检查部位"
+                          required
+                          validateStatus={!bodyPartCustom ? 'error' : undefined}
+                          help={!bodyPartCustom ? '请输入自定义检查部位' : ''}
+                        >
+                          <Input
+                            placeholder="例如：脸部、耳朵 等"
+                            value={bodyPartCustom}
+                            onChange={(e) => setBodyPartCustom(e.target.value)}
+                            maxLength={64}
+                          />
+                        </Form.Item>
+                      ) : null
+                    }
+                  </Form.Item>
+
+                  <Form.Item name="diagnosis" label="疾病诊断">
+                    <Select
+                      mode="tags"
+                      placeholder="输入诊断标签，回车生成"
+                      maxCount={10}
+                    />
+                  </Form.Item>
+                  <Form.Item name="clinicalTags" label="临床金标准（可多选）">
+                    <Checkbox.Group options={CLINICAL_TAG_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item name="annotationStatus" label="标注状态（单选）">
+                    <Radio.Group options={ANNOTATION_STATUS_OPTIONS} />
+                  </Form.Item>
+                </Space>
+              </Card>
               <Form.Item name="remark" label="批次备注">
                 <Input.TextArea
                   rows={4}
@@ -621,7 +750,9 @@ export function UploadCenterPage() {
                               onClick={() => {
                                 setRetryContext(null);
                                 resetSelectedFiles();
-                                form.setFieldsValue({ sourceName: '', remark: '' });
+                                setModalityCustom('');
+                                setBodyPartCustom('');
+                                form.setFieldsValue({ modality: '', bodyPart: '', diagnosis: undefined, clinicalTags: undefined, annotationStatus: undefined, remark: '' });
                               }}
                             >
                               退出重传模式
@@ -639,7 +770,7 @@ export function UploadCenterPage() {
                     {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
                     onChange={(event) => {
                       const files = Array.from(event.target.files ?? []);
-                      syncFilesToUploadList(files, { append: true });
+                      void syncFilesToUploadList(files, { append: fileList.length > 0 });
                       if (folderInputRef.current) {
                         folderInputRef.current.value = '';
                       }
@@ -721,6 +852,8 @@ export function UploadCenterPage() {
                   disabled={createBatchMutation.isPending}
                   onClick={() => {
                     form.resetFields();
+                    setModalityCustom('');
+                    setBodyPartCustom('');
                     resetSelectedFiles();
                     setRetryContext(null);
                   }}
@@ -752,12 +885,15 @@ export function UploadCenterPage() {
                       setRetryContext({
                         batchId: record.id,
                         batchNo: record.batchNo,
-                        sourceName: record.sourceName,
                         failedFiles,
                       });
                       resetSelectedFiles();
                       form.setFieldsValue({
-                        sourceName: record.sourceName || `批次 #${record.batchNo} 失败文件重传`,
+                        modality: record.modality || '',
+                        bodyPart: record.bodyPart || '',
+                        diagnosis: record.diagnosis || undefined,
+                        clinicalTags: record.clinicalTags || undefined,
+                        annotationStatus: record.annotationStatus || undefined,
                         remark: failedFiles.length
                           ? `重传批次 #${record.batchNo} 失败文件`
                           : `重新上传批次 #${record.batchNo} 原始文件`,
@@ -794,10 +930,28 @@ export function UploadCenterPage() {
                   title: '数据标签',
                   width: 360,
                   render: (_: unknown, record: DatasetBatchItem) => (
-                    <Typography.Text ellipsis style={{ display: 'block' }}>
-                      {record.sourceName || '未填写数据标签'}
-                      {record.remark ? ` / ${record.remark}` : ''}
-                    </Typography.Text>
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Space size={4} wrap>
+                        {record.modality ? (
+                          <Tag color="blue">{MODALITY_MAP[record.modality] || record.modality}</Tag>
+                        ) : null}
+                        {record.bodyPart ? (
+                          <Tag color="cyan">{BODY_PART_MAP[record.bodyPart] || record.bodyPart}</Tag>
+                        ) : null}
+                      </Space>
+                      {record.diagnosis && record.diagnosis.length > 0 ? (
+                        <Space size={2} wrap>
+                          {record.diagnosis.map((d) => (
+                            <Tag key={d}>{d}</Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      {record.sourceName ? (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {record.sourceName}
+                        </Typography.Text>
+                      ) : null}
+                    </Space>
                   ),
                 },
                 {
@@ -863,7 +1017,7 @@ export function UploadCenterPage() {
         title={
           <Space size={12} wrap>
             <span>文件预览</span>
-            <Button type="primary" onClick={() => navigate(`/requirements/${requirementId}/upload/data`)}>
+            <Button type="primary" onClick={() => navigate(`/requirements/${requirementId}/upload/data?from=upload`)}>
               完整数据页
             </Button>
           </Space>
