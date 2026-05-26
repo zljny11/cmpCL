@@ -47,6 +47,13 @@ type FailedDatasetFileRecord = {
   reason: string;
 };
 
+type DicomSeriesMetadataSummary = {
+  manufacturer: string | null;
+  protocolName: string | null;
+  manufacturerModelName: string | null;
+  bodyPart: string | null;
+};
+
 @Injectable()
 export class RequirementsService {
   constructor(
@@ -414,6 +421,69 @@ export class RequirementsService {
 
   private ensureSafeDeliveryPath(storagePath: string) {
     return this.ensureSafePathInRoots(storagePath, this.deliveryRoots);
+  }
+
+  private normalizeMetadataTagValue(value: string | null | undefined) {
+    const normalized = this.normalizeText(value);
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized.toLowerCase() === 'none' ? null : normalized;
+  }
+
+  private async readSeriesMetadataSummary(storagePath: string | null): Promise<DicomSeriesMetadataSummary> {
+    if (!storagePath) {
+      return {
+        manufacturer: null,
+        protocolName: null,
+        manufacturerModelName: null,
+        bodyPart: null,
+      };
+    }
+
+    try {
+      const safeStoragePath = this.ensureSafeStoragePath(storagePath);
+      const seriesDir = dirname(safeStoragePath);
+      const entries = (await readdir(seriesDir))
+        .filter((fileName) => !fileName.startsWith('.'))
+        .sort((left, right) => left.localeCompare(right, 'en'))
+        .slice(0, 12);
+      const summary: DicomSeriesMetadataSummary = {
+        manufacturer: null,
+        protocolName: null,
+        manufacturerModelName: null,
+        bodyPart: null,
+      };
+
+      for (const fileName of entries) {
+        const file = await readFile(join(seriesDir, fileName));
+        const dataSet = dicomParser.parseDicom(new Uint8Array(file));
+
+        summary.manufacturer ??= this.normalizeMetadataTagValue(this.readDicomValue(dataSet, 'x00080070'));
+        summary.protocolName ??= this.normalizeMetadataTagValue(this.readDicomValue(dataSet, 'x00181030'));
+        summary.manufacturerModelName ??= this.normalizeMetadataTagValue(this.readDicomValue(dataSet, 'x00081090'));
+        summary.bodyPart ??= this.normalizeMetadataTagValue(this.readDicomValue(dataSet, 'x00180015'));
+
+        if (summary.manufacturer && summary.protocolName && summary.manufacturerModelName && summary.bodyPart) {
+          break;
+        }
+      }
+
+      return summary;
+    } catch {
+      return {
+        manufacturer: null,
+        protocolName: null,
+        manufacturerModelName: null,
+        bodyPart: null,
+      };
+    }
+  }
+
+  private mergeMetadataValues(values: Array<string | null | undefined>) {
+    const uniqueValues = [...new Set(values.map((value) => this.normalizeText(value)).filter(Boolean))];
+    return uniqueValues.length > 0 ? uniqueValues.join(' / ') : null;
   }
 
   private async listSeriesFiles(storagePath: string, requirementId: bigint, seriesId: bigint) {
@@ -858,7 +928,8 @@ export class RequirementsService {
           update: {
             seriesDescription: record.seriesDescription ?? undefined,
             hospitalName: record.hospitalName ?? undefined,
-            uploadedAt: record.uploadedAt ?? undefined,
+            remark: remark?.trim() || null,
+            uploadedAt: batch.uploadedAt,
             imageCount: { increment: 1 },
             storagePath: record.storagePath,
           },
@@ -868,7 +939,8 @@ export class RequirementsService {
             seriesUid: record.seriesUid,
             seriesDescription: record.seriesDescription,
             hospitalName: record.hospitalName,
-            uploadedAt: record.uploadedAt,
+            remark: remark?.trim() || null,
+            uploadedAt: batch.uploadedAt,
             imageCount: 1,
             storagePath: record.storagePath,
           },
@@ -1665,6 +1737,11 @@ export class RequirementsService {
                     batchNo: true,
                     uploadType: true,
                     sourceName: true,
+                    remark: true,
+                    uploadedAt: true,
+                    diagnosis: true,
+                    clinicalTags: true,
+                    annotationStatus: true,
                   },
                 },
               },
@@ -1674,9 +1751,37 @@ export class RequirementsService {
       },
     });
 
+    const patientsWithMetadata = await Promise.all(
+      patients.map(async (patient) => ({
+        ...patient,
+        studies: await Promise.all(
+          patient.studies.map(async (study) => {
+            const seriesWithMetadata = await Promise.all(
+              study.series.map(async (series) => ({
+                ...series,
+                metadata: await this.readSeriesMetadataSummary(series.storagePath),
+              })),
+            );
+
+            return {
+              ...study,
+              series: seriesWithMetadata,
+              metadata: {
+                manufacturer: this.mergeMetadataValues(seriesWithMetadata.map((series) => series.metadata.manufacturer)),
+                protocolName: this.mergeMetadataValues(seriesWithMetadata.map((series) => series.metadata.protocolName)),
+                manufacturerModelName: this.mergeMetadataValues(
+                  seriesWithMetadata.map((series) => series.metadata.manufacturerModelName),
+                ),
+              },
+            };
+          }),
+        ),
+      })),
+    );
+
     return {
       requirementId: requirementId.toString(),
-      patients: patients.map((patient) => ({
+      patients: patientsWithMetadata.map((patient) => ({
         id: patient.id.toString(),
         patientUid: patient.patientUid,
         patientId: patient.patientId,
@@ -1691,14 +1796,21 @@ export class RequirementsService {
           modality: study.modality,
           studyDate: study.studyDate,
           studyDescription: study.studyDescription,
+          manufacturer: study.metadata.manufacturer,
+          protocolName: study.metadata.protocolName,
+          manufacturerModelName: study.metadata.manufacturerModelName,
           seriesCount: study.seriesCount,
           series: study.series.map((series) => ({
             id: series.id.toString(),
             seriesUid: series.seriesUid,
             seriesDescription: series.seriesDescription,
+            bodyPart: series.metadata.bodyPart,
+            diagnosis: Array.isArray(series.datasetBatch.diagnosis) ? (series.datasetBatch.diagnosis as string[]) : null,
+            clinicalTags: Array.isArray(series.datasetBatch.clinicalTags) ? (series.datasetBatch.clinicalTags as string[]) : null,
+            annotationStatus: series.datasetBatch.annotationStatus,
             hospitalName: series.hospitalName,
-            remark: series.remark,
-            uploadedAt: series.uploadedAt,
+            remark: series.remark ?? series.datasetBatch.remark,
+            uploadedAt: series.uploadedAt ?? series.datasetBatch.uploadedAt,
             imageCount: series.imageCount,
             storagePath: series.storagePath,
             datasetBatch: {

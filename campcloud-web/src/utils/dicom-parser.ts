@@ -5,6 +5,9 @@ export interface DicomMetadata {
   bodyPart?: string;
   seriesDescription?: string;
   sliceThickness?: string;
+  protocolName?: string;
+  manufacturer?: string;
+  manufacturerModelName?: string;
 }
 
 // DICOM 标准值映射到前端选项值
@@ -43,7 +46,37 @@ function mapModality(dicomModality?: string): string | undefined {
 function mapBodyPart(dicomBodyPart?: string): string | undefined {
   if (!dicomBodyPart) return undefined;
   const upper = dicomBodyPart.toUpperCase().trim();
-  return BODY_PART_MAPPING[upper] || '其他';
+  return BODY_PART_MAPPING[upper] || dicomBodyPart.trim();
+}
+
+function readTrimmedString(dataset: dicomParser.DataSet, tag: string): string | undefined {
+  try {
+    const value = dataset.string(tag)?.trim();
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractDicomMetadata(dataset: dicomParser.DataSet): DicomMetadata {
+  const rawModality = readTrimmedString(dataset, 'x00080060');
+  const rawBodyPart = readTrimmedString(dataset, 'x00180015');
+
+  return {
+    modality: mapModality(rawModality),
+    bodyPart: mapBodyPart(rawBodyPart),
+    seriesDescription: readTrimmedString(dataset, 'x0008103e'),
+    sliceThickness: readTrimmedString(dataset, 'x00180050'),
+    protocolName: readTrimmedString(dataset, 'x00181030'),
+    manufacturer: readTrimmedString(dataset, 'x00080070'),
+    manufacturerModelName: readTrimmedString(dataset, 'x00081090'),
+  };
+}
+
+export function parseDicomArrayBuffer(arrayBuffer: ArrayBuffer): DicomMetadata {
+  const byteArray = new Uint8Array(arrayBuffer);
+  const dataset = dicomParser.parseDicom(byteArray);
+  return extractDicomMetadata(dataset);
 }
 
 export function parseDicomFile(file: File): Promise<DicomMetadata> {
@@ -53,41 +86,8 @@ export function parseDicomFile(file: File): Promise<DicomMetadata> {
     reader.onload = (event) => {
       try {
         const arrayBuffer = event.target?.result as ArrayBuffer;
-        const byteArray = new Uint8Array(arrayBuffer);
         console.log('[parseDicomFile] Buffer ready, trying to parse...');
-        const dataset = dicomParser.parseDicom(byteArray);
-
-        const metadata: DicomMetadata = {};
-
-        try {
-          const rawModality = dataset.string('x00080060');
-          metadata.modality = mapModality(rawModality);
-          console.log('[parseDicomFile] modality: raw=', rawModality, 'mapped=', metadata.modality);
-        } catch (e) {
-          console.log('[parseDicomFile] Failed to get modality:', e);
-        }
-
-        try {
-          const rawBodyPart = dataset.string('x00180015');
-          metadata.bodyPart = mapBodyPart(rawBodyPart);
-          console.log('[parseDicomFile] bodyPart: raw=', rawBodyPart, 'mapped=', metadata.bodyPart);
-        } catch (e) {
-          console.log('[parseDicomFile] Failed to get bodyPart:', e);
-        }
-
-        try {
-          const seriesDesc = dataset.string('x0008103e');
-          metadata.seriesDescription = seriesDesc?.trim();
-        } catch (e) {
-          //
-        }
-
-        try {
-          const thickness = dataset.string('x00180050');
-          metadata.sliceThickness = thickness?.trim();
-        } catch (e) {
-          //
-        }
+        const metadata = parseDicomArrayBuffer(arrayBuffer);
 
         console.log('[parseDicomFile] Final metadata:', metadata);
         resolve(metadata);
@@ -136,4 +136,3 @@ export async function findAndParseDicomInFiles(files: File[]): Promise<DicomMeta
   console.log('[findAndParseDicomInFiles] No DICOM metadata found in any file');
   return {};
 }
-

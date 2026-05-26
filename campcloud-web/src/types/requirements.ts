@@ -115,6 +115,10 @@ export interface RequirementSeriesNode {
   id: string;
   seriesUid: string;
   seriesDescription: string | null;
+  bodyPart?: string | null;
+  diagnosis?: string[] | null;
+  clinicalTags?: string[] | null;
+  annotationStatus?: string | null;
   hospitalName: string | null;
   remark: string | null;
   imageCount: number;
@@ -135,6 +139,9 @@ export interface RequirementStudyNode {
   studyDescription: string | null;
   modality: string | null;
   studyDate: string | null;
+  manufacturer?: string | null;
+  protocolName?: string | null;
+  manufacturerModelName?: string | null;
   series: RequirementSeriesNode[];
 }
 

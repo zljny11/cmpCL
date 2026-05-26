@@ -2,6 +2,7 @@ import { Button, Empty, Space, Table, Typography, message } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RequirementPatientNode } from '../../../../types/requirements';
+import { DataPageVisibleTags } from './RequirementExpandPanel';
 import { StudyLevel } from './StudyLevel';
 import { withTextFilter } from './pacsTableFilters';
 import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
@@ -11,9 +12,10 @@ interface Props {
   data: RequirementPatientNode[];
   onRefresh?: () => void;
   readOnly?: boolean;
+  visibleTags?: DataPageVisibleTags;
 }
 
-export function PatientLevel({ requirementId, data, onRefresh, readOnly = false }: Props) {
+export function PatientLevel({ requirementId, data, onRefresh, readOnly = false, visibleTags }: Props) {
   const expandedStorageKey = `AICampCloud:tree:patients:${requirementId}`;
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
   const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<React.Key[]>([]);
@@ -115,6 +117,7 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
                   selectedSeriesKeys={selectedSeriesKeys}
                   onSelectedSeriesKeysChange={setSelectedSeriesKeys}
                   readOnly={readOnly}
+                  visibleTags={visibleTags}
                 />
               ),
               rowExpandable: (record) => record.studies.length > 0,
@@ -128,11 +131,10 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false 
                   </div>
                 ),
               }),
-              {
-                title: '性别',
+              withTextFilter<RequirementPatientNode>('性别', (record) => record.sex, {
                 width: 90,
                 render: (_: unknown, record: RequirementPatientNode) => record.sex || '未知',
-              },
+              }),
               withTextFilter<RequirementPatientNode>(
                 '生日',
                 (record) => (record.birthday ? dayjs(record.birthday).format('YYYY-MM-DD') : null),

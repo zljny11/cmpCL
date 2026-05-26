@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
 import { RequirementPatientNode, RequirementStudyNode } from '../../../../types/requirements';
+import { DataPageVisibleTags } from './RequirementExpandPanel';
 import { downloadRequirementDicomZip } from './downloadDicomZip';
 import { SeriesLevel } from './SeriesLevel';
 import { withTextFilter } from './pacsTableFilters';
@@ -20,6 +21,7 @@ interface Props {
   selectedSeriesKeys: React.Key[];
   onSelectedSeriesKeysChange: (keys: React.Key[]) => void;
   readOnly?: boolean;
+  visibleTags?: DataPageVisibleTags;
 }
 
 export function StudyLevel({
@@ -31,6 +33,7 @@ export function StudyLevel({
   selectedSeriesKeys,
   onSelectedSeriesKeysChange,
   readOnly = false,
+  visibleTags,
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -143,6 +146,7 @@ export function StudyLevel({
               selectedSeriesKeys={selectedSeriesKeys}
               onSelectedSeriesKeysChange={onSelectedSeriesKeysChange}
               readOnly={readOnly}
+              visibleTags={visibleTags}
             />
           ),
           rowExpandable: (record) => record.series.length > 0,
@@ -156,11 +160,10 @@ export function StudyLevel({
               </div>
             ),
           }),
-          {
-            title: '模态',
+          withTextFilter<RequirementStudyNode>('模态', (record) => record.modality, {
             width: 100,
             render: (_: unknown, record: RequirementStudyNode) => record.modality || '未知',
-          },
+          }),
           withTextFilter<RequirementStudyNode>(
             '检查日期',
             (record) => (record.studyDate ? dayjs(record.studyDate).format('YYYY-MM-DD') : null),
@@ -174,6 +177,24 @@ export function StudyLevel({
             dataIndex: 'studyDescription',
             render: (value: string | null) => value || '-',
           }),
+          {
+            title: '厂家',
+            width: 160,
+            render: (_: unknown, record: RequirementStudyNode) => record.manufacturer || '-',
+            hidden: !visibleTags?.studyManufacturer,
+          },
+          {
+            title: '协议',
+            width: 180,
+            render: (_: unknown, record: RequirementStudyNode) => record.protocolName || '-',
+            hidden: !visibleTags?.studyProtocolName,
+          },
+          {
+            title: '设备型号',
+            width: 180,
+            render: (_: unknown, record: RequirementStudyNode) => record.manufacturerModelName || '-',
+            hidden: !visibleTags?.studyManufacturerModelName,
+          },
           {
             title: '序列数',
             width: 90,
@@ -225,7 +246,7 @@ export function StudyLevel({
               </Space>
             ),
           },
-        ]}
+        ].filter((column) => !('hidden' in column) || !column.hidden)}
       />
       </div>
     </div>

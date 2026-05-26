@@ -41,6 +41,18 @@ enum MailJobStatus {
   failed
 }
 
+enum AdminOperationLogCategory {
+  auth
+  user
+  requirement
+  data
+}
+
+enum AdminOperationLogResult {
+  success
+  failed
+}
+
 model User {
   id            BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
   username      String         @unique @db.VarChar(64)
@@ -59,6 +71,7 @@ model User {
   notifications Notification[]
   statusLogs    RequirementStatusLog[]
   mailJobs      MailJob[]
+  adminOperationLogs AdminOperationLog[] @relation("AdminOperationLogActor")
 
   @@map("users")
 }
@@ -224,6 +237,28 @@ model Delivery {
 
   @@index([requirementId])
   @@map("deliveries")
+}
+
+model AdminOperationLog {
+  id            BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  actorId       BigInt?                  @map("actor_id") @db.UnsignedBigInt
+  actorUsername String                   @map("actor_username") @db.VarChar(64)
+  category      AdminOperationLogCategory
+  action        String                   @db.VarChar(128)
+  targetType    String?                  @map("target_type") @db.VarChar(64)
+  targetId      String?                  @map("target_id") @db.VarChar(128)
+  targetName    String?                  @map("target_name") @db.VarChar(255)
+  result        AdminOperationLogResult  @default(success)
+  detail        Json?
+  ipAddress     String?                  @map("ip_address") @db.VarChar(64)
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  actor         User?                    @relation("AdminOperationLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([category])
+  @@index([result])
+  @@index([createdAt])
+  @@map("admin_operation_logs")
 }
 
 model RequirementStatusLog {

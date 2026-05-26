@@ -1,6 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsArray, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+
+function transformStringArrayField(value: unknown): unknown {
+  if (value == null || value === '') {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : value;
+  } catch {
+    return value;
+  }
+}
 
 export class CreateDatasetBatchDto {
   @ApiProperty()
@@ -27,12 +48,14 @@ export class CreateDatasetBatchDto {
 
   @ApiPropertyOptional({ description: '疾病诊断，JSON 数组' })
   @IsOptional()
+  @Transform(({ value }) => transformStringArrayField(value))
   @IsArray()
   @IsString({ each: true })
   diagnosis?: string[];
 
   @ApiPropertyOptional({ description: '临床金标准，JSON 数组' })
   @IsOptional()
+  @Transform(({ value }) => transformStringArrayField(value))
   @IsArray()
   @IsString({ each: true })
   clinicalTags?: string[];

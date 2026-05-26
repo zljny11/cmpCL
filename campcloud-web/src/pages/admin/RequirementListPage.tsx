@@ -16,13 +16,15 @@ export function AdminRequirementListPage() {
   const [type, setType] = useState<RequirementType | undefined>();
   const [statusInput, setStatusInput] = useState<string | undefined>();
   const [status, setStatus] = useState<string | undefined>();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const requirementsQuery = useQuery({
-    queryKey: ['admin', 'requirements', keyword, hospitalName, type, status],
+    queryKey: ['admin', 'requirements', keyword, hospitalName, type, status, page, pageSize],
     queryFn: () =>
       requirementsApi.list({
-        page: 1,
-        pageSize: 100,
+        page,
+        pageSize,
         keyword: keyword || undefined,
         hospitalName: hospitalName || undefined,
         type,
@@ -81,6 +83,7 @@ export function AdminRequirementListPage() {
             onChange={setStatusInput}
             style={{ width: 180 }}
             options={[
+              { label: '待我响应', value: 'pending' },
               { label: '受理中（需等待）', value: 'processing' },
               { label: '受理中（需补充数据）', value: 'waiting_user' },
               { label: '已完成', value: 'completed' },
@@ -89,6 +92,7 @@ export function AdminRequirementListPage() {
           <Button
             type="primary"
             onClick={() => {
+              setPage(1);
               setKeyword(keywordInput.trim());
               setHospitalName(hospitalNameInput.trim());
               setType(typeInput);
@@ -107,6 +111,8 @@ export function AdminRequirementListPage() {
               setType(undefined);
               setStatusInput(undefined);
               setStatus(undefined);
+              setPage(1);
+              setPageSize(10);
             }}
           >
             重置
@@ -120,7 +126,19 @@ export function AdminRequirementListPage() {
             rowKey="id"
             loading={requirementsQuery.isLoading}
             dataSource={items}
-            pagination={false}
+            pagination={{
+              current: page,
+              pageSize,
+              total: requirementsQuery.data?.total ?? 0,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              pageSizeOptions: ['10', '20', '50'],
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (nextPage, nextPageSize) => {
+                setPage(nextPage);
+                setPageSize(nextPageSize);
+              },
+            }}
             columns={[
               {
                 title: '需求信息',

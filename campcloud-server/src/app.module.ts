@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { AdminLogsModule } from './modules/admin-logs/admin-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProfilesModule } from './modules/profiles/profile.module';
 import { RequirementsModule } from './modules/requirements/requirement.module';
@@ -17,6 +18,7 @@ import { UsersModule } from './modules/users/user.module';
       },
     }),
     PrismaModule,
+    AdminLogsModule,
     UsersModule,
     AuthModule,
     ProfilesModule,

@@ -1,4 +1,4 @@
-import { BellOutlined, CloudUploadOutlined, FileAddOutlined, FileSearchOutlined, HomeOutlined, LogoutOutlined, SettingOutlined } from '@ant-design/icons';
+import { BellOutlined, CloudUploadOutlined, FileAddOutlined, FileSearchOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { Button, Image, Layout, Menu, Space, Typography } from 'antd';
 import { PropsWithChildren } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -19,6 +19,8 @@ export function AppShell({ children }: PropsWithChildren) {
           { key: '/', icon: <HomeOutlined />, label: 'Dashboard' },
           { key: '/notifications', icon: <BellOutlined />, label: '消息通知' },
           { key: '/admin/requirements', icon: <SettingOutlined />, label: '管理侧需求' },
+          { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+          { key: '/admin/logs', icon: <UnorderedListOutlined />, label: '日志管理' },
         ]
       : [
           { key: '/', icon: <HomeOutlined />, label: 'Dashboard' },

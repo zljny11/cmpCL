@@ -13,13 +13,15 @@ export function NotificationPage() {
   const { message } = App.useApp();
   const { user } = useAuth();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const notificationsQuery = useQuery({
-    queryKey: ['notifications', filter],
+    queryKey: ['notifications', filter, page, pageSize],
     queryFn: () =>
       notificationsApi.list({
-        page: 1,
-        pageSize: 50,
+        page,
+        pageSize,
         unreadOnly: filter === 'unread',
       }),
   });
@@ -62,7 +64,10 @@ export function NotificationPage() {
         <Space wrap>
           <Segmented
             value={filter}
-            onChange={(value) => setFilter(value as 'all' | 'unread')}
+            onChange={(value) => {
+              setFilter(value as 'all' | 'unread');
+              setPage(1);
+            }}
             options={[
               { label: '全部通知', value: 'all' },
               { label: '仅看未读', value: 'unread' },
@@ -81,6 +86,19 @@ export function NotificationPage() {
           <List<NotificationItem>
             loading={notificationsQuery.isLoading}
             dataSource={items}
+            pagination={{
+              current: page,
+              pageSize,
+              total: notificationsQuery.data?.total ?? 0,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              pageSizeOptions: ['10', '20', '50'],
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (nextPage, nextPageSize) => {
+                setPage(nextPage);
+                setPageSize(nextPageSize);
+              },
+            }}
             renderItem={(item) => (
               <List.Item
                 actions={[

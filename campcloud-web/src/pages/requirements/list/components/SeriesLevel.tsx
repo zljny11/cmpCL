@@ -1,13 +1,15 @@
 import { useMutation } from '@tanstack/react-query';
-import { App, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
+import { App, Button, Popconfirm, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
 import { RequirementPatientNode, RequirementSeriesNode, RequirementStudyNode } from '../../../../types/requirements';
+import { DataPageVisibleTags } from './RequirementExpandPanel';
 import { downloadRequirementDicomZip } from './downloadDicomZip';
 import { withTextFilter } from './pacsTableFilters';
+import { ANNOTATION_STATUS_MAP, CLINICAL_TAG_MAP } from '../../../../constants/dicom';
 
 interface Props {
   requirementId: string;
@@ -18,6 +20,7 @@ interface Props {
   selectedSeriesKeys: React.Key[];
   onSelectedSeriesKeysChange: (keys: React.Key[]) => void;
   readOnly?: boolean;
+  visibleTags?: DataPageVisibleTags;
 }
 
 export function SeriesLevel({
@@ -29,6 +32,7 @@ export function SeriesLevel({
   selectedSeriesKeys,
   onSelectedSeriesKeysChange,
   readOnly = false,
+  visibleTags,
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -87,6 +91,34 @@ export function SeriesLevel({
     },
   });
 
+  const renderRemark = (value: string | null) => {
+    if (!value) {
+      return '-';
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length <= 10) {
+      return trimmed;
+    }
+
+    return (
+      <Tooltip
+        title={trimmed}
+        color="#ffffff"
+        styles={{ body: { color: '#000000' } }}
+      >
+        <span>{`${trimmed.slice(0, 10)}...`}</span>
+      </Tooltip>
+    );
+  };
+
+  const renderStringArray = (values: string[] | null | undefined, mapper?: Record<string, string>) => {
+    if (!values || values.length === 0) {
+      return '-';
+    }
+    return values.map((value) => mapper?.[value] || value).join('、');
+  };
+
   return (
     <div className="pacs-nested-scroll-shell">
       <div className="pacs-nested-scroll-content">
@@ -96,6 +128,7 @@ export function SeriesLevel({
         dataSource={data}
         pagination={false}
         size="small"
+        showSorterTooltip={false}
         scroll={{ y: verticalScrollHeight }}
         rowSelection={
           readOnly
@@ -116,15 +149,50 @@ export function SeriesLevel({
               <div>
                 <Typography.Text strong>{record.seriesDescription || '未命名序列'}</Typography.Text>
                 <br />
-                <Typography.Text type="secondary" ellipsis>
-                  {record.seriesUid}
-                </Typography.Text>
+                {!visibleTags?.seriesUid ? (
+                  <Typography.Text type="secondary" ellipsis>
+                    {record.seriesUid}
+                  </Typography.Text>
+                ) : null}
               </div>
             ),
           }),
           {
+            title: '序列 UID',
+            width: 220,
+            render: (_: unknown, record: RequirementSeriesNode) => record.seriesUid || '-',
+            hidden: !visibleTags?.seriesUid,
+          },
+          {
+            title: '身体部位',
+            width: 140,
+            render: (_: unknown, record: RequirementSeriesNode) => record.bodyPart || '-',
+            hidden: !visibleTags?.seriesBodyPart,
+          },
+          {
+            title: '疾病诊断',
+            width: 180,
+            render: (_: unknown, record: RequirementSeriesNode) => renderStringArray(record.diagnosis),
+            hidden: !visibleTags?.seriesDiagnosis,
+          },
+          {
+            title: '临床金标准',
+            width: 220,
+            render: (_: unknown, record: RequirementSeriesNode) => renderStringArray(record.clinicalTags, CLINICAL_TAG_MAP),
+            hidden: !visibleTags?.seriesClinicalTags,
+          },
+          {
+            title: '标注状态',
+            width: 140,
+            render: (_: unknown, record: RequirementSeriesNode) =>
+              record.annotationStatus ? ANNOTATION_STATUS_MAP[record.annotationStatus] || record.annotationStatus : '-',
+            hidden: !visibleTags?.seriesAnnotationStatus,
+          },
+          {
             title: '来源批次',
             width: 180,
+            sorter: (left: RequirementSeriesNode, right: RequirementSeriesNode) =>
+              left.datasetBatch.batchNo - right.datasetBatch.batchNo,
             render: (_: unknown, record: RequirementSeriesNode) => (
               <div>
                 <Tag color={record.datasetBatch.uploadType === 'initial' ? 'geekblue' : 'gold'}>
@@ -147,21 +215,25 @@ export function SeriesLevel({
             dataIndex: 'remark',
             width: 160,
             ellipsis: true,
-            render: (value: string | null) => value || '-',
+            render: (value: string | null) => renderRemark(value),
           }),
           {
             title: '图像数',
             dataIndex: 'imageCount',
             width: 90,
+            sorter: (left: RequirementSeriesNode, right: RequirementSeriesNode) => left.imageCount - right.imageCount,
           },
-          withTextFilter<RequirementSeriesNode>(
-            '上传时间',
-            (record) => (record.uploadedAt ? dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm:ss') : null),
-            {
-              width: 160,
-              render: (_: unknown, record: RequirementSeriesNode) => (record.uploadedAt ? dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm') : '-'),
+          {
+            title: '上传时间',
+            width: 160,
+            sorter: (left: RequirementSeriesNode, right: RequirementSeriesNode) => {
+              const leftTime = left.uploadedAt ? new Date(left.uploadedAt).getTime() : 0;
+              const rightTime = right.uploadedAt ? new Date(right.uploadedAt).getTime() : 0;
+              return leftTime - rightTime;
             },
-          ),
+            render: (_: unknown, record: RequirementSeriesNode) =>
+              record.uploadedAt ? dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm') : '-',
+          },
           {
             title: '操作',
             width: readOnly ? 190 : 140,
@@ -208,7 +280,7 @@ export function SeriesLevel({
               </Space>
             ),
           },
-        ]}
+        ].filter((column) => !('hidden' in column) || !column.hidden)}
       />
       </div>
     </div>

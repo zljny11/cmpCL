@@ -152,6 +152,8 @@ export function UploadCenterPage() {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [showAllSelectedFiles, setShowAllSelectedFiles] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const [requirementPickerPage, setRequirementPickerPage] = useState(1);
+  const [requirementPickerPageSize, setRequirementPickerPageSize] = useState(10);
   const [batchPage, setBatchPage] = useState(1);
   const [batchPageSize, setBatchPageSize] = useState(10);
   const [expandedBatchRowKeys, setExpandedBatchRowKeys] = useState<string[]>([]);
@@ -166,6 +168,7 @@ export function UploadCenterPage() {
   const [showFileSelectionError, setShowFileSelectionError] = useState(false);
   const [modalityCustom, setModalityCustom] = useState('');
   const [bodyPartCustom, setBodyPartCustom] = useState('');
+  const [enableAutoParseMetadata, setEnableAutoParseMetadata] = useState(true);
   const hadPendingBatchRef = useRef(false);
 
   const resetSelectedFiles = () => {
@@ -234,7 +237,7 @@ export function UploadCenterPage() {
     setShowFileSelectionError(false);
 
     // 自动解析DICOM元数据并填充表单
-    if (!append && visibleFiles.length > 0) {
+    if (!append && visibleFiles.length > 0 && enableAutoParseMetadata) {
       console.log('[Upload] Starting DICOM parse for', visibleFiles.length, 'files');
       const metadata = await findAndParseDicomInFiles(visibleFiles);
       console.log('[Upload] DICOM parse result:', metadata);
@@ -384,8 +387,8 @@ export function UploadCenterPage() {
   });
 
   const { data: requirementListData, isLoading: isRequirementListLoading } = useQuery({
-    queryKey: ['requirements', 'picker'],
-    queryFn: () => requirementsApi.list({ page: 1, pageSize: 50 }),
+    queryKey: ['requirements', 'picker', requirementPickerPage, requirementPickerPageSize],
+    queryFn: () => requirementsApi.list({ page: requirementPickerPage, pageSize: requirementPickerPageSize }),
     enabled: !requirementId,
   });
 
@@ -442,6 +445,19 @@ export function UploadCenterPage() {
       <Card title="选择需求单" loading={isRequirementListLoading}>
         <List<RequirementListItem>
           dataSource={requirementListData?.list ?? []}
+          pagination={{
+            current: requirementPickerPage,
+            pageSize: requirementPickerPageSize,
+            total: requirementListData?.total ?? 0,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            pageSizeOptions: ['10', '20', '50'],
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (page, pageSize) => {
+              setRequirementPickerPage(page);
+              setRequirementPickerPageSize(pageSize);
+            },
+          }}
           locale={{ emptyText: <Empty description="暂无需求单" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
           renderItem={(item) => (
             <List.Item
@@ -626,98 +642,13 @@ export function UploadCenterPage() {
                   disabled
                 />
               </Form.Item>
-              <Card size="small" title="自动解析元数据" style={{ marginBottom: 16 }}>
-                <Alert
-                  type="success"
-                  showIcon
-                  message="选择 DICOM 文件夹后，影像模态和检查部位将自动识别并填充"
-                  description="系统会读取 DICOM 文件头中的信息自动填充这两个必填项，您可进行修改。其他字段请手工补充。"
-                  style={{ marginBottom: 0 }}
-                />
-              </Card>
-              <Card size="small" title="人工补充科研标签" style={{ marginBottom: 16 }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Form.Item
-                    name="modality"
-                    label="影像模态"
-                    rules={[{ required: true, message: '请选择影像模态' }]}
-                  >
-                    <Select placeholder="选择影像模态" options={MODALITY_OPTIONS} />
-                  </Form.Item>
-                  <Form.Item
-                    noStyle
-                    shouldUpdate={(prevValues, currentValues) => prevValues.modality !== currentValues.modality}
-                  >
-                    {({ getFieldValue }) =>
-                      getFieldValue('modality') === 'Other' ? (
-                        <Form.Item
-                          label="自定义影像模态"
-                          required
-                          validateStatus={!modalityCustom ? 'error' : undefined}
-                          help={!modalityCustom ? '请输入自定义影像模态' : ''}
-                        >
-                          <Input
-                            placeholder="例如：PET、SPECT 等"
-                            value={modalityCustom}
-                            onChange={(e) => setModalityCustom(e.target.value)}
-                            maxLength={64}
-                          />
-                        </Form.Item>
-                      ) : null
-                    }
-                  </Form.Item>
-
-                  <Form.Item
-                    name="bodyPart"
-                    label="检查部位"
-                    rules={[{ required: true, message: '请选择检查部位' }]}
-                  >
-                    <Select placeholder="选择检查部位" options={BODY_PART_OPTIONS} />
-                  </Form.Item>
-                  <Form.Item
-                    noStyle
-                    shouldUpdate={(prevValues, currentValues) => prevValues.bodyPart !== currentValues.bodyPart}
-                  >
-                    {({ getFieldValue }) =>
-                      getFieldValue('bodyPart') === '其他' ? (
-                        <Form.Item
-                          label="自定义检查部位"
-                          required
-                          validateStatus={!bodyPartCustom ? 'error' : undefined}
-                          help={!bodyPartCustom ? '请输入自定义检查部位' : ''}
-                        >
-                          <Input
-                            placeholder="例如：脸部、耳朵 等"
-                            value={bodyPartCustom}
-                            onChange={(e) => setBodyPartCustom(e.target.value)}
-                            maxLength={64}
-                          />
-                        </Form.Item>
-                      ) : null
-                    }
-                  </Form.Item>
-
-                  <Form.Item name="diagnosis" label="疾病诊断">
-                    <Select
-                      mode="tags"
-                      placeholder="输入诊断标签，回车生成"
-                      maxCount={10}
-                    />
-                  </Form.Item>
-                  <Form.Item name="clinicalTags" label="临床金标准（可多选）">
-                    <Checkbox.Group options={CLINICAL_TAG_OPTIONS} />
-                  </Form.Item>
-                  <Form.Item name="annotationStatus" label="标注状态（单选）">
-                    <Radio.Group options={ANNOTATION_STATUS_OPTIONS} />
-                  </Form.Item>
-                </Space>
-              </Card>
-              <Form.Item name="remark" label="批次备注">
-                <Input.TextArea
-                  rows={4}
-                  maxLength={255}
-                  placeholder="记录数据范围、补传原因、约定事项等"
-                />
+              <Form.Item label=" " style={{ marginBottom: 16 }}>
+                <Checkbox
+                  checked={enableAutoParseMetadata}
+                  onChange={(e) => setEnableAutoParseMetadata(e.target.checked)}
+                >
+                  自动解析元数据（选择 DICOM 文件夹后自动填充影像模态和检查部位）
+                </Checkbox>
               </Form.Item>
               <Form.Item
                 label="上传文件"
@@ -837,6 +768,90 @@ export function UploadCenterPage() {
                     </Card>
                   ) : null}
                 </div>
+              </Form.Item>
+              <Card size="small" title="科研标签" style={{ marginBottom: 16 }}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Form.Item
+                    name="modality"
+                    label="影像模态"
+                    rules={[{ required: true, message: '请选择影像模态' }]}
+                  >
+                    <Select placeholder="选择影像模态" options={MODALITY_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prevValues, currentValues) => prevValues.modality !== currentValues.modality}
+                  >
+                    {({ getFieldValue }) =>
+                      getFieldValue('modality') === 'Other' ? (
+                        <Form.Item
+                          label="自定义影像模态"
+                          required
+                          validateStatus={!modalityCustom ? 'error' : undefined}
+                          help={!modalityCustom ? '请输入自定义影像模态' : ''}
+                        >
+                          <Input
+                            placeholder="例如：PET、SPECT 等"
+                            value={modalityCustom}
+                            onChange={(e) => setModalityCustom(e.target.value)}
+                            maxLength={64}
+                          />
+                        </Form.Item>
+                      ) : null
+                    }
+                  </Form.Item>
+
+                  <Form.Item
+                    name="bodyPart"
+                    label="检查部位"
+                    rules={[{ required: true, message: '请选择检查部位' }]}
+                  >
+                    <Select placeholder="选择检查部位" options={BODY_PART_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prevValues, currentValues) => prevValues.bodyPart !== currentValues.bodyPart}
+                  >
+                    {({ getFieldValue }) =>
+                      getFieldValue('bodyPart') === '其他' ? (
+                        <Form.Item
+                          label="自定义检查部位"
+                          required
+                          validateStatus={!bodyPartCustom ? 'error' : undefined}
+                          help={!bodyPartCustom ? '请输入自定义检查部位' : ''}
+                        >
+                          <Input
+                            placeholder="例如：脸部、耳朵 等"
+                            value={bodyPartCustom}
+                            onChange={(e) => setBodyPartCustom(e.target.value)}
+                            maxLength={64}
+                          />
+                        </Form.Item>
+                      ) : null
+                    }
+                  </Form.Item>
+
+                  <Form.Item name="diagnosis" label="疾病诊断">
+                    <Select
+                      mode="tags"
+                      placeholder="输入诊断标签，回车生成"
+                      maxCount={10}
+                    />
+                  </Form.Item>
+                  <Form.Item name="clinicalTags" label="临床金标准（可多选）">
+                    <Checkbox.Group options={CLINICAL_TAG_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item name="annotationStatus" label="标注状态（单选）">
+                    <Radio.Group options={ANNOTATION_STATUS_OPTIONS} />
+                  </Form.Item>
+                </Space>
+              </Card>
+              <Form.Item name="remark" label="批次备注">
+                <Input.TextArea
+                  rows={4}
+                  maxLength={255}
+                  placeholder="记录数据范围、补传原因、约定事项等"
+                />
               </Form.Item>
               <Space>
                 <Button

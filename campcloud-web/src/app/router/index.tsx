@@ -15,6 +15,8 @@ import { NotificationPage } from '../../pages/notifications';
 import { AdminRequirementListPage } from '../../pages/admin/RequirementListPage';
 import { AdminRequirementDetailPage } from '../../pages/admin/RequirementDetailPage';
 import { AdminRequirementDataPage } from '../../pages/admin/AdminRequirementDataPage';
+import { AdminLogsPage } from '../../pages/admin/AdminLogsPage';
+import { UserManagementPage } from '../../pages/admin/UserManagementPage';
 import { LazyRouteErrorBoundary } from './LazyRouteErrorBoundary';
 
 const RequirementViewerPage = lazy(() =>
@@ -107,6 +109,8 @@ function RouterContainer() {
             { path: 'requirements', element: <AdminRequirementListPage /> },
             { path: 'requirements/:id', element: <AdminRequirementDetailPage /> },
             { path: 'requirements/:id/data', element: <AdminRequirementDataPage /> },
+            { path: 'users', element: <UserManagementPage /> },
+            { path: 'logs', element: <AdminLogsPage /> },
           ],
         },
       ],

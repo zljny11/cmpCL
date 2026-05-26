@@ -64,7 +64,7 @@ export function DashboardPage() {
       const rightTime = right.latestMessageAt ?? right.createdAt;
       return dayjs(rightTime).valueOf() - dayjs(leftTime).valueOf();
     })
-    .slice(0, 5);
+    .slice(0, 2);
 
   useEffect(() => {
     if (isAdmin) {

@@ -1,10 +1,13 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { AdminOperationLogCategory, UserRole } from '@prisma/client';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
-import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { extractRequestIp } from '../../common/utils/request';
 import { AuthUser } from '../../types/auth-user';
+import { AdminLogsService } from '../admin-logs/admin-logs.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
@@ -19,7 +22,10 @@ import { RequirementsService } from './requirement.service';
 @ApiBearerAuth()
 @Controller('requirements')
 export class RequirementsController {
-  constructor(private readonly requirementsService: RequirementsService) {}
+  constructor(
+    private readonly requirementsService: RequirementsService,
+    private readonly adminLogsService: AdminLogsService,
+  ) {}
 
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateRequirementDto) {
@@ -27,13 +33,44 @@ export class RequirementsController {
   }
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query() query: ListRequirementsDto) {
-    return this.requirementsService.list(BigInt(user.id), user.role, query);
+  async list(@CurrentUser() user: AuthUser, @Req() request: Request, @Query() query: ListRequirementsDto) {
+    const result = await this.requirementsService.list(BigInt(user.id), user.role, query);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.requirement,
+        action: '查看需求列表',
+        targetType: 'requirement',
+        targetName: query.keyword?.trim() || '全部需求',
+        detail: {
+          keyword: query.keyword?.trim() || null,
+          hospitalName: query.hospitalName?.trim() || null,
+          type: query.type || null,
+          status: query.status || null,
+          page: result.page,
+          pageSize: result.pageSize,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id')
-  detail(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    return this.requirementsService.detail(BigInt(user.id), BigInt(id), user.role);
+  async detail(@CurrentUser() user: AuthUser, @Req() request: Request, @Param('id', ParseIntPipe) id: number) {
+    const result = await this.requirementsService.detail(BigInt(user.id), BigInt(id), user.role);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.requirement,
+        action: '查看需求详情',
+        targetType: 'requirement',
+        targetId: result.id,
+        targetName: result.title,
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id/messages')
@@ -85,53 +122,146 @@ export class RequirementsController {
   }
 
   @Patch(':id/status')
-  updateStatus(
+  async updateStatus(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateRequirementStatusDto,
   ) {
-    return this.requirementsService.updateStatus(BigInt(user.id), BigInt(id), user.role, dto);
+    const result = await this.requirementsService.updateStatus(BigInt(user.id), BigInt(id), user.role, dto);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.requirement,
+        action: '更新需求状态',
+        targetType: 'requirement',
+        targetId: result.id,
+        detail: {
+          status: result.status,
+          reason: dto.reason?.trim() || null,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id/data-tree')
-  dataTree(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    return this.requirementsService.dataTree(BigInt(user.id), BigInt(id), user.role);
+  async dataTree(@CurrentUser() user: AuthUser, @Req() request: Request, @Param('id', ParseIntPipe) id: number) {
+    const result = await this.requirementsService.dataTree(BigInt(user.id), BigInt(id), user.role);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '查看完整数据',
+        targetType: 'requirement',
+        targetId: result.requirementId,
+        detail: {
+          patientCount: result.patients.length,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id/studies/:studyId/preview')
-  previewStudy(
+  async previewStudy(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('studyId', ParseIntPipe) studyId: number,
   ) {
-    return this.requirementsService.previewStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
+    const result = await this.requirementsService.previewStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '预览检查数据',
+        targetType: 'study',
+        targetId: result.target.id,
+        targetName: result.target.studyDescription || result.target.studyUid,
+        detail: {
+          requirementId: id.toString(),
+          seriesCount: result.series.length,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Delete(':id/studies/:studyId')
-  deleteStudy(
+  async deleteStudy(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('studyId', ParseIntPipe) studyId: number,
   ) {
-    return this.requirementsService.deleteStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
+    const result = await this.requirementsService.deleteStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '删除检查数据',
+        targetType: 'study',
+        targetId: studyId.toString(),
+        detail: {
+          requirementId: id.toString(),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id/series/:seriesId/preview')
-  previewSeries(
+  async previewSeries(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('seriesId', ParseIntPipe) seriesId: number,
   ) {
-    return this.requirementsService.previewSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
+    const result = await this.requirementsService.previewSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '预览序列数据',
+        targetType: 'series',
+        targetId: result.target.id,
+        targetName: result.target.seriesDescription || result.target.seriesUid,
+        detail: {
+          requirementId: id.toString(),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Delete(':id/series/:seriesId')
-  deleteSeries(
+  async deleteSeries(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('seriesId', ParseIntPipe) seriesId: number,
   ) {
-    return this.requirementsService.deleteSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
+    const result = await this.requirementsService.deleteSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
+    if (user.role === UserRole.admin) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '删除序列数据',
+        targetType: 'series',
+        targetId: seriesId.toString(),
+        detail: {
+          requirementId: id.toString(),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id/series/:seriesId/files/:fileName')
