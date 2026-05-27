@@ -1388,7 +1388,7 @@ export class RequirementsService {
         await this.mailService.queueRequirementUserNotification(tx, {
           requirementId,
           type: 'delivery',
-          subject: isFinal ? '【CampCloud】您的需求已收到最终交付' : '【CampCloud】您的需求有新交付',
+          subject: isFinal ? '【AICampCloud】您的需求已收到最终交付' : '【AICampCloud】您的需求有新交付',
           requirementTitle: requirement.title,
           actionLabel: isFinal ? '最终交付' : '新增交付',
           summary: notificationContent,
@@ -1491,7 +1491,7 @@ export class RequirementsService {
         await this.mailService.queueRequirementUserNotification(tx, {
           requirementId,
           type: 'message_reply',
-          subject: '【CampCloud】您的需求有新留言',
+          subject: '【AICampCloud】您的需求有新留言',
           requirementTitle: requirement.title,
           actionLabel: '管理员留言',
           summary: notificationContent,
@@ -1580,7 +1580,7 @@ export class RequirementsService {
       await this.mailService.queueRequirementUserNotification(tx, {
         requirementId,
         type: 'status_update',
-        subject: '【CampCloud】您的需求状态已更新',
+        subject: '【AICampCloud】您的需求状态已更新',
         requirementTitle: requirement.title,
         actionLabel: '状态更新',
         summary: content,

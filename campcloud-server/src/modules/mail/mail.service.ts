@@ -202,7 +202,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     return (
       this.configService.get<string>('MAIL_FROM')?.trim() ||
       this.configService.get<string>('MAIL_USER')?.trim() ||
-      'no-reply@campcloud.local'
+      'no-reply@aicampcloud.local'
     );
   }
 
@@ -231,7 +231,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       html: `
         <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
           <p>${escapedRecipientName}，您好：</p>
-          <p>您在 CampCloud 提交的需求有新的处理动作。</p>
+          <p>您在 AICampCloud 提交的需求有新的处理动作。</p>
           <p><strong>需求标题：</strong>${escapedRequirementTitle}</p>
           <p><strong>动作类型：</strong>${escapedActionLabel}</p>
           <p><strong>内容摘要：</strong>${escapedSummary}</p>
@@ -240,7 +240,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       `.trim(),
       text: [
         `${params.recipientName}，您好：`,
-        '您在 CampCloud 提交的需求有新的处理动作。',
+        '您在 AICampCloud 提交的需求有新的处理动作。',
         `需求标题：${params.requirementTitle}`,
         `动作类型：${params.actionLabel}`,
         `内容摘要：${params.summary}`,
