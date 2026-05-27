@@ -9,13 +9,14 @@ import { Spin } from 'antd';
 import { authApi } from '../../services/api/auth';
 import { queryClient } from '../../services/query-client';
 import { clearToken, getToken, setToken } from '../../services/http';
-import { AuthUser, LoginPayload } from '../../types/auth';
+import { AuthUser, EmailCodeLoginPayload, LoginPayload } from '../../types/auth';
 
 interface AuthContextValue {
   isReady: boolean;
   isAuthenticated: boolean;
   user: AuthUser | null;
   login: (payload: LoginPayload) => Promise<void>;
+  loginWithEmailCode: (payload: EmailCodeLoginPayload) => Promise<void>;
   logout: () => void;
   refreshMe: () => Promise<void>;
 }
@@ -60,6 +61,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUser(me);
   };
 
+  const loginWithEmailCode = async (payload: EmailCodeLoginPayload) => {
+    queryClient.clear();
+    const result = await authApi.loginWithEmailCode(payload);
+    setToken(result.token);
+    const me = await authApi.getMe();
+    setUser(me);
+  };
+
   const logout = () => {
     queryClient.clear();
     clearToken();
@@ -81,6 +90,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         isAuthenticated: Boolean(user),
         user,
         login,
+        loginWithEmailCode,
         logout,
         refreshMe,
       }}

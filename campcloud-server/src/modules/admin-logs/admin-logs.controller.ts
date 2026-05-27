@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ListAdminOperationLogsDto } from './dto/list-admin-operation-logs.dto';
@@ -12,5 +12,10 @@ export class AdminLogsController {
   @Get()
   list(@Query() query: ListAdminOperationLogsDto) {
     return this.adminLogsService.listLogs(query);
+  }
+
+  @Post('clear')
+  clear() {
+    return this.adminLogsService.clearLogs();
   }
 }

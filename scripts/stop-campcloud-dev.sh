@@ -130,7 +130,7 @@ main() {
   stop_by_pattern "npm run dev -- --host 127.0.0.1 --port ${FRONTEND_PORT} --force" "frontend npm wrapper"
 
   rm -f "$BACKEND_PID_FILE" "$FRONTEND_PID_FILE"
-  log 'CampCloud dev processes stopped'
+  log 'AICampCloud dev processes stopped'
 }
 
 main "$@"

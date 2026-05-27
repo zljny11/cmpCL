@@ -28,27 +28,19 @@ export class RequirementsController {
   ) {}
 
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateRequirementDto) {
-    return this.requirementsService.create(BigInt(user.id), dto);
-  }
-
-  @Get()
-  async list(@CurrentUser() user: AuthUser, @Req() request: Request, @Query() query: ListRequirementsDto) {
-    const result = await this.requirementsService.list(BigInt(user.id), user.role, query);
-    if (user.role === UserRole.admin) {
+  async create(@CurrentUser() user: AuthUser, @Req() request: Request, @Body() dto: CreateRequirementDto) {
+    const result = await this.requirementsService.create(BigInt(user.id), dto);
+    if (user.role === UserRole.user) {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.requirement,
-        action: '查看需求列表',
+        action: '上传需求',
         targetType: 'requirement',
-        targetName: query.keyword?.trim() || '全部需求',
+        targetId: result.id,
+        targetName: result.title,
         detail: {
-          keyword: query.keyword?.trim() || null,
-          hospitalName: query.hospitalName?.trim() || null,
-          type: query.type || null,
-          status: query.status || null,
-          page: result.page,
-          pageSize: result.pageSize,
+          type: result.type,
+          status: result.status,
         },
         ipAddress: extractRequestIp(request),
       });
@@ -56,21 +48,14 @@ export class RequirementsController {
     return result;
   }
 
+  @Get()
+  list(@CurrentUser() user: AuthUser, @Query() query: ListRequirementsDto) {
+    return this.requirementsService.list(BigInt(user.id), user.role, query);
+  }
+
   @Get(':id')
-  async detail(@CurrentUser() user: AuthUser, @Req() request: Request, @Param('id', ParseIntPipe) id: number) {
-    const result = await this.requirementsService.detail(BigInt(user.id), BigInt(id), user.role);
-    if (user.role === UserRole.admin) {
-      await this.adminLogsService.createLog({
-        actor: user,
-        category: AdminOperationLogCategory.requirement,
-        action: '查看需求详情',
-        targetType: 'requirement',
-        targetId: result.id,
-        targetName: result.title,
-        ipAddress: extractRequestIp(request),
-      });
-    }
-    return result;
+  detail(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.requirementsService.detail(BigInt(user.id), BigInt(id), user.role);
   }
 
   @Get(':id/messages')
@@ -79,12 +64,28 @@ export class RequirementsController {
   }
 
   @Post(':id/messages')
-  createMessage(
+  async createMessage(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreateMessageDto,
   ) {
-    return this.requirementsService.createMessage(BigInt(user.id), BigInt(id), user.role, dto);
+    const result = await this.requirementsService.createMessage(BigInt(user.id), BigInt(id), user.role, dto);
+    await this.adminLogsService.createLog({
+      actor: user,
+      category: AdminOperationLogCategory.requirement,
+      action: '需求留言',
+      targetType: 'requirement',
+      targetId: id.toString(),
+      targetName: result.requirementTitle ?? undefined,
+      detail: {
+        messageId: result.id,
+        senderRole: user.role,
+        content: dto.content.trim().slice(0, 100),
+      },
+      ipAddress: extractRequestIp(request),
+    });
+    return result;
   }
 
   @Get(':id/deliveries')
@@ -94,13 +95,30 @@ export class RequirementsController {
 
   @Post(':id/deliveries')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-  createDelivery(
+  async createDelivery(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreateDeliveryDto,
     @UploadedFile() file?: { originalname: string; buffer: Buffer; mimetype: string },
   ) {
-    return this.requirementsService.createDelivery(BigInt(user.id), BigInt(id), user.role, dto, file);
+    const result = await this.requirementsService.createDelivery(BigInt(user.id), BigInt(id), user.role, dto, file);
+    await this.adminLogsService.createLog({
+      actor: user,
+      category: AdminOperationLogCategory.data,
+      action: '交付算法',
+      targetType: 'requirement',
+      targetId: id.toString(),
+      targetName: result.requirementTitle ?? undefined,
+      detail: {
+        deliveryId: result.id,
+        deliveryTitle: result.title,
+        fileName: result.fileName,
+        isFinal: result.isFinal,
+      },
+      ipAddress: extractRequestIp(request),
+    });
+    return result;
   }
 
   @Get(':id/deliveries/:deliveryId/file')
@@ -133,9 +151,10 @@ export class RequirementsController {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.requirement,
-        action: '更新需求状态',
+        action: '调整需求状态',
         targetType: 'requirement',
         targetId: result.id,
+        targetName: result.requirementTitle ?? undefined,
         detail: {
           status: result.status,
           reason: dto.reason?.trim() || null,
@@ -147,121 +166,44 @@ export class RequirementsController {
   }
 
   @Get(':id/data-tree')
-  async dataTree(@CurrentUser() user: AuthUser, @Req() request: Request, @Param('id', ParseIntPipe) id: number) {
-    const result = await this.requirementsService.dataTree(BigInt(user.id), BigInt(id), user.role);
-    if (user.role === UserRole.admin) {
-      await this.adminLogsService.createLog({
-        actor: user,
-        category: AdminOperationLogCategory.data,
-        action: '查看完整数据',
-        targetType: 'requirement',
-        targetId: result.requirementId,
-        detail: {
-          patientCount: result.patients.length,
-        },
-        ipAddress: extractRequestIp(request),
-      });
-    }
-    return result;
+  dataTree(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.requirementsService.dataTree(BigInt(user.id), BigInt(id), user.role);
   }
 
   @Get(':id/studies/:studyId/preview')
-  async previewStudy(
+  previewStudy(
     @CurrentUser() user: AuthUser,
-    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('studyId', ParseIntPipe) studyId: number,
   ) {
-    const result = await this.requirementsService.previewStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
-    if (user.role === UserRole.admin) {
-      await this.adminLogsService.createLog({
-        actor: user,
-        category: AdminOperationLogCategory.data,
-        action: '预览检查数据',
-        targetType: 'study',
-        targetId: result.target.id,
-        targetName: result.target.studyDescription || result.target.studyUid,
-        detail: {
-          requirementId: id.toString(),
-          seriesCount: result.series.length,
-        },
-        ipAddress: extractRequestIp(request),
-      });
-    }
-    return result;
+    return this.requirementsService.previewStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
   }
 
   @Delete(':id/studies/:studyId')
-  async deleteStudy(
+  deleteStudy(
     @CurrentUser() user: AuthUser,
-    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('studyId', ParseIntPipe) studyId: number,
   ) {
-    const result = await this.requirementsService.deleteStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
-    if (user.role === UserRole.admin) {
-      await this.adminLogsService.createLog({
-        actor: user,
-        category: AdminOperationLogCategory.data,
-        action: '删除检查数据',
-        targetType: 'study',
-        targetId: studyId.toString(),
-        detail: {
-          requirementId: id.toString(),
-        },
-        ipAddress: extractRequestIp(request),
-      });
-    }
-    return result;
+    return this.requirementsService.deleteStudy(BigInt(user.id), BigInt(id), BigInt(studyId), user.role);
   }
 
   @Get(':id/series/:seriesId/preview')
-  async previewSeries(
+  previewSeries(
     @CurrentUser() user: AuthUser,
-    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('seriesId', ParseIntPipe) seriesId: number,
   ) {
-    const result = await this.requirementsService.previewSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
-    if (user.role === UserRole.admin) {
-      await this.adminLogsService.createLog({
-        actor: user,
-        category: AdminOperationLogCategory.data,
-        action: '预览序列数据',
-        targetType: 'series',
-        targetId: result.target.id,
-        targetName: result.target.seriesDescription || result.target.seriesUid,
-        detail: {
-          requirementId: id.toString(),
-        },
-        ipAddress: extractRequestIp(request),
-      });
-    }
-    return result;
+    return this.requirementsService.previewSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
   }
 
   @Delete(':id/series/:seriesId')
-  async deleteSeries(
+  deleteSeries(
     @CurrentUser() user: AuthUser,
-    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('seriesId', ParseIntPipe) seriesId: number,
   ) {
-    const result = await this.requirementsService.deleteSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
-    if (user.role === UserRole.admin) {
-      await this.adminLogsService.createLog({
-        actor: user,
-        category: AdminOperationLogCategory.data,
-        action: '删除序列数据',
-        targetType: 'series',
-        targetId: seriesId.toString(),
-        detail: {
-          requirementId: id.toString(),
-        },
-        ipAddress: extractRequestIp(request),
-      });
-    }
-    return result;
+    return this.requirementsService.deleteSeries(BigInt(user.id), BigInt(id), BigInt(seriesId), user.role);
   }
 
   @Get(':id/series/:seriesId/files/:fileName')
@@ -286,13 +228,35 @@ export class RequirementsController {
 
   @Post(':id/dataset-batches')
   @UseInterceptors(FilesInterceptor('files', 2000, { storage: memoryStorage() }))
-  createDatasetBatch(
+  async createDatasetBatch(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreateDatasetBatchDto,
     @UploadedFiles() files: Array<{ originalname: string; buffer: Buffer }> = [],
   ) {
-    return this.requirementsService.createDatasetBatch(BigInt(user.id), BigInt(id), user.role, dto, files);
+    const result = await this.requirementsService.createDatasetBatch(BigInt(user.id), BigInt(id), user.role, dto, files);
+    if (user.role === UserRole.user) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '上传数据',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        targetName: result.requirementTitle ?? undefined,
+        detail: {
+          datasetBatchId: result.datasetBatchId,
+          batchNo: result.batchNo,
+          fileCount: result.fileCount,
+          status: result.status,
+          retryBatchId: dto.retryBatchId ?? null,
+          modality: dto.modality?.trim() || null,
+          bodyPart: dto.bodyPart?.trim() || null,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
   }
 
   @Get(':id/dataset-batches')

@@ -20,22 +20,8 @@ export class UserController {
   ) {}
 
   @Get()
-  async listUsers(@CurrentUser() user: AuthUser, @Req() request: Request, @Query() query: ListUsersDto) {
-    const result = await this.userService.listUsers(query);
-    await this.adminLogsService.createLog({
-      actor: user,
-      category: AdminOperationLogCategory.user,
-      action: '查看用户列表',
-      targetType: 'user',
-      targetName: query.keyword?.trim() || '全部用户',
-      detail: {
-        keyword: query.keyword?.trim() || null,
-        page: result.page,
-        pageSize: result.pageSize,
-      },
-      ipAddress: extractRequestIp(request),
-    });
-    return result;
+  listUsers(@Query() query: ListUsersDto) {
+    return this.userService.listUsers(query);
   }
 
   @Post()
@@ -44,14 +30,14 @@ export class UserController {
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.user,
-      action: '创建用户',
-      targetType: 'user',
+      action: '新增用户',
+      targetType: 'user_data',
       targetId: created.id,
       targetName: created.username,
       detail: {
-        hospitalName: created.hospitalName,
         role: created.role,
         status: created.status,
+        hospitalName: created.hospitalName,
       },
       ipAddress: extractRequestIp(request),
     });
@@ -69,14 +55,14 @@ export class UserController {
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.user,
-      action: '更新用户',
-      targetType: 'user',
+      action: '修改用户',
+      targetType: 'user_data',
       targetId: updated.id,
       targetName: updated.username,
       detail: {
-        hospitalName: updated.hospitalName,
         role: updated.role,
         status: updated.status,
+        hospitalName: updated.hospitalName,
         passwordReset: Boolean(dto.password),
       },
       ipAddress: extractRequestIp(request),
@@ -91,7 +77,7 @@ export class UserController {
       actor: user,
       category: AdminOperationLogCategory.user,
       action: '删除用户',
-      targetType: 'user',
+      targetType: 'user_data',
       targetId: deleted.id,
       targetName: deleted.username,
       detail: {

@@ -1,4 +1,4 @@
-# CampCloud 测试运行指南
+# AICampCloud 测试运行指南
 
 > **快速查看：** [快速参考卡](QUICK_REFERENCE.md) | 完整指南：[TESTING_GUIDE.md](../../TESTING_GUIDE.md) | 上线检查：[TESTING_CHECKLIST.md](../../TESTING_CHECKLIST.md)
 

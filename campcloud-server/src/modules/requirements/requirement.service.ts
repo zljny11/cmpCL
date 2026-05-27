@@ -1396,6 +1396,7 @@ export class RequirementsService {
 
         return {
           id: created.id.toString(),
+          requirementTitle: requirement.title,
           title: created.title,
           description: created.description,
           fileName: created.fileName,
@@ -1513,6 +1514,7 @@ export class RequirementsService {
 
       return {
         id: created.id.toString(),
+        requirementTitle: requirement.title,
         content: created.content,
         createdAt: created.createdAt,
         sender: {
@@ -1588,6 +1590,7 @@ export class RequirementsService {
 
       return {
         id: updated.id.toString(),
+        requirementTitle: requirement.title,
         status: updated.status,
         updatedAt: updated.updatedAt,
       };
@@ -2419,6 +2422,13 @@ export class RequirementsService {
 
     return {
       datasetBatchId: batch.id.toString(),
+      requirementTitle:
+        role === UserRole.user
+          ? (await this.prisma.requirement.findUnique({
+              where: { id: requirementId },
+              select: { title: true },
+            }))?.title ?? null
+          : null,
       batchNo: batch.batchNo,
       status: batch.status,
       fileCount: batch.fileCount,

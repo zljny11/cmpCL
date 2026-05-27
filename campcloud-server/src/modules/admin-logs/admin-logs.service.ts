@@ -20,6 +20,14 @@ type CreateAdminLogPayload = {
 export class AdminLogsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async clearLogs() {
+    const result = await this.prisma.adminOperationLog.deleteMany();
+    return {
+      success: true,
+      deletedCount: result.count,
+    };
+  }
+
   async createLog(payload: CreateAdminLogPayload) {
     const actorId = payload.actor?.id ? BigInt(payload.actor.id) : null;
     const actorUsername = payload.actor?.username ?? 'unknown';

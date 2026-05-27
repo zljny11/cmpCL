@@ -22,6 +22,16 @@ export interface LoginPayload {
   password: string;
 }
 
+export interface RequestPasswordResetCodePayload {
+  email: string;
+}
+
+export interface EmailCodeLoginPayload {
+  email: string;
+  code: string;
+  newPassword?: string;
+}
+
 export interface LoginResponse {
   token: string;
   user: AuthUser;

@@ -112,6 +112,34 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async sendVerificationCodeMail(params: {
+    toEmail: string;
+    recipientName: string;
+    code: string;
+    expireMinutes: number;
+  }) {
+    if (!this.isEnabled()) {
+      throw new Error('mail delivery is disabled');
+    }
+
+    if (!this.transporter) {
+      this.transporter = this.createTransporter();
+    }
+
+    if (!this.transporter) {
+      throw new Error('mail transporter is not available');
+    }
+
+    const rendered = this.renderVerificationCodeMail(params);
+    await this.transporter.sendMail({
+      from: this.getMailFrom(),
+      to: params.toEmail,
+      subject: 'AICampCloud 邮箱验证码',
+      html: rendered.html,
+      text: rendered.text,
+    });
+  }
+
   async processPendingJobs() {
     if (!this.transporter || this.isProcessing) {
       return;
@@ -245,6 +273,33 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         `动作类型：${params.actionLabel}`,
         `内容摘要：${params.summary}`,
         `详情链接：${params.detailUrl}`,
+      ].join('\n'),
+    };
+  }
+
+  private renderVerificationCodeMail(params: {
+    recipientName: string;
+    code: string;
+    expireMinutes: number;
+  }) {
+    const escapedRecipientName = this.escapeHtml(params.recipientName);
+    const escapedCode = this.escapeHtml(params.code);
+    const escapedExpireMinutes = this.escapeHtml(String(params.expireMinutes));
+
+    return {
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+          <p>${escapedRecipientName}，您好：</p>
+          <p>您正在使用 AICampCloud 进行邮箱验证码登录/重置密码。</p>
+          <p>验证码为：<strong style="font-size: 24px; letter-spacing: 4px;">${escapedCode}</strong></p>
+          <p>验证码 ${escapedExpireMinutes} 分钟内有效，请勿泄露给他人。</p>
+        </div>
+      `.trim(),
+      text: [
+        `${params.recipientName}，您好：`,
+        '您正在使用 AICampCloud 进行邮箱验证码登录/重置密码。',
+        `验证码：${params.code}`,
+        `验证码 ${params.expireMinutes} 分钟内有效，请勿泄露给他人。`,
       ].join('\n'),
     };
   }

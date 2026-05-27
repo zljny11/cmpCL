@@ -4,7 +4,7 @@
 # Keep the Git metadata files tracked.
 !/.gitignore
 
-# Only include the CampCloud frontend and backend projects.
+# Only include the AICampCloud frontend and backend projects.
 !/campcloud-server/
 !/campcloud-web/
 !/scripts/

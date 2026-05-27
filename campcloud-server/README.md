@@ -1,6 +1,6 @@
 # campcloud-server
 
-CampCloud 后端代码库。
+AICampCloud 后端代码库。
 
 当前约束：
 

@@ -10,13 +10,13 @@ async function main() {
     {
       username: 'admin1',
       role: UserRole.admin,
-      hospitalName: 'CampCloud',
+      hospitalName: 'AICampCloud',
       profile: { realName: '管理员1', department: '平台运营', title: '系统管理员' },
     },
     {
       username: 'admin2',
       role: UserRole.admin,
-      hospitalName: 'CampCloud',
+      hospitalName: 'AICampCloud',
       profile: { realName: '管理员2', department: '平台运营', title: '系统管理员' },
     },
     {

@@ -58,6 +58,32 @@ export function SeriesLevel({
     () => data.map((item) => item.id).filter((id) => selectedSeriesKeys.includes(id)),
     [data, selectedSeriesKeys],
   );
+  const bodyPartFilters = useMemo(
+    () =>
+      Array.from(new Set(data.map((item) => item.bodyPart?.trim()).filter(Boolean) as string[]))
+        .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+        .map((value) => ({ text: value, value })),
+    [data],
+  );
+  const diagnosisFilters = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          data.flatMap((item) => (item.diagnosis ?? []).map((diagnosis) => diagnosis.trim()).filter(Boolean)),
+        ),
+      )
+        .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+        .map((value) => ({ text: value, value })),
+    [data],
+  );
+  const clinicalTagFilters = useMemo(
+    () => Object.entries(CLINICAL_TAG_MAP).map(([value, label]) => ({ text: label, value })),
+    [],
+  );
+  const annotationStatusFilters = useMemo(
+    () => Object.entries(ANNOTATION_STATUS_MAP).map(([value, label]) => ({ text: label, value })),
+    [],
+  );
 
   const handleDownloadSeries = async (record: RequirementSeriesNode) => {
     try {
@@ -166,24 +192,39 @@ export function SeriesLevel({
           {
             title: '身体部位',
             width: 140,
+            filters: bodyPartFilters,
+            filterSearch: true,
+            onFilter: (value: boolean | React.Key, record: RequirementSeriesNode) => (record.bodyPart || '') === String(value),
             render: (_: unknown, record: RequirementSeriesNode) => record.bodyPart || '-',
             hidden: !visibleTags?.seriesBodyPart,
           },
           {
             title: '疾病诊断',
             width: 180,
+            filters: diagnosisFilters,
+            filterSearch: true,
+            onFilter: (value: boolean | React.Key, record: RequirementSeriesNode) =>
+              (record.diagnosis ?? []).some((item: string) => item === String(value)),
             render: (_: unknown, record: RequirementSeriesNode) => renderStringArray(record.diagnosis),
             hidden: !visibleTags?.seriesDiagnosis,
           },
           {
             title: '临床金标准',
             width: 220,
+            filters: clinicalTagFilters,
+            filterMultiple: true,
+            onFilter: (value: boolean | React.Key, record: RequirementSeriesNode) =>
+              (record.clinicalTags ?? []).some((item: string) => item === String(value)),
             render: (_: unknown, record: RequirementSeriesNode) => renderStringArray(record.clinicalTags, CLINICAL_TAG_MAP),
             hidden: !visibleTags?.seriesClinicalTags,
           },
           {
             title: '标注状态',
             width: 140,
+            filters: annotationStatusFilters,
+            filterMultiple: false,
+            onFilter: (value: boolean | React.Key, record: RequirementSeriesNode) =>
+              (record.annotationStatus || '') === String(value),
             render: (_: unknown, record: RequirementSeriesNode) =>
               record.annotationStatus ? ANNOTATION_STATUS_MAP[record.annotationStatus] || record.annotationStatus : '-',
             hidden: !visibleTags?.seriesAnnotationStatus,

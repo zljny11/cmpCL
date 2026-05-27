@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, Card, Input, Popconfirm, Popover, Select, Space, Table, Tag, Typography, message } from 'antd';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { adminLogsApi } from '../../services/api/admin-logs';
@@ -23,6 +23,8 @@ const resultLabelMap: Record<AdminLogResult, string> = {
 };
 
 export function AdminLogsPage() {
+  const queryClient = useQueryClient();
+  const [messageApi, contextHolder] = message.useMessage();
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState('');
   const [categoryInput, setCategoryInput] = useState<AdminLogCategory | undefined>();
@@ -37,10 +39,20 @@ export function AdminLogsPage() {
     queryFn: () => adminLogsApi.list({ keyword: keyword || undefined, category, result, page, pageSize }),
   });
 
+  const clearLogsMutation = useMutation({
+    mutationFn: () => adminLogsApi.clear(),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'logs'] });
+      setPage(1);
+      messageApi.success(`已清空 ${data.deletedCount} 条日志`);
+    },
+  });
+
   const items = logsQuery.data?.list ?? [];
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      {contextHolder}
       <div>
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
           日志管理
@@ -97,6 +109,20 @@ export function AdminLogsPage() {
           >
             重置
           </Button>
+          <Button onClick={() => logsQuery.refetch()} loading={logsQuery.isFetching && !logsQuery.isLoading}>
+            刷新
+          </Button>
+          <Popconfirm
+            title="确认清空日志？"
+            description="该操作会删除当前全部日志记录，且不可恢复。"
+            okText="清空"
+            cancelText="取消"
+            onConfirm={() => clearLogsMutation.mutate()}
+          >
+            <Button danger loading={clearLogsMutation.isPending}>
+              清空日志
+            </Button>
+          </Popconfirm>
         </Space>
 
         <Table<AdminLogItem>
@@ -154,18 +180,23 @@ export function AdminLogsPage() {
               render: (_, record) => <Tag color={resultColorMap[record.result]}>{resultLabelMap[record.result]}</Tag>,
             },
             {
-              title: 'IP',
-              width: 140,
-              dataIndex: 'ipAddress',
-              render: (value: string | null) => value || '-',
-            },
-            {
               title: '详情',
               ellipsis: true,
               render: (_, record) => (
-                <Typography.Text title={record.detailSummary}>
-                  {record.detailSummary}
-                </Typography.Text>
+                <Popover
+                  title="完整详情"
+                  trigger="hover"
+                  placement="topLeft"
+                  content={
+                    <div style={{ maxWidth: 420, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {record.detailSummary || '-'}
+                    </div>
+                  }
+                >
+                  <Typography.Text style={{ cursor: 'pointer' }}>
+                    {record.detailSummary}
+                  </Typography.Text>
+                </Popover>
               ),
             },
           ]}

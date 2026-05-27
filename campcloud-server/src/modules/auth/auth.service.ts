@@ -1,17 +1,40 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
-import { compare } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
+import { randomInt } from 'crypto';
 import { JwtUtil } from '../../common/utils/jwt';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { UserService } from '../users/user.service';
+import { LoginWithEmailCodeDto } from './dto/login-with-email-code.dto';
 import { LoginDto } from './dto/login.dto';
+import { RequestPasswordResetCodeDto } from './dto/request-password-reset-code.dto';
+
+type EmailCodeRecord = {
+  code: string;
+  expiresAt: number;
+  sentAt: number;
+  attempts: number;
+};
 
 @Injectable()
 export class AuthService {
+  private readonly emailCodeStore = new Map<string, EmailCodeRecord>();
+  private readonly emailCodeExpireMs = 10 * 60 * 1000;
+  private readonly emailCodeResendIntervalMs = 60 * 1000;
+  private readonly emailCodeMaxAttempts = 5;
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtUtil: JwtUtil,
     private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -27,22 +50,106 @@ export class AuthService {
       throw new UnauthorizedException('用户名或密码错误');
     }
 
-    const authUser = {
-      id: user.id.toString(),
-      username: user.username,
-      role: user.role,
-      hospitalName: user.hospitalName,
-    };
+    return this.createLoginResult(user);
+  }
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+  async requestPasswordResetCode(dto: RequestPasswordResetCodeDto) {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const existingCode = this.emailCodeStore.get(normalizedEmail);
+    const now = Date.now();
+
+    if (existingCode && now - existingCode.sentAt < this.emailCodeResendIntervalMs) {
+      const retryAfterSeconds = Math.ceil(
+        (this.emailCodeResendIntervalMs - (now - existingCode.sentAt)) / 1000,
+      );
+      throw new HttpException(
+        `验证码发送过于频繁，请在 ${retryAfterSeconds} 秒后重试`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        status: UserStatus.active,
+        profile: {
+          email: {
+            equals: normalizedEmail,
+          },
+        },
+      },
+      include: { profile: true },
     });
 
-    return {
-      token: this.jwtUtil.signToken(authUser),
-      user: authUser,
-    };
+    if (!user?.profile?.email) {
+      throw new BadRequestException('该邮箱未绑定用户资料');
+    }
+
+    const code = String(randomInt(100000, 1000000));
+    await this.mailService.sendVerificationCodeMail({
+      toEmail: user.profile.email.trim(),
+      recipientName: user.profile.realName?.trim() || user.username,
+      code,
+      expireMinutes: Math.floor(this.emailCodeExpireMs / 60000),
+    });
+
+    this.emailCodeStore.set(normalizedEmail, {
+      code,
+      expiresAt: now + this.emailCodeExpireMs,
+      sentAt: now,
+      attempts: 0,
+    });
+
+    return { success: true };
+  }
+
+  async loginWithEmailCode(dto: LoginWithEmailCodeDto) {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const record = this.emailCodeStore.get(normalizedEmail);
+
+    if (!record || record.expiresAt < Date.now()) {
+      this.emailCodeStore.delete(normalizedEmail);
+      throw new UnauthorizedException('验证码已失效，请重新获取');
+    }
+
+    if (record.attempts >= this.emailCodeMaxAttempts) {
+      this.emailCodeStore.delete(normalizedEmail);
+      throw new HttpException('验证码尝试次数过多，请重新获取', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    if (record.code !== dto.code.trim()) {
+      record.attempts += 1;
+      this.emailCodeStore.set(normalizedEmail, record);
+      throw new UnauthorizedException('验证码错误');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        status: UserStatus.active,
+        profile: {
+          email: {
+            equals: normalizedEmail,
+          },
+        },
+      },
+      include: { profile: true },
+    });
+
+    if (!user) {
+      this.emailCodeStore.delete(normalizedEmail);
+      throw new UnauthorizedException('用户不存在或已停用');
+    }
+
+    if (dto.newPassword?.trim()) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: await hash(dto.newPassword.trim(), 10),
+        },
+      });
+    }
+
+    this.emailCodeStore.delete(normalizedEmail);
+    return this.createLoginResult(user);
   }
 
   async me(userId: bigint) {
@@ -69,6 +176,30 @@ export class AuthService {
             remark: user.profile.remark,
           }
         : null,
+    };
+  }
+
+  private async createLoginResult(user: {
+    id: bigint;
+    username: string;
+    role: 'user' | 'admin';
+    hospitalName: string;
+  }) {
+    const authUser = {
+      id: user.id.toString(),
+      username: user.username,
+      role: user.role,
+      hospitalName: user.hospitalName,
+    };
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return {
+      token: this.jwtUtil.signToken(authUser),
+      user: authUser,
     };
   }
 }

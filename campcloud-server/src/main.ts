@@ -37,8 +37,8 @@ async function bootstrap() {
 
   if ((process.env.SWAGGER_ENABLED ?? 'true') === 'true') {
     const config = new DocumentBuilder()
-      .setTitle('CampCloud API')
-      .setDescription('CampCloud MVP API')
+      .setTitle('AICampCloud API')
+      .setDescription('AICampCloud MVP API')
       .setVersion('0.1.0')
       .addBearerAuth()
       .build();
@@ -47,7 +47,7 @@ async function bootstrap() {
   }
 
   await app.listen(Number(process.env.PORT ?? 3000));
-  logger.log(`CampCloud server started on port ${process.env.PORT ?? 3000}`);
+  logger.log(`AICampCloud server started on port ${process.env.PORT ?? 3000}`);
 }
 
 void bootstrap();

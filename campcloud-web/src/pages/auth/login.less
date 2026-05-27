@@ -109,6 +109,45 @@
   cursor: not-allowed;
 }
 
+.AICampCloud-login-code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 12px;
+  align-items: start;
+}
+
+.AICampCloud-login .btn.secondary {
+  font-size: 14px;
+  padding: 14px 10px;
+  background: #7fc9f5;
+  color: #fff;
+}
+
+.AICampCloud-login .btn.secondary:hover {
+  background: #67bbea;
+}
+
+.AICampCloud-login-hint {
+  margin: -4px 0 16px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.AICampCloud-login-switch {
+  border: none;
+  background: transparent;
+  color: #0568c1;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.AICampCloud-login-switch:hover {
+  color: #fdc500;
+}
+
 .AICampCloud-login .w3l_form {
   flex-basis: 50%;
   background: #f4f9fd;
@@ -167,6 +206,11 @@
   .AICampCloud-login .content-wthree {
     order: 1;
     border-radius: 8px 8px 0 0;
+  }
+
+  .AICampCloud-login-code-row {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 }
 
