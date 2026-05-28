@@ -8,6 +8,7 @@ import { RolesGuard } from '../src/common/guards/roles.guard';
 import { JwtUtil } from '../src/common/utils/jwt';
 import { RequirementsController } from '../src/modules/requirements/requirement.controller';
 import { RequirementsService } from '../src/modules/requirements/requirement.service';
+import { AdminLogsService } from '../src/modules/admin-logs/admin-logs.service';
 import { UserRole, RequirementStatus } from '@prisma/client';
 import { Reflector } from '@nestjs/core';
 
@@ -69,6 +70,12 @@ describe('Permission Boundaries E2E (P0)', () => {
         {
           provide: RequirementsService,
           useValue: mockService,
+        },
+        {
+          provide: AdminLogsService,
+          useValue: {
+            createLog: jest.fn().mockResolvedValue(undefined),
+          },
         },
         JwtUtil,
         {
@@ -138,6 +145,7 @@ describe('Permission Boundaries E2E (P0)', () => {
     it('admin 可以调用 PATCH /requirements/:id/status', async () => {
       mockService.updateStatus.mockResolvedValueOnce({
         id: '1',
+        requirementTitle: 'test',
         status: RequirementStatus.processing,
         updatedAt: new Date(),
       });

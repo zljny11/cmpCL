@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Req, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { AdminOperationLogCategory, UserRole } from '@prisma/client';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
@@ -8,10 +8,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { extractRequestIp } from '../../common/utils/request';
 import { AuthUser } from '../../types/auth-user';
 import { AdminLogsService } from '../admin-logs/admin-logs.service';
+import { CreateDatasetBatchFromSessionsDto } from './dto/create-dataset-batch-from-sessions.dto';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
+import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
@@ -22,6 +24,9 @@ import { RequirementsService } from './requirement.service';
 @ApiBearerAuth()
 @Controller('requirements')
 export class RequirementsController {
+  private static readonly LEGACY_DATASET_BATCH_MAX_FILES = 100;
+  private static readonly LEGACY_DATASET_BATCH_MAX_BYTES = 256 * 1024 * 1024;
+
   constructor(
     private readonly requirementsService: RequirementsService,
     private readonly adminLogsService: AdminLogsService,
@@ -226,7 +231,53 @@ export class RequirementsController {
     res.sendFile(file.path);
   }
 
+  @Post(':id/upload-sessions')
+  createUploadSession(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateUploadSessionDto,
+  ) {
+    return this.requirementsService.createUploadSession(BigInt(user.id), BigInt(id), user.role, dto);
+  }
+
+  @Get(':id/upload-sessions/:sessionId')
+  getUploadSession(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('sessionId', ParseIntPipe) sessionId: number,
+  ) {
+    return this.requirementsService.getUploadSession(BigInt(user.id), BigInt(id), BigInt(sessionId), user.role);
+  }
+
+  @Put(':id/upload-sessions/:sessionId/content')
+  async uploadSessionContent(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('sessionId', ParseIntPipe) sessionId: number,
+    @Req() request: Request,
+  ) {
+    const startByteHeader = request.header('x-start-byte') ?? request.header('X-Start-Byte');
+    const startByte = Number(startByteHeader ?? '0');
+    if (!Number.isFinite(startByte) || startByte < 0) {
+      throw new BadRequestException('x-start-byte 必须是非负整数');
+    }
+
+    return this.requirementsService.uploadUploadSessionContent(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(sessionId),
+      user.role,
+      startByte,
+      request,
+    );
+  }
+
   @Post(':id/dataset-batches')
+  @ApiOperation({
+    deprecated: true,
+    summary: '旧版 multipart 批次上传接口，仅保留给小文件兼容使用',
+    description: '大文件和常规目录上传请改用 upload-sessions + dataset-batches/commit 新链路。',
+  })
   @UseInterceptors(FilesInterceptor('files', 2000, { storage: memoryStorage() }))
   async createDatasetBatch(
     @CurrentUser() user: AuthUser,
@@ -235,12 +286,58 @@ export class RequirementsController {
     @Body() dto: CreateDatasetBatchDto,
     @UploadedFiles() files: Array<{ originalname: string; buffer: Buffer }> = [],
   ) {
+    const totalBytes = files.reduce((sum, file) => sum + (file.buffer?.byteLength ?? 0), 0);
+    if (files.length > RequirementsController.LEGACY_DATASET_BATCH_MAX_FILES) {
+      throw new BadRequestException(
+        `旧版上传接口最多只支持 ${RequirementsController.LEGACY_DATASET_BATCH_MAX_FILES} 个文件，请改用新上传链路`,
+      );
+    }
+    if (totalBytes > RequirementsController.LEGACY_DATASET_BATCH_MAX_BYTES) {
+      throw new BadRequestException('旧版上传接口仅支持小体积兼容上传，请改用新上传链路');
+    }
+
     const result = await this.requirementsService.createDatasetBatch(BigInt(user.id), BigInt(id), user.role, dto, files);
     if (user.role === UserRole.user) {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.data,
         action: '上传数据',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        targetName: result.requirementTitle ?? undefined,
+        detail: {
+          datasetBatchId: result.datasetBatchId,
+          batchNo: result.batchNo,
+          fileCount: result.fileCount,
+          status: result.status,
+          retryBatchId: dto.retryBatchId ?? null,
+          modality: dto.modality?.trim() || null,
+          bodyPart: dto.bodyPart?.trim() || null,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+    }
+    return result;
+  }
+
+  @Post(':id/dataset-batches/commit')
+  async createDatasetBatchFromSessions(
+    @CurrentUser() user: AuthUser,
+    @Req() request: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateDatasetBatchFromSessionsDto,
+  ) {
+    const result = await this.requirementsService.createDatasetBatchFromSessions(
+      BigInt(user.id),
+      BigInt(id),
+      user.role,
+      dto,
+    );
+    if (user.role === UserRole.user) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: '提交数据批次',
         targetType: 'requirement',
         targetId: id.toString(),
         targetName: result.requirementTitle ?? undefined,

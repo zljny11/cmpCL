@@ -35,6 +35,14 @@ enum DatasetBatchStatus {
   failed
 }
 
+enum UploadSessionStatus {
+  pending
+  uploading
+  uploaded
+  consumed
+  failed
+}
+
 enum MailJobStatus {
   pending
   sent
@@ -72,6 +80,7 @@ model User {
   statusLogs    RequirementStatusLog[]
   mailJobs      MailJob[]
   adminOperationLogs AdminOperationLog[] @relation("AdminOperationLogActor")
+  uploadSessions UploadSession[]
 
   @@map("users")
 }
@@ -116,6 +125,7 @@ model Requirement {
   requirementStatusLogs   RequirementStatusLog[]
   notifications           Notification[]
   mailJobs                MailJob[]
+  uploadSessions          UploadSession[]
 
   @@index([userId])
   @@index([status])
@@ -144,9 +154,37 @@ model DatasetBatch {
   requirement       Requirement        @relation(fields: [requirementId], references: [id], onDelete: Cascade)
   uploader          User               @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
   series            Series[]
+  uploadSessions    UploadSession[]
 
   @@index([requirementId])
   @@map("dataset_batches")
+}
+
+model UploadSession {
+  id              BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId   BigInt              @map("requirement_id") @db.UnsignedBigInt
+  datasetBatchId  BigInt?             @map("dataset_batch_id") @db.UnsignedBigInt
+  uploadedBy      BigInt              @map("uploaded_by") @db.UnsignedBigInt
+  fingerprint     String              @db.VarChar(64)
+  fileName        String              @map("file_name") @db.VarChar(255)
+  relativePath    String              @map("relative_path") @db.VarChar(500)
+  mimeType        String?             @map("mime_type") @db.VarChar(128)
+  fileSize        BigInt              @map("file_size") @db.UnsignedBigInt
+  uploadedSize    BigInt              @default(0) @map("uploaded_size") @db.UnsignedBigInt
+  lastModifiedAt  DateTime?           @map("last_modified_at")
+  storagePath     String              @map("storage_path") @db.VarChar(500)
+  status          UploadSessionStatus @default(pending)
+  errorMessage    String?             @map("error_message") @db.VarChar(255)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  requirement     Requirement         @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  datasetBatch    DatasetBatch?       @relation(fields: [datasetBatchId], references: [id], onDelete: SetNull)
+  uploader        User                @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@index([requirementId, uploadedBy, fingerprint])
+  @@index([requirementId, status])
+  @@index([datasetBatchId])
+  @@map("upload_sessions")
 }
 
 model Patient {

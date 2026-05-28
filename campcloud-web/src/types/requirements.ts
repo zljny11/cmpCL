@@ -262,6 +262,36 @@ export interface CreateDatasetBatchPayload {
   files: File[];
 }
 
+export interface UploadSessionItem {
+  sessionId: string;
+  fileName: string;
+  relativePath: string;
+  fileSize: number;
+  uploadedSize: number;
+  status: 'pending' | 'uploading' | 'uploaded' | 'consumed' | 'failed';
+  errorMessage?: string | null;
+}
+
+export interface CreateUploadSessionPayload {
+  fileName: string;
+  relativePath: string;
+  fileSize: number;
+  mimeType?: string;
+  lastModified?: number;
+}
+
+export interface CreateDatasetBatchFromSessionsPayload {
+  sourceName?: string;
+  remark?: string;
+  modality: string;
+  bodyPart: string;
+  diagnosis?: string[];
+  clinicalTags?: string[];
+  annotationStatus?: string;
+  retryBatchId?: string;
+  sessionIds: string[];
+}
+
 export interface RequirementDeliveryItem {
   id: string;
   title: string;

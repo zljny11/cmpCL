@@ -58,6 +58,50 @@ const batchStatusLabelMap: Record<DatasetBatchStatus, string> = {
   failed: '解析失败',
 };
 
+type UploadSessionCacheItem = {
+  sessionId: string;
+  fileKey: string;
+  relativePath: string;
+  fileSize: number;
+  uploadedSize: number;
+  status: 'pending' | 'uploading' | 'uploaded' | 'consumed' | 'failed';
+  updatedAt: number;
+};
+
+function getRelativePathFromFile(file: File) {
+  return 'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+    ? file.webkitRelativePath
+    : file.name;
+}
+
+function getUploadSessionStorageKey(requirementId: string) {
+  return `campcloud-upload-sessions:${requirementId}`;
+}
+
+function readUploadSessionCache(requirementId: string) {
+  if (!requirementId || typeof window === 'undefined') {
+    return {} as Record<string, UploadSessionCacheItem>;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getUploadSessionStorageKey(requirementId));
+    if (!raw) {
+      return {} as Record<string, UploadSessionCacheItem>;
+    }
+    const parsed = JSON.parse(raw) as Record<string, UploadSessionCacheItem>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {} as Record<string, UploadSessionCacheItem>;
+  }
+}
+
+function writeUploadSessionCache(requirementId: string, value: Record<string, UploadSessionCacheItem>) {
+  if (!requirementId || typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(getUploadSessionStorageKey(requirementId), JSON.stringify(value));
+}
+
 function FailedFilesPanel({
   requirementId,
   batch,
@@ -170,6 +214,7 @@ export function UploadCenterPage() {
   const [bodyPartCustom, setBodyPartCustom] = useState('');
   const [enableAutoParseMetadata, setEnableAutoParseMetadata] = useState(true);
   const hadPendingBatchRef = useRef(false);
+  const uploadSessionCacheRef = useRef<Record<string, UploadSessionCacheItem>>({});
 
   const resetSelectedFiles = () => {
     setFileList([]);
@@ -180,19 +225,30 @@ export function UploadCenterPage() {
     }
   };
 
+  useEffect(() => {
+    uploadSessionCacheRef.current = readUploadSessionCache(requirementId);
+  }, [requirementId]);
+
+  const upsertUploadSessionCacheItem = (fileKey: string, value: UploadSessionCacheItem) => {
+    uploadSessionCacheRef.current = {
+      ...uploadSessionCacheRef.current,
+      [fileKey]: value,
+    };
+    writeUploadSessionCache(requirementId, uploadSessionCacheRef.current);
+  };
+
+  const clearUploadSessionCache = () => {
+    uploadSessionCacheRef.current = {};
+    writeUploadSessionCache(requirementId, {});
+  };
+
   const buildFileKey = (file: File) => {
-    const relativePath =
-      'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
-        ? file.webkitRelativePath
-        : file.name;
+    const relativePath = getRelativePathFromFile(file);
     return `${relativePath}::${file.size}::${file.lastModified}`;
   };
 
   const shouldIgnoreSelectedFile = (file: File) => {
-    const relativePath =
-      'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
-        ? file.webkitRelativePath
-        : file.name;
+    const relativePath = getRelativePathFromFile(file);
     const segments = relativePath
       .replace(/\\/g, '/')
       .split('/')
@@ -225,10 +281,7 @@ export function UploadCenterPage() {
     setFileList(
       uniqueFiles.map((file, index) => ({
         uid: `${file.name}-${file.size}-${index}`,
-        name:
-          'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
-            ? file.webkitRelativePath
-            : file.name,
+        name: getRelativePathFromFile(file),
         status: 'done',
         originFileObj: file as RcFile,
       })),
@@ -313,29 +366,86 @@ export function UploadCenterPage() {
         },
       });
       setIsUploadingFiles(true);
-      setUploadProgress({ percent: 0, loaded: 0, total: null });
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+      let durableLoaded = 0;
+      setUploadProgress({ percent: 0, loaded: 0, total: totalBytes });
 
-      const result = await requirementsApi.createDatasetBatch(
-        requirementId,
-        {
-          modality: values.modality,
-          bodyPart: values.bodyPart,
-          diagnosis: values.diagnosis,
-          clinicalTags: values.clinicalTags,
-          annotationStatus: values.annotationStatus,
-          remark: values.remark,
-          retryBatchId: retryContext?.batchId,
-          files,
-        },
-        {
-          onUploadProgress: (event: AxiosProgressEvent) => {
-            const total = event.total ?? null;
-            const loaded = event.loaded;
-            const percent = total && total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
-            setUploadProgress({ percent, loaded, total });
-          },
-        },
-      );
+      const sessionIds: string[] = [];
+      for (const file of files) {
+        const relativePath = getRelativePathFromFile(file);
+        const fileKey = buildFileKey(file);
+        const createdSession = await requirementsApi.createUploadSession(requirementId, {
+          fileName: file.name,
+          relativePath,
+          fileSize: file.size,
+          mimeType: file.type,
+          lastModified: file.lastModified,
+        });
+
+        let currentUploadedSize = Math.min(createdSession.uploadedSize, file.size);
+        sessionIds.push(createdSession.sessionId);
+        upsertUploadSessionCacheItem(fileKey, {
+          sessionId: createdSession.sessionId,
+          fileKey,
+          relativePath,
+          fileSize: file.size,
+          uploadedSize: currentUploadedSize,
+          status: createdSession.status,
+          updatedAt: Date.now(),
+        });
+
+        durableLoaded += currentUploadedSize;
+        setUploadProgress({
+          loaded: durableLoaded,
+          total: totalBytes,
+          percent: totalBytes > 0 ? Math.min(100, Math.round((durableLoaded / totalBytes) * 100)) : 0,
+        });
+
+        if (currentUploadedSize < file.size) {
+          const baseLoaded = durableLoaded;
+          const uploadedSession = await requirementsApi.uploadUploadSessionContent(
+            requirementId,
+            createdSession.sessionId,
+            file.slice(currentUploadedSize),
+            {
+              startByte: currentUploadedSize,
+              onUploadProgress: (event: AxiosProgressEvent) => {
+                const loaded = baseLoaded + event.loaded;
+                const percent = totalBytes > 0 ? Math.min(100, Math.round((loaded / totalBytes) * 100)) : 0;
+                setUploadProgress({ loaded, total: totalBytes, percent });
+              },
+            },
+          );
+
+          currentUploadedSize = Math.min(uploadedSession.uploadedSize, file.size);
+          durableLoaded = baseLoaded + (currentUploadedSize - createdSession.uploadedSize);
+          upsertUploadSessionCacheItem(fileKey, {
+            sessionId: uploadedSession.sessionId,
+            fileKey,
+            relativePath,
+            fileSize: file.size,
+            uploadedSize: currentUploadedSize,
+            status: uploadedSession.status,
+            updatedAt: Date.now(),
+          });
+          setUploadProgress({
+            loaded: durableLoaded,
+            total: totalBytes,
+            percent: totalBytes > 0 ? Math.min(100, Math.round((durableLoaded / totalBytes) * 100)) : 0,
+          });
+        }
+      }
+
+      const result = await requirementsApi.createDatasetBatchFromSessions(requirementId, {
+        modality: values.modality,
+        bodyPart: values.bodyPart,
+        diagnosis: values.diagnosis,
+        clinicalTags: values.clinicalTags,
+        annotationStatus: values.annotationStatus,
+        remark: values.remark,
+        retryBatchId: retryContext?.batchId,
+        sessionIds,
+      });
 
       return {
         result,
@@ -355,6 +465,7 @@ export function UploadCenterPage() {
       setModalityCustom('');
       setBodyPartCustom('');
       resetSelectedFiles();
+      clearUploadSessionCache();
       setRetryContext(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'dataset-batches'] }),

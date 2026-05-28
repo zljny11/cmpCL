@@ -3,7 +3,9 @@ import { http } from '../http';
 import { ApiResponse, PaginatedData } from '../../types/api';
 import {
   CreateRequirementDeliveryPayload,
+  CreateDatasetBatchFromSessionsPayload,
   CreateDatasetBatchPayload,
+  CreateUploadSessionPayload,
   DatasetBatchFailedFilesPayload,
   RequirementMessageItem,
   RequirementDeliveryItem,
@@ -14,6 +16,7 @@ import {
   RequirementListItem,
   RequirementListQuery,
   RequirementPreviewPayload,
+  UploadSessionItem,
 } from '../../types/requirements';
 
 export const requirementsApi = {
@@ -146,6 +149,7 @@ export const requirementsApi = {
     return response.data;
   },
 
+  // Deprecated: keep only for small compatibility uploads.
   async createDatasetBatch(
     id: string,
     payload: CreateDatasetBatchPayload,
@@ -177,6 +181,43 @@ export const requirementsApi = {
     const response = (await http.post(`/requirements/${id}/dataset-batches`, formData, {
       onUploadProgress: options?.onUploadProgress,
     })) as ApiResponse<{
+      datasetBatchId: string;
+      batchNo: number;
+      status: string;
+      fileCount: number;
+      uploadedAt: string;
+    }>;
+    return response.data;
+  },
+
+  async createUploadSession(id: string, payload: CreateUploadSessionPayload) {
+    const response = (await http.post(`/requirements/${id}/upload-sessions`, payload)) as ApiResponse<UploadSessionItem>;
+    return response.data;
+  },
+
+  async getUploadSession(id: string, sessionId: string) {
+    const response = (await http.get(`/requirements/${id}/upload-sessions/${sessionId}`)) as ApiResponse<UploadSessionItem>;
+    return response.data;
+  },
+
+  async uploadUploadSessionContent(
+    id: string,
+    sessionId: string,
+    payload: Blob,
+    options?: { startByte?: number; onUploadProgress?: (event: AxiosProgressEvent) => void },
+  ) {
+    const response = (await http.put(`/requirements/${id}/upload-sessions/${sessionId}/content`, payload, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-start-byte': String(options?.startByte ?? 0),
+      },
+      onUploadProgress: options?.onUploadProgress,
+    })) as ApiResponse<UploadSessionItem>;
+    return response.data;
+  },
+
+  async createDatasetBatchFromSessions(id: string, payload: CreateDatasetBatchFromSessionsPayload) {
+    const response = (await http.post(`/requirements/${id}/dataset-batches/commit`, payload)) as ApiResponse<{
       datasetBatchId: string;
       batchNo: number;
       status: string;

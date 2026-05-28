@@ -1209,9 +1209,14 @@ MVP核心表：
 
 #### `POST /api/v1/requirements/:id/dataset-batches`
 
+状态：
+
+- 已废弃，仅保留给小文件兼容上传
+- 大文件、目录上传、可恢复上传请改用 `upload-sessions + dataset-batches/commit`
+
 用途：
 
-- 给某个需求单上传一批新数据
+- 兼容旧版小批量 `multipart` 上传
 - 创建 `DatasetBatch`
 
 请求方式：
@@ -1229,6 +1234,26 @@ MVP核心表：
 - `datasetBatchId`
 - `status`
 - `fileCount`
+
+#### `POST /api/v1/requirements/:id/upload-sessions`
+
+用途：
+
+- 为单个文件创建可恢复上传会话
+
+#### `PUT /api/v1/requirements/:id/upload-sessions/:sessionId/content`
+
+用途：
+
+- 按文件级 offset 续传内容
+- 请求头使用 `x-start-byte`
+
+#### `POST /api/v1/requirements/:id/dataset-batches/commit`
+
+用途：
+
+- 将一组已上传完成的会话提交为批次
+- 后台异步解析 DICOM 并生成三层结构
 
 #### `GET /api/v1/requirements/:id/dataset-batches`
 

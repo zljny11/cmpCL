@@ -1,18 +1,23 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { copyFile, mkdtemp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
+import type { Readable } from 'node:stream';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { CreateDatasetBatchFromSessionsDto } from './dto/create-dataset-batch-from-sessions.dto';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
+import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
@@ -20,6 +25,7 @@ import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto'
 
 type UploadedFile = { originalname: string; buffer: Buffer };
 type UploadedBinaryFile = { originalname: string; buffer: Buffer; mimetype?: string };
+type StagedUploadFile = { originalname: string; path: string };
 
 const execFileAsync = promisify(execFile);
 
@@ -64,6 +70,11 @@ export class RequirementsService {
   private readonly uploadRoots = [
     resolve(process.cwd(), 'storage', 'uploads'),
     resolve(__dirname, '..', '..', '..', '..', 'storage', 'uploads'),
+  ];
+
+  private readonly uploadSessionRoots = [
+    resolve(process.cwd(), 'storage', 'upload-sessions'),
+    resolve(__dirname, '..', '..', '..', '..', 'storage', 'upload-sessions'),
   ];
 
   private readonly deliveryRoots = [
@@ -364,6 +375,28 @@ export class RequirementsService {
     }
 
     return segments.some((segment) => segment === '__MACOSX' || segment === '.__MACOSX' || segment.startsWith('.'));
+  }
+
+  private buildUploadFingerprint(relativePath: string, fileSize: number, lastModified?: number) {
+    return createHash('sha1')
+      .update([relativePath.replace(/\\/g, '/').trim(), fileSize.toString(), String(lastModified ?? 0)].join('|'))
+      .digest('hex');
+  }
+
+  private getUploadSessionRoot(requirementId: bigint) {
+    return join(this.uploadSessionRoots[0], requirementId.toString());
+  }
+
+  private getUploadSessionFilePath(requirementId: bigint, sessionId: bigint, relativePath: string) {
+    const sanitizedRelativePath = relativePath
+      .replace(/\\/g, '/')
+      .split('/')
+      .filter(Boolean)
+      .map((segment, index, array) =>
+        index === array.length - 1 ? this.sanitizeFilename(segment, index) : this.sanitizePathSegment(segment),
+      )
+      .join('/');
+    return join(this.getUploadSessionRoot(requirementId), sessionId.toString(), sanitizedRelativePath || 'file.dcm');
   }
 
   private getDatasetBatchRoot(requirementId: bigint, batchNo: number) {
@@ -757,9 +790,9 @@ export class RequirementsService {
     ];
   }
 
-  private parseDicomFile(file: UploadedFile, storagePath: string): ParsedDicomRecord {
-    const byteArray = new Uint8Array(file.buffer);
-    const dataSet = dicomParser.parseDicom(byteArray);
+  private parseDicomBuffer(buffer: Buffer, originalname: string, storagePath: string): ParsedDicomRecord {
+    const byteArray = new Uint8Array(buffer);
+    const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
     const patientId = this.normalizeText(dataSet.string('x00100020'));
     const patientName = this.normalizePatientName(dataSet.string('x00100010'));
     const sex = this.normalizeText(dataSet.string('x00100040'));
@@ -770,7 +803,7 @@ export class RequirementsService {
       this.buildFallbackUid('study', [patientId, patientName, studyId, this.normalizeText(dataSet.string('x00080020'))]);
     const seriesUid =
       this.normalizeText(dataSet.string('x0020000e')) ??
-      this.buildFallbackUid('series', [studyUid, this.normalizeText(dataSet.string('x0008103e')), file.originalname]);
+      this.buildFallbackUid('series', [studyUid, this.normalizeText(dataSet.string('x0008103e')), originalname]);
     const patientUid =
       patientId ??
       this.buildFallbackUid('patient', [
@@ -796,14 +829,233 @@ export class RequirementsService {
       hospitalName: this.normalizeText(dataSet.string('x00080080')),
       uploadedAt: this.parseDicomDateTime(dataSet.string('x00080020'), dataSet.string('x00080030')),
       storagePath,
-      originalname: file.originalname,
+      originalname,
     };
+  }
+
+  private parseDicomFile(file: UploadedFile, storagePath: string): ParsedDicomRecord {
+    return this.parseDicomBuffer(file.buffer, file.originalname, storagePath);
+  }
+
+  private async parseDicomFileFromPath(filePath: string, originalname: string, storagePath: string): Promise<ParsedDicomRecord> {
+    const fileHandle = await open(filePath, 'r');
+    try {
+      const fileInfo = await fileHandle.stat();
+      let targetSize = Math.min(Number(fileInfo.size), 256 * 1024);
+
+      while (targetSize > 0) {
+        const buffer = Buffer.allocUnsafe(targetSize);
+        const { bytesRead } = await fileHandle.read(buffer, 0, targetSize, 0);
+
+        try {
+          return this.parseDicomBuffer(buffer.subarray(0, bytesRead), originalname, storagePath);
+        } catch (error) {
+          if (bytesRead >= Number(fileInfo.size)) {
+            throw error;
+          }
+          targetSize = Math.min(Number(fileInfo.size), targetSize * 2);
+        }
+      }
+
+      throw new Error('DICOM文件为空');
+    } finally {
+      await fileHandle.close();
+    }
+  }
+
+  private async moveFileToStorage(sourcePath: string, targetPath: string) {
+    await mkdir(dirname(targetPath), { recursive: true });
+
+    try {
+      await rename(sourcePath, targetPath);
+      return;
+    } catch (error) {
+      const maybeNodeError = error as NodeJS.ErrnoException;
+      if (maybeNodeError?.code !== 'EXDEV') {
+        throw error;
+      }
+    }
+
+    await copyFile(sourcePath, targetPath);
+    await rm(sourcePath, { force: true });
   }
 
   private async persistBatchFiles(requirementId: bigint, batchNo: number, files: UploadedFile[]) {
     const batchRoot = join(this.uploadRoots[0], requirementId.toString(), `batch-${batchNo}`);
     await mkdir(batchRoot, { recursive: true });
     return { batchRoot };
+  }
+
+  private async persistUploadSessionStream(
+    requirementId: bigint,
+    sessionId: bigint,
+    relativePath: string,
+    stream: Readable,
+    startByte: number,
+  ) {
+    const filePath = this.getUploadSessionFilePath(requirementId, sessionId, relativePath);
+    await mkdir(dirname(filePath), { recursive: true });
+    const writer = createWriteStream(filePath, {
+      flags: startByte > 0 ? 'a' : 'w',
+    });
+    await pipeline(stream, writer);
+    return filePath;
+  }
+
+  async createUploadSession(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateUploadSessionDto) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const normalizedRelativePath = dto.relativePath.replace(/\\/g, '/').trim() || dto.fileName.trim();
+    if (this.shouldIgnoreUploadedFile(normalizedRelativePath)) {
+      throw new BadRequestException('隐藏文件不会被上传');
+    }
+
+    const fingerprint = this.buildUploadFingerprint(normalizedRelativePath, dto.fileSize, dto.lastModified);
+    const existing = await this.prisma.uploadSession.findFirst({
+      where: {
+        requirementId,
+        uploadedBy: userId,
+        fingerprint,
+        status: { in: ['pending', 'uploading', 'uploaded', 'failed'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      const uploadedSize = Number(existing.uploadedSize);
+      const fileSize = Number(existing.fileSize);
+      if (fileSize !== dto.fileSize || existing.relativePath !== normalizedRelativePath) {
+        throw new ConflictException('发现同指纹但元数据不一致的上传记录，请更换文件后重试');
+      }
+
+      return {
+        sessionId: existing.id.toString(),
+        fileName: existing.fileName,
+        relativePath: existing.relativePath,
+        fileSize,
+        uploadedSize,
+        status: existing.status,
+      };
+    }
+
+    const created = await this.prisma.uploadSession.create({
+      data: {
+        requirementId,
+        uploadedBy: userId,
+        fingerprint,
+        fileName: dto.fileName.trim(),
+        relativePath: normalizedRelativePath,
+        mimeType: this.normalizeText(dto.mimeType),
+        fileSize: BigInt(dto.fileSize),
+        lastModifiedAt: dto.lastModified ? new Date(dto.lastModified) : null,
+        storagePath: '',
+      },
+    });
+
+    const storagePath = this.getUploadSessionFilePath(requirementId, created.id, normalizedRelativePath);
+    await this.prisma.uploadSession.update({
+      where: { id: created.id },
+      data: { storagePath },
+    });
+
+    return {
+      sessionId: created.id.toString(),
+      fileName: created.fileName,
+      relativePath: created.relativePath,
+      fileSize: dto.fileSize,
+      uploadedSize: 0,
+      status: created.status,
+    };
+  }
+
+  async getUploadSession(userId: bigint, requirementId: bigint, sessionId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const session = await this.prisma.uploadSession.findFirst({
+      where: {
+        id: sessionId,
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+    });
+    if (!session) {
+      throw new NotFoundException('上传会话不存在');
+    }
+
+    return {
+      sessionId: session.id.toString(),
+      fileName: session.fileName,
+      relativePath: session.relativePath,
+      fileSize: Number(session.fileSize),
+      uploadedSize: Number(session.uploadedSize),
+      status: session.status,
+      errorMessage: session.errorMessage,
+    };
+  }
+
+  async uploadUploadSessionContent(
+    userId: bigint,
+    requirementId: bigint,
+    sessionId: bigint,
+    role: UserRole,
+    startByte: number,
+    stream: Readable,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const session = await this.prisma.uploadSession.findFirst({
+      where: {
+        id: sessionId,
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+    });
+    if (!session) {
+      throw new NotFoundException('上传会话不存在');
+    }
+    if (session.status === 'consumed') {
+      throw new BadRequestException('该上传会话已提交到批次，不能继续上传');
+    }
+
+    const currentSize = session.storagePath
+      ? await stat(session.storagePath).then((value) => Number(value.size)).catch(() => 0)
+      : 0;
+    if (currentSize !== Number(session.uploadedSize)) {
+      await this.prisma.uploadSession.update({
+        where: { id: session.id },
+        data: {
+          uploadedSize: BigInt(currentSize),
+          status: currentSize === Number(session.fileSize) ? 'uploaded' : currentSize > 0 ? 'uploading' : session.status,
+        },
+      });
+    }
+    if (currentSize !== startByte) {
+      throw new ConflictException(`续传偏移不一致，期望从 ${currentSize} 开始`);
+    }
+
+    const storagePath = session.storagePath || this.getUploadSessionFilePath(requirementId, session.id, session.relativePath);
+    await this.persistUploadSessionStream(requirementId, session.id, session.relativePath, stream, startByte);
+
+    const nextSize = await stat(storagePath).then((value) => Number(value.size));
+    if (nextSize > Number(session.fileSize)) {
+      throw new BadRequestException('上传内容超过文件声明大小');
+    }
+
+    const nextStatus = nextSize === Number(session.fileSize) ? 'uploaded' : 'uploading';
+    const updated = await this.prisma.uploadSession.update({
+      where: { id: session.id },
+      data: {
+        storagePath,
+        uploadedSize: BigInt(nextSize),
+        status: nextStatus,
+        errorMessage: null,
+      },
+    });
+
+    return {
+      sessionId: updated.id.toString(),
+      uploadedSize: Number(updated.uploadedSize),
+      fileSize: Number(updated.fileSize),
+      status: updated.status,
+    };
   }
 
   private async persistDeliveryFile(requirementId: bigint, originalname: string, buffer: Buffer) {
@@ -855,6 +1107,21 @@ export class RequirementsService {
     }
 
     await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, failedFiles);
+
+    await this.finalizeParsedDatasetBatch(batch, requirementId, remark, parsedRecords, failedCount);
+  }
+
+  private async finalizeParsedDatasetBatch(
+    batch: {
+      id: bigint;
+      batchNo: number;
+      uploadedAt: Date;
+    },
+    requirementId: bigint,
+    remark: string | null | undefined,
+    parsedRecords: ParsedDicomRecord[],
+    failedCount: number,
+  ) {
 
     if (parsedRecords.length === 0) {
       await this.prisma.datasetBatch.update({
@@ -986,6 +1253,54 @@ export class RequirementsService {
         },
       });
     });
+  }
+
+  private async processDatasetBatchFromStagedFiles(
+    batch: {
+      id: bigint;
+      batchNo: number;
+      uploadedAt: Date;
+    },
+    requirementId: bigint,
+    remark: string | null | undefined,
+    files: StagedUploadFile[],
+  ) {
+    const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo, []);
+    const parsedRecords: ParsedDicomRecord[] = [];
+    const failedFiles: FailedDatasetFileRecord[] = [];
+    let failedCount = 0;
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      if (this.shouldIgnoreUploadedFile(file.originalname)) {
+        continue;
+      }
+
+      let movedToFinalStorage = false;
+
+      try {
+        const tempRecord = await this.parseDicomFileFromPath(file.path, file.originalname, '');
+        const seriesDir = join(batchRoot, this.sanitizePathSegment(tempRecord.seriesUid));
+        const filename = this.sanitizeFilename(file.originalname, index);
+        const storagePath = join(seriesDir, filename);
+        await this.moveFileToStorage(file.path, storagePath);
+        movedToFinalStorage = true;
+        parsedRecords.push({ ...tempRecord, storagePath });
+      } catch (error) {
+        failedCount += 1;
+        failedFiles.push({
+          originalName: file.originalname,
+          reason: error instanceof Error ? error.message : 'DICOM解析失败',
+        });
+      } finally {
+        if (!movedToFinalStorage) {
+          await rm(file.path, { force: true }).catch(() => undefined);
+        }
+      }
+    }
+
+    await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, failedFiles);
+    await this.finalizeParsedDatasetBatch(batch, requirementId, remark, parsedRecords, failedCount);
   }
 
   async create(userId: bigint, dto: CreateRequirementDto) {
@@ -2411,6 +2726,208 @@ export class RequirementsService {
     });
 
     void this.processDatasetBatch(batch, requirementId, trimmedRemark, validFiles).catch(async () => {
+      await this.prisma.datasetBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: 'failed',
+          remark: trimmedRemark ? `${trimmedRemark}；后台解析失败` : '后台解析失败',
+        },
+      });
+    });
+
+    return {
+      datasetBatchId: batch.id.toString(),
+      requirementTitle:
+        role === UserRole.user
+          ? (await this.prisma.requirement.findUnique({
+              where: { id: requirementId },
+              select: { title: true },
+            }))?.title ?? null
+          : null,
+      batchNo: batch.batchNo,
+      status: batch.status,
+      fileCount: batch.fileCount,
+      uploadedAt: batch.uploadedAt,
+    };
+  }
+
+  async createDatasetBatchFromSessions(
+    userId: bigint,
+    requirementId: bigint,
+    role: UserRole,
+    dto: CreateDatasetBatchFromSessionsDto,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    const sessionIds = Array.from(new Set(dto.sessionIds.map((item) => item.trim()).filter(Boolean)));
+    if (sessionIds.length === 0) {
+      throw new BadRequestException('请先上传至少一个文件');
+    }
+    if (!dto.modality?.trim()) {
+      throw new BadRequestException('请选择影像模态');
+    }
+    if (!dto.bodyPart?.trim()) {
+      throw new BadRequestException('请选择检查部位');
+    }
+
+    const sessions = await this.prisma.uploadSession.findMany({
+      where: {
+        id: { in: sessionIds.map((item) => BigInt(item)) },
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    if (sessions.length !== sessionIds.length) {
+      throw new BadRequestException('存在无效的上传会话');
+    }
+    if (sessions.some((session) => session.status !== 'uploaded')) {
+      throw new BadRequestException('存在尚未上传完成的文件，请完成后再提交批次');
+    }
+
+    const trimmedSourceName = dto.sourceName?.trim() || null;
+    const trimmedRemark = dto.remark?.trim() || null;
+    const trimmedModality = dto.modality?.trim() || null;
+    const trimmedBodyPart = dto.bodyPart?.trim() || null;
+    const retryBatchId = dto.retryBatchId ? BigInt(dto.retryBatchId) : null;
+
+    const batch = await this.prisma.$transaction(async (tx) => {
+      let createdOrUpdated:
+        | {
+            id: bigint;
+            batchNo: number;
+            status: DatasetBatchStatus;
+            fileCount: number;
+            uploadedAt: Date;
+          }
+        | null = null;
+
+      if (retryBatchId) {
+        const existingBatch = await tx.datasetBatch.findFirst({
+          where: {
+            id: retryBatchId,
+            requirementId,
+          },
+          select: {
+            id: true,
+            batchNo: true,
+          },
+        });
+
+        if (!existingBatch) {
+          throw new NotFoundException('重传批次不存在');
+        }
+
+        createdOrUpdated = await tx.datasetBatch.update({
+          where: { id: existingBatch.id },
+          data: {
+            uploadedBy: userId,
+            sourceName: trimmedSourceName,
+            remark: trimmedRemark,
+            modality: trimmedModality,
+            bodyPart: trimmedBodyPart,
+            diagnosis: dto.diagnosis && dto.diagnosis.length > 0 ? dto.diagnosis : undefined,
+            clinicalTags: dto.clinicalTags && dto.clinicalTags.length > 0 ? dto.clinicalTags : undefined,
+            annotationStatus: dto.annotationStatus?.trim() || null,
+            status: 'uploaded',
+            fileCount: { increment: sessions.length },
+            uploadedAt: new Date(),
+          },
+          select: {
+            id: true,
+            batchNo: true,
+            status: true,
+            fileCount: true,
+            uploadedAt: true,
+          },
+        });
+      } else {
+        const lastBatch = await tx.datasetBatch.findFirst({
+          where: { requirementId },
+          orderBy: { batchNo: 'desc' },
+          select: { batchNo: true },
+        });
+
+        createdOrUpdated = await tx.datasetBatch.create({
+          data: {
+            requirementId,
+            uploadedBy: userId,
+            batchNo: (lastBatch?.batchNo ?? 0) + 1,
+            uploadType: lastBatch ? DatasetUploadType.supplement : DatasetUploadType.initial,
+            sourceName: trimmedSourceName,
+            remark: trimmedRemark,
+            modality: trimmedModality,
+            bodyPart: trimmedBodyPart,
+            diagnosis: dto.diagnosis && dto.diagnosis.length > 0 ? dto.diagnosis : undefined,
+            clinicalTags: dto.clinicalTags && dto.clinicalTags.length > 0 ? dto.clinicalTags : undefined,
+            annotationStatus: dto.annotationStatus?.trim() || null,
+            fileCount: sessions.length,
+          },
+          select: {
+            id: true,
+            batchNo: true,
+            status: true,
+            fileCount: true,
+            uploadedAt: true,
+          },
+        });
+      }
+
+      await tx.uploadSession.updateMany({
+        where: { id: { in: sessions.map((item) => item.id) } },
+        data: {
+          datasetBatchId: createdOrUpdated.id,
+          status: 'consumed',
+        },
+      });
+
+      if (role === UserRole.user) {
+        const requirement = await tx.requirement.findUnique({
+          where: { id: requirementId },
+          select: { title: true, status: true },
+        });
+
+        if (requirement?.status === RequirementStatus.waiting_user) {
+          await tx.requirement.update({
+            where: { id: requirementId },
+            data: { status: RequirementStatus.processing },
+          });
+          await tx.requirementStatusLog.create({
+            data: {
+              requirementId,
+              fromStatus: RequirementStatus.waiting_user,
+              toStatus: RequirementStatus.processing,
+              changedBy: userId,
+              changedRole: role,
+              reason: '用户已补充上传数据，需求继续处理中',
+            },
+          });
+        }
+
+        const admins = await tx.user.findMany({
+          where: { role: UserRole.admin },
+          select: { id: true },
+        });
+        await this.createNotifications(
+          tx,
+          admins.map((item) => item.id),
+          requirementId,
+          'data_upload',
+          '收到新的用户数据上传，请在管理侧查看',
+          `需求「${requirement?.title || requirementId.toString()}」有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
+        );
+      }
+
+      return createdOrUpdated;
+    });
+
+    const stagedFiles: StagedUploadFile[] = sessions.map((session) => ({
+      originalname: session.relativePath,
+      path: session.storagePath,
+    }));
+
+    void this.processDatasetBatchFromStagedFiles(batch, requirementId, trimmedRemark, stagedFiles).catch(async () => {
       await this.prisma.datasetBatch.update({
         where: { id: batch.id },
         data: {
