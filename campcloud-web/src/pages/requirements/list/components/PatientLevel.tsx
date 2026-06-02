@@ -5,7 +5,6 @@ import { RequirementPatientNode } from '../../../../types/requirements';
 import { DataPageVisibleTags } from './RequirementExpandPanel';
 import { StudyLevel } from './StudyLevel';
 import { withTextFilter } from './pacsTableFilters';
-import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
 
 interface Props {
   requirementId: string;
@@ -16,8 +15,7 @@ interface Props {
 }
 
 export function PatientLevel({ requirementId, data, onRefresh, readOnly = false, visibleTags }: Props) {
-  const expandedStorageKey = `AICampCloud:tree:patients:${requirementId}`;
-  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
+  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
   const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<React.Key[]>([]);
   const scrollShellRef = useRef<HTMLDivElement | null>(null);
 
@@ -25,10 +23,6 @@ export function PatientLevel({ requirementId, data, onRefresh, readOnly = false,
     const validKeys = new Set(data.map((patient) => patient.id));
     setExpandedRowKeys((current) => current.filter((key) => validKeys.has(String(key))));
   }, [data]);
-
-  useEffect(() => {
-    saveExpandedKeys(expandedStorageKey, expandedRowKeys);
-  }, [expandedRowKeys, expandedStorageKey]);
 
   if (data.length === 0) {
     return <Empty description="当前需求单暂无患者层级数据" />;

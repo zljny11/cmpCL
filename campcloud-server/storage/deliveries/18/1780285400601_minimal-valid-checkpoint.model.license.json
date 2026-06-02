@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "requirementId": "18",
+  "deliveryId": "10",
+  "originalFileName": "minimal-valid-checkpoint.pth",
+  "encryptedFileName": "1780285400601_minimal-valid-checkpoint.model",
+  "modelSha256": "e11f2af006f9eb85c2f49b11cf6ef64327fa0da565a43bda2f8a81682dbbb15e",
+  "modelKey": "UVftl4iN5VRK+JRYjewqD006snC/l5PPnjPbuLjXvdU=",
+  "createdAt": "2026-06-01T03:43:20.609Z"
+}

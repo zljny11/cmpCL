@@ -46,6 +46,8 @@ import { findAndParseDicomInFiles } from '../../utils/dicom-parser';
 import { useRequirementDataTree } from '../requirements/list/hooks';
 import { PatientLevel } from '../requirements/list/components/PatientLevel';
 
+const LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
+
 const batchStatusColorMap: Record<DatasetBatchStatus, string> = {
   uploaded: 'blue',
   parsed: 'green',
@@ -57,6 +59,17 @@ const batchStatusLabelMap: Record<DatasetBatchStatus, string> = {
   parsed: '已解析',
   failed: '解析失败',
 };
+
+function isZipFileName(fileName: string) {
+  return fileName.trim().toLowerCase().endsWith('.zip');
+}
+
+function formatFileSize(size: number) {
+  if (size >= 1024 * 1024 * 1024) {
+    return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+  return `${Math.max(size / 1024 / 1024, 0.01).toFixed(2)} MB`;
+}
 
 type UploadSessionCacheItem = {
   sessionId: string;
@@ -196,6 +209,8 @@ export function UploadCenterPage() {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [showAllSelectedFiles, setShowAllSelectedFiles] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const zipInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadMode, setUploadMode] = useState<'folder' | 'zip'>('folder');
   const [requirementPickerPage, setRequirementPickerPage] = useState(1);
   const [requirementPickerPageSize, setRequirementPickerPageSize] = useState(10);
   const [batchPage, setBatchPage] = useState(1);
@@ -223,11 +238,22 @@ export function UploadCenterPage() {
     if (folderInputRef.current) {
       folderInputRef.current.value = '';
     }
+    if (zipInputRef.current) {
+      zipInputRef.current.value = '';
+    }
   };
 
   useEffect(() => {
     uploadSessionCacheRef.current = readUploadSessionCache(requirementId);
   }, [requirementId]);
+
+  useEffect(() => {
+    resetSelectedFiles();
+    setShowFileSelectionError(false);
+    if (uploadMode === 'zip') {
+      setEnableAutoParseMetadata(false);
+    }
+  }, [uploadMode]);
 
   const upsertUploadSessionCacheItem = (fileKey: string, value: UploadSessionCacheItem) => {
     uploadSessionCacheRef.current = {
@@ -268,6 +294,34 @@ export function UploadCenterPage() {
     const visibleFiles = files.filter((file) => !shouldIgnoreSelectedFile(file));
     console.log('[Upload] after filter:', visibleFiles.length, 'visible files');
 
+    if (uploadMode === 'zip') {
+      const zipFiles = visibleFiles.filter((file) => isZipFileName(file.name));
+      if (zipFiles.length !== 1) {
+        setShowFileSelectionError(true);
+        message.warning('ZIP 上传只支持选择单个 .zip 文件');
+        return;
+      }
+      const zipFile = zipFiles[0];
+      if (zipFile.size <= LARGE_ZIP_UPLOAD_THRESHOLD_BYTES) {
+        setShowFileSelectionError(true);
+        message.warning('ZIP 上传仅用于超过 10GB 的批次，请直接选择文件夹上传');
+        return;
+      }
+
+      setFileList([
+        {
+          uid: `${zipFile.name}-${zipFile.size}-0`,
+          name: zipFile.name,
+          status: 'done',
+          size: zipFile.size,
+          originFileObj: zipFile as RcFile,
+        },
+      ]);
+      setShowAllSelectedFiles(false);
+      setShowFileSelectionError(false);
+      return;
+    }
+
     const nextFiles = append
       ? [
           ...fileList
@@ -277,12 +331,20 @@ export function UploadCenterPage() {
         ]
       : visibleFiles;
     const uniqueFiles = Array.from(new Map(nextFiles.map((file) => [buildFileKey(file), file])).values());
+    const totalBytes = uniqueFiles.reduce((sum, file) => sum + file.size, 0);
+
+    if (totalBytes > LARGE_ZIP_UPLOAD_THRESHOLD_BYTES) {
+      setShowFileSelectionError(true);
+      message.warning('超过 10GB 的数据只支持上传单个 ZIP 压缩包，且系统不会自动解析');
+      return;
+    }
 
     setFileList(
       uniqueFiles.map((file, index) => ({
         uid: `${file.name}-${file.size}-${index}`,
         name: getRelativePathFromFile(file),
         status: 'done',
+        size: file.size,
         originFileObj: file as RcFile,
       })),
     );
@@ -341,6 +403,7 @@ export function UploadCenterPage() {
       const files = fileList
         .map((file) => file.originFileObj)
         .filter((file): file is RcFile => Boolean(file));
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
 
       const nextUploadType: DatasetUploadType = (batchData?.total ?? 0) > 0 ? 'supplement' : 'initial';
       const shouldShowInitialUploadNotice = user?.role === 'user' && !retryContext && nextUploadType === 'initial';
@@ -349,13 +412,15 @@ export function UploadCenterPage() {
         id: `pending-${Date.now()}`,
         batchNo: 0,
         uploadType: nextUploadType,
-        sourceName: null,
+        sourceName: selectedRequiresManualAnalysis ? files[0]?.name ?? null : null,
         modality: values.modality,
         bodyPart: values.bodyPart,
         diagnosis: values.diagnosis || null,
         clinicalTags: values.clinicalTags || null,
         annotationStatus: values.annotationStatus || null,
         fileCount: files.length,
+        totalBytes,
+        requiresManualAnalysis: selectedRequiresManualAnalysis,
         failedFileCount: 0,
         status: 'uploaded',
         remark: values.remark?.trim() || null,
@@ -366,7 +431,6 @@ export function UploadCenterPage() {
         },
       });
       setIsUploadingFiles(true);
-      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
       let durableLoaded = 0;
       setUploadProgress({ percent: 0, loaded: 0, total: totalBytes });
 
@@ -437,6 +501,7 @@ export function UploadCenterPage() {
       }
 
       const result = await requirementsApi.createDatasetBatchFromSessions(requirementId, {
+        sourceName: selectedRequiresManualAnalysis ? files[0]?.name : undefined,
         modality: values.modality,
         bodyPart: values.bodyPart,
         diagnosis: values.diagnosis,
@@ -457,9 +522,11 @@ export function UploadCenterPage() {
       setIsUploadingFiles(false);
       setUploadProgress(null);
       message.success(
-        retryContext
-          ? `已向批次 #${result.batchNo} 追加重传文件，后台正在异步解析`
-          : `已上传 #${result.batchNo}，后台正在异步解析`,
+        result.requiresManualAnalysis
+          ? `已上传 #${result.batchNo}，因文件超过10GB，系统已保存原始 ZIP`
+          : retryContext
+            ? `已向批次 #${result.batchNo} 追加重传文件，后台正在异步解析`
+            : `已上传 #${result.batchNo}，后台正在异步解析`,
       );
       form.resetFields();
       setModalityCustom('');
@@ -477,7 +544,7 @@ export function UploadCenterPage() {
       ]);
       void refetchBatches();
       void refetchTree();
-      if (shouldShowInitialUploadNotice) {
+      if (shouldShowInitialUploadNotice && !result.requiresManualAnalysis) {
         modal.info({
           title: '上传完成',
           content: '您已完成上传，请耐心等待处理，如有新内容也可分批次补充',
@@ -511,6 +578,19 @@ export function UploadCenterPage() {
       }`
     : '';
   const visibleSelectedFiles = showAllSelectedFiles ? fileList : fileList.slice(0, 8);
+  const selectedTotalBytes = useMemo(
+    () =>
+      fileList.reduce((sum, item) => {
+        const file = item.originFileObj;
+        return sum + (file?.size ?? item.size ?? 0);
+      }, 0),
+    [fileList],
+  );
+  const selectedRequiresManualAnalysis =
+    uploadMode === 'zip' &&
+    fileList.length === 1 &&
+    isZipFileName(fileList[0]?.name ?? '') &&
+    selectedTotalBytes > LARGE_ZIP_UPLOAD_THRESHOLD_BYTES;
   const profileCompleted =
     user?.role === 'admin'
       ? true
@@ -608,10 +688,12 @@ export function UploadCenterPage() {
       <Modal open={isUploadingFiles} footer={null} closable={false} maskClosable={false} centered width={480}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            正在上传文件夹
+            {selectedRequiresManualAnalysis ? '正在上传 ZIP' : '正在上传文件夹'}
           </Typography.Title>
           <Typography.Text type="secondary">
-            文件正在上传到服务器，请不要关闭页面。支持将多个文件夹累计到同一批次后统一上传，上传完成后会自动进入后台异步解析。
+            {selectedRequiresManualAnalysis
+              ? 'ZIP 文件正在上传到服务器，请不要关闭页面。该文件超过 10GB，上传完成后仅保存原始文件，不会自动解析。'
+              : '文件正在上传到服务器，请不要关闭页面。支持将多个文件夹累计到同一批次后统一上传，上传完成后会自动进入后台异步解析。'}
           </Typography.Text>
           <Progress percent={uploadProgress?.percent ?? 0} status="active" />
           <Typography.Text>
@@ -711,7 +793,11 @@ export function UploadCenterPage() {
                 showIcon
                 style={{ marginBottom: 16 }}
                 message={`正在上传文件${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`}
-                description={`文件正在异步上传，请不要关闭页面。${uploadProgressText ? ` 当前进度：${uploadProgressText}` : ''} 上传完成后会自动进入后台异步解析。`}
+                description={
+                  selectedRequiresManualAnalysis
+                    ? `文件正在异步上传，请不要关闭页面。${uploadProgressText ? ` 当前进度：${uploadProgressText}` : ''} 上传完成后仅保存原始 ZIP，管理侧可下载到本地分析。`
+                    : `文件正在异步上传，请不要关闭页面。${uploadProgressText ? ` 当前进度：${uploadProgressText}` : ''} 上传完成后会自动进入后台异步解析。`
+                }
               />
             ) : null}
             <Form
@@ -725,7 +811,7 @@ export function UploadCenterPage() {
                 }
                 if (fileList.length === 0) {
                   setShowFileSelectionError(true);
-                  message.warning('请先选择至少一个文件夹');
+                  message.warning(uploadMode === 'zip' ? '请先选择单个 ZIP 文件' : '请先选择至少一个文件夹');
                   return;
                 }
                 // 检查自定义值
@@ -753,12 +839,36 @@ export function UploadCenterPage() {
                   disabled
                 />
               </Form.Item>
+              <Form.Item label="上传方式" style={{ marginBottom: 12 }}>
+                <Radio.Group
+                  value={uploadMode}
+                  onChange={(event) => setUploadMode(event.target.value)}
+                  optionType="button"
+                  buttonStyle="solid"
+                  options={[
+                    { label: '文件夹上传', value: 'folder' },
+                    { label: 'ZIP 上传', value: 'zip' },
+                  ]}
+                />
+              </Form.Item>
+              <Alert
+                type={uploadMode === 'zip' ? 'warning' : 'info'}
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={uploadMode === 'zip' ? 'ZIP 上传不会自动解析' : '文件夹上传会自动解析 DICOM'}
+                description={
+                  uploadMode === 'zip'
+                    ? '仅当原始数据超过 10GB 时使用 ZIP 上传，系统会保存原始压缩包。'
+                    : '单次累计选择的文件总大小不能超过 10GB；如果超过，请先压缩成单个 ZIP 后切换到 ZIP 上传。'
+                }
+              />
               <Form.Item label=" " style={{ marginBottom: 16 }}>
                 <Checkbox
                   checked={enableAutoParseMetadata}
+                  disabled={uploadMode === 'zip'}
                   onChange={(e) => setEnableAutoParseMetadata(e.target.checked)}
                 >
-                  自动解析元数据（选择 DICOM 文件夹后自动填充影像模态和检查部位）
+                  自动解析元数据（仅文件夹上传时可用，选择 DICOM 文件夹后自动填充影像模态和检查部位）
                 </Checkbox>
               </Form.Item>
               <Form.Item
@@ -767,8 +877,10 @@ export function UploadCenterPage() {
                 validateStatus={showFileSelectionError && fileList.length === 0 ? 'error' : undefined}
                 help={
                   showFileSelectionError && fileList.length === 0
-                    ? '请先选择至少一个文件夹'
-                    : `当前已选择 ${fileList.length} 个文件`
+                    ? uploadMode === 'zip'
+                      ? '请先选择单个 ZIP 文件'
+                      : '请先选择至少一个文件夹'
+                    : `当前已选择 ${fileList.length} 个${uploadMode === 'zip' ? '文件' : '文件'}，总大小 ${formatFileSize(selectedTotalBytes)}`
                 }
               >
                 <div>
@@ -818,9 +930,28 @@ export function UploadCenterPage() {
                       }
                     }}
                   />
+                  <input
+                    ref={zipInputRef}
+                    type="file"
+                    accept=".zip,application/zip"
+                    style={{ display: 'none' }}
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files ?? []);
+                      void syncFilesToUploadList(files, { append: false });
+                      if (zipInputRef.current) {
+                        zipInputRef.current.value = '';
+                      }
+                    }}
+                  />
                   <Space style={{ marginBottom: 12 }} wrap>
-                    <Button onClick={() => folderInputRef.current?.click()}>
-                      {fileList.length > 0 ? '继续添加文件夹' : '选择文件夹'}
+                    <Button onClick={() => (uploadMode === 'zip' ? zipInputRef.current?.click() : folderInputRef.current?.click())}>
+                      {uploadMode === 'zip'
+                        ? fileList.length > 0
+                          ? '重新选择 ZIP'
+                          : '选择 ZIP'
+                        : fileList.length > 0
+                          ? '继续添加文件夹'
+                          : '选择文件夹'}
                     </Button>
                     <Button
                       onClick={() => {
@@ -834,13 +965,19 @@ export function UploadCenterPage() {
                     <Card size="small" style={{ marginTop: 12 }}>
                       <Space direction="vertical" size={12} style={{ width: '100%' }}>
                         <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                          <Typography.Text strong>已选择 {fileList.length} 个文件</Typography.Text>
-                          <Button type="link" onClick={() => setShowAllSelectedFiles((value) => !value)}>
-                            {showAllSelectedFiles ? '收起文件列表' : `展开全部文件 (${fileList.length})`}
-                          </Button>
+                          <Typography.Text strong>
+                            已选择 {fileList.length} 个文件，总大小 {formatFileSize(selectedTotalBytes)}
+                          </Typography.Text>
+                          {uploadMode === 'folder' ? (
+                            <Button type="link" onClick={() => setShowAllSelectedFiles((value) => !value)}>
+                              {showAllSelectedFiles ? '收起文件列表' : `展开全部文件 (${fileList.length})`}
+                            </Button>
+                          ) : null}
                         </Space>
                         <Typography.Text type="secondary">
-                          可多次点击“{fileList.length > 0 ? '继续添加文件夹' : '选择文件夹'}”累计选择多个文件夹；重复文件会自动去重。
+                          {uploadMode === 'zip'
+                            ? 'ZIP 上传只保留一个压缩包，且仅支持超过 10GB 的单文件。'
+                            : `可多次点击“${fileList.length > 0 ? '继续添加文件夹' : '选择文件夹'}”累计选择多个文件夹；重复文件会自动去重。`}
                         </Typography.Text>
                         <List
                           size="small"
@@ -863,13 +1000,13 @@ export function UploadCenterPage() {
                                   type="secondary"
                                   style={{ textAlign: 'right', fontSize: 12, whiteSpace: 'nowrap' }}
                                 >
-                                  {item.size ? `${Math.max(item.size / 1024 / 1024, 0.01).toFixed(2)} MB` : '-'}
+                                  {item.size ? formatFileSize(item.size) : '-'}
                                 </Typography.Text>
                               </div>
                             </List.Item>
                           )}
                         />
-                        {!showAllSelectedFiles && fileList.length > visibleSelectedFiles.length ? (
+                        {!showAllSelectedFiles && uploadMode === 'folder' && fileList.length > visibleSelectedFiles.length ? (
                           <Typography.Text type="secondary">
                             当前仅预览前 {visibleSelectedFiles.length} 个文件，其余 {fileList.length - visibleSelectedFiles.length}{' '}
                             个文件已隐藏。
@@ -1096,10 +1233,34 @@ export function UploadCenterPage() {
                 },
                 {
                   title: '状态',
-                  width: 140,
+                  width: 220,
                   render: (_: unknown, record: DatasetBatchItem) => (
                     <Space direction="vertical" size={4}>
-                      <Tag color={batchStatusColorMap[record.status]}>{batchStatusLabelMap[record.status]}</Tag>
+                      <Tag color={record.requiresManualAnalysis ? 'cyan' : batchStatusColorMap[record.status]}>
+                        {record.requiresManualAnalysis ? '待人工分析' : batchStatusLabelMap[record.status]}
+                      </Tag>
+                      {record.requiresManualAnalysis && user?.role === 'admin' ? (
+                        <Button
+                          type="link"
+                          size="small"
+                          style={{ padding: 0, height: 'auto', textAlign: 'left' }}
+                          onClick={async () => {
+                            try {
+                              const blob = await requirementsApi.downloadDatasetBatchRawFile(requirementId, record.id);
+                              const url = window.URL.createObjectURL(blob);
+                              const link = document.createElement('a');
+                              link.href = url;
+                              link.download = record.sourceName || `batch-${record.batchNo}.zip`;
+                              link.click();
+                              window.URL.revokeObjectURL(url);
+                            } catch {
+                              message.error('原始 ZIP 下载失败');
+                            }
+                          }}
+                        >
+                          下载原始 ZIP
+                        </Button>
+                      ) : null}
                       {(record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('解析失败')) ? (
                         <Button
                           type="link"

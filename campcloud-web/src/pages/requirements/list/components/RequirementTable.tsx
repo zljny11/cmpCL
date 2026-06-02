@@ -54,6 +54,7 @@ export function RequirementTable({ data, loading, page, pageSize, total, onPageC
         {
           title: '需求标题',
           dataIndex: 'title',
+          width: 320,
           render: (_, record) => (
             <div>
               <Typography.Text strong>{record.title}</Typography.Text>
@@ -69,7 +70,7 @@ export function RequirementTable({ data, loading, page, pageSize, total, onPageC
         },
         {
           title: '状态',
-          width: 120,
+          width: 92,
           render: (_, record) => renderRequirementStatus(record.status),
         },
         { title: '患者数', dataIndex: 'patientCount', width: 100 },

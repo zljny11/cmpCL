@@ -144,6 +144,53 @@ export class RequirementsController {
     res.sendFile(file.path);
   }
 
+  @Post(':id/deliveries/:deliveryId/file')
+  @UseInterceptors(FileInterceptor('license', { storage: memoryStorage() }))
+  async downloadDeliveryFileWithLicense(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('deliveryId', ParseIntPipe) deliveryId: number,
+    @UploadedFile() licenseFile: { originalname: string; buffer: Buffer; mimetype: string } | undefined,
+    @Res() res: Response,
+  ) {
+    const file = await this.requirementsService.downloadDeliveryFile(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(deliveryId),
+      user.role,
+      licenseFile,
+    );
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"`);
+    res.sendFile(file.path);
+  }
+
+  @Post(':id/deliveries/:deliveryId/license/verify')
+  @UseInterceptors(FileInterceptor('license', { storage: memoryStorage() }))
+  verifyDeliveryLicense(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('deliveryId', ParseIntPipe) deliveryId: number,
+    @UploadedFile() licenseFile: { originalname: string; buffer: Buffer; mimetype: string } | undefined,
+  ) {
+    return this.requirementsService.verifyDeliveryLicense(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(deliveryId),
+      user.role,
+      licenseFile,
+    );
+  }
+
+  @Post('license/verify')
+  @UseInterceptors(FileInterceptor('license', { storage: memoryStorage() }))
+  verifyUserLicense(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() licenseFile: { originalname: string; buffer: Buffer; mimetype: string } | undefined,
+  ) {
+    return this.requirementsService.verifyUserLicense(BigInt(user.id), licenseFile);
+  }
+
   @Patch(':id/status')
   async updateStatus(
     @CurrentUser() user: AuthUser,
@@ -363,6 +410,24 @@ export class RequirementsController {
     @Query() query: ListDatasetBatchesDto,
   ) {
     return this.requirementsService.listDatasetBatches(BigInt(user.id), BigInt(id), user.role, query);
+  }
+
+  @Get(':id/dataset-batches/:batchId/raw-file')
+  async downloadDatasetBatchRawFile(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('batchId', ParseIntPipe) batchId: number,
+    @Res() res: Response,
+  ) {
+    const file = await this.requirementsService.downloadDatasetBatchRawFile(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(batchId),
+      user.role,
+    );
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"`);
+    res.sendFile(file.path);
   }
 
   @Get(':id/dataset-batches/:batchId/failed-files')

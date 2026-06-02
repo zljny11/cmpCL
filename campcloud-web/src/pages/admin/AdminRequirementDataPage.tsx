@@ -1,6 +1,8 @@
-import { Button, Checkbox, Dropdown, Space, Tag } from 'antd';
+import { useQuery } from '@tanstack/react-query';
+import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, List, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { requirementsApi } from '../../services/api/requirements';
 import { DataPageVisibleTags, RequirementExpandPanel } from '../requirements/list/components/RequirementExpandPanel';
 import './AdminRequirementDataPage.less';
 
@@ -18,7 +20,14 @@ const DEFAULT_VISIBLE_TAGS: DataPageVisibleTags = {
 export function AdminRequirementDataPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const { message } = App.useApp();
   const [visibleTags, setVisibleTags] = useState<DataPageVisibleTags>(DEFAULT_VISIBLE_TAGS);
+  const batchQuery = useQuery({
+    queryKey: ['admin', 'requirement-dataset-batches', id],
+    queryFn: () => requirementsApi.listDatasetBatches(id, { page: 1, pageSize: 50 }),
+    enabled: Boolean(id),
+  });
+  const manualAnalysisBatches = (batchQuery.data?.list ?? []).filter((item) => item.requiresManualAnalysis);
   const selectedTagLabels = useMemo(
     () =>
       [
@@ -115,6 +124,51 @@ export function AdminRequirementDataPage() {
           ))}
         </Space>
       </Space>
+      <Card title="原始 ZIP 批次">
+        {batchQuery.isError ? <Alert type="error" showIcon message="批次列表加载失败" /> : null}
+        {manualAnalysisBatches.length ? (
+          <List
+            dataSource={manualAnalysisBatches}
+            renderItem={(item) => (
+              <List.Item
+                actions={[
+                  <Button
+                    type="link"
+                    onClick={async () => {
+                      try {
+                        const blob = await requirementsApi.downloadDatasetBatchRawFile(id, item.id);
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = item.sourceName || `batch-${item.batchNo}.zip`;
+                        link.click();
+                        window.URL.revokeObjectURL(url);
+                      } catch {
+                        message.error('原始 ZIP 下载失败');
+                      }
+                    }}
+                  >
+                    下载到本地
+                  </Button>,
+                ]}
+              >
+                <Space direction="vertical" size={2}>
+                  <Space wrap>
+                    <Typography.Text strong>批次 #{item.batchNo}</Typography.Text>
+                    <Tag color="cyan">待人工分析</Tag>
+                  </Space>
+                  <Typography.Text type="secondary">
+                    {item.sourceName || '原始 ZIP'} · {(item.totalBytes / 1024 / 1024 / 1024).toFixed(2)} GB
+                  </Typography.Text>
+                  {item.remark ? <Typography.Text type="secondary">{item.remark}</Typography.Text> : null}
+                </Space>
+              </List.Item>
+            )}
+          />
+        ) : (
+          <Empty description="当前没有需要本地分析的超大 ZIP 批次" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        )}
+      </Card>
       <RequirementExpandPanel requirementId={id} expanded readOnly visibleTags={visibleTags} />
     </Space>
   );

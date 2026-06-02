@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { copyFile, mkdtemp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,16 @@ import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
+import {
+  ENCRYPTED_MODEL_IV_LENGTH,
+  ENCRYPTED_MODEL_MAGIC,
+  ENCRYPTED_MODEL_VERSION,
+  EncryptedModelMetadata,
+  getConfiguredLicenseKeyForUser,
+  getEncryptedModelSidecarPath,
+  normalizeLicenseKeyBase64,
+  validateModelLicenseFile,
+} from './model-license';
 import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto';
 
 type UploadedFile = { originalname: string; buffer: Buffer };
@@ -60,8 +70,16 @@ type DicomSeriesMetadataSummary = {
   bodyPart: string | null;
 };
 
+type UploadSessionBatchSummary = {
+  totalBytes: number;
+  isSingleZip: boolean;
+  requiresManualAnalysis: boolean;
+};
+
 @Injectable()
 export class RequirementsService {
+  private static readonly LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
@@ -383,12 +401,13 @@ export class RequirementsService {
       .digest('hex');
   }
 
-  private getUploadSessionRoot(requirementId: bigint) {
-    return join(this.uploadSessionRoots[0], requirementId.toString());
+  private isZipFileName(fileName: string | null | undefined) {
+    const normalized = this.normalizeText(fileName);
+    return Boolean(normalized && normalized.toLowerCase().endsWith('.zip'));
   }
 
-  private getUploadSessionFilePath(requirementId: bigint, sessionId: bigint, relativePath: string) {
-    const sanitizedRelativePath = relativePath
+  private sanitizeRelativeStoragePath(relativePath: string) {
+    return relativePath
       .replace(/\\/g, '/')
       .split('/')
       .filter(Boolean)
@@ -396,6 +415,14 @@ export class RequirementsService {
         index === array.length - 1 ? this.sanitizeFilename(segment, index) : this.sanitizePathSegment(segment),
       )
       .join('/');
+  }
+
+  private getUploadSessionRoot(requirementId: bigint) {
+    return join(this.uploadSessionRoots[0], requirementId.toString());
+  }
+
+  private getUploadSessionFilePath(requirementId: bigint, sessionId: bigint, relativePath: string) {
+    const sanitizedRelativePath = this.sanitizeRelativeStoragePath(relativePath);
     return join(this.getUploadSessionRoot(requirementId), sessionId.toString(), sanitizedRelativePath || 'file.dcm');
   }
 
@@ -434,6 +461,31 @@ export class RequirementsService {
     } catch {
       return [];
     }
+  }
+
+  private summarizeUploadSessions(
+    sessions: Array<{
+      fileName: string;
+      relativePath: string;
+      fileSize: bigint | number;
+    }>,
+  ): UploadSessionBatchSummary {
+    const totalBytes = sessions.reduce((sum, session) => sum + Number(session.fileSize), 0);
+    const isSingleZip =
+      sessions.length === 1 &&
+      this.isZipFileName(sessions[0]?.fileName) &&
+      this.isZipFileName(sessions[0]?.relativePath);
+
+    return {
+      totalBytes,
+      isSingleZip,
+      requiresManualAnalysis: isSingleZip && totalBytes > RequirementsService.LARGE_ZIP_UPLOAD_THRESHOLD_BYTES,
+    };
+  }
+
+  private buildManualAnalysisRemark(remark: string | null | undefined) {
+    const notice = '超10GB ZIP 已保存原始文件，未自动解析';
+    return [remark?.trim(), notice].filter(Boolean).join('；');
   }
 
   private ensureSafePathInRoots(storagePath: string, roots: string[]) {
@@ -1058,15 +1110,54 @@ export class RequirementsService {
     };
   }
 
-  private async persistDeliveryFile(requirementId: bigint, originalname: string, buffer: Buffer) {
+  private async persistDeliveryFile(
+    requirementId: bigint,
+    originalname: string,
+    buffer: Buffer,
+    modelKeyBase64: string,
+  ) {
     const deliveryRoot = join(this.deliveryRoots[0], requirementId.toString());
     await mkdir(deliveryRoot, { recursive: true });
     const extension = extname(originalname).toLowerCase();
     const baseName = originalname.slice(0, originalname.length - extension.length) || 'delivery';
-    const fileName = `${Date.now()}_${this.sanitizePathSegment(baseName)}${extension || '.pth'}`;
+    const fileName = `${Date.now()}_${this.sanitizePathSegment(baseName)}.model`;
     const filePath = join(deliveryRoot, fileName);
-    await writeFile(filePath, buffer);
+    const modelKey = Buffer.from(modelKeyBase64, 'base64');
+    const iv = randomBytes(ENCRYPTED_MODEL_IV_LENGTH);
+    const cipher = createCipheriv('aes-256-cbc', modelKey, iv);
+    const encryptedPayload = Buffer.concat([cipher.update(buffer), cipher.final()]);
+    const fileContent = Buffer.concat([
+      ENCRYPTED_MODEL_MAGIC,
+      Buffer.from([ENCRYPTED_MODEL_VERSION]),
+      iv,
+      encryptedPayload,
+    ]);
+    const modelSha256 = createHash('sha256').update(fileContent).digest('hex');
+    await writeFile(filePath, fileContent);
+    await this.writeEncryptedModelMetadata(filePath, {
+      version: ENCRYPTED_MODEL_VERSION,
+      requirementId: requirementId.toString(),
+      deliveryId: null,
+      authorizedUserId: null,
+      authorizedUsername: null,
+      authorizedHospitalName: null,
+      originalFileName: originalname,
+      encryptedFileName: fileName,
+      modelSha256,
+      modelKey: modelKeyBase64,
+      createdAt: new Date().toISOString(),
+    });
     return { filePath, fileName };
+  }
+
+  private async writeEncryptedModelMetadata(filePath: string, metadata: EncryptedModelMetadata) {
+    await writeFile(getEncryptedModelSidecarPath(filePath), JSON.stringify(metadata, null, 2), 'utf8');
+  }
+
+  private async readEncryptedModelMetadata(filePath: string) {
+    const metadataPath = getEncryptedModelSidecarPath(filePath);
+    const raw = await readFile(metadataPath, 'utf8');
+    return JSON.parse(raw) as EncryptedModelMetadata;
   }
 
   private async processDatasetBatch(
@@ -1301,6 +1392,42 @@ export class RequirementsService {
 
     await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, failedFiles);
     await this.finalizeParsedDatasetBatch(batch, requirementId, remark, parsedRecords, failedCount);
+  }
+
+  private async persistManualAnalysisBatchFromStagedFiles(
+    batch: {
+      id: bigint;
+      batchNo: number;
+    },
+    requirementId: bigint,
+    remark: string | null | undefined,
+    sessions: Array<{
+      id: bigint;
+      relativePath: string;
+      storagePath: string;
+    }>,
+  ) {
+    const batchRoot = this.getDatasetBatchRoot(requirementId, batch.batchNo);
+    await mkdir(batchRoot, { recursive: true });
+
+    for (const session of sessions) {
+      const relativeStoragePath = this.sanitizeRelativeStoragePath(session.relativePath) || 'file.zip';
+      const targetPath = join(batchRoot, relativeStoragePath);
+      await this.moveFileToStorage(session.storagePath, targetPath);
+      await this.prisma.uploadSession.update({
+        where: { id: session.id },
+        data: { storagePath: targetPath },
+      });
+    }
+
+    await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, []);
+    await this.prisma.datasetBatch.update({
+      where: { id: batch.id },
+      data: {
+        status: 'parsed',
+        remark: this.buildManualAnalysisRemark(remark),
+      },
+    });
   }
 
   async create(userId: bigint, dto: CreateRequirementDto) {
@@ -1636,98 +1763,125 @@ export class RequirementsService {
       throw new BadRequestException('仅支持上传 .pth 格式算法文件');
     }
 
-    const description = this.normalizeText(dto.description);
-    const isFinal = Boolean(dto.isFinal);
-    const persistedFile = await this.persistDeliveryFile(requirementId, file.originalname, file.buffer);
-
-    try {
-      return await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
         const requirement = await tx.requirement.findUnique({
           where: { id: requirementId },
-          select: { id: true, userId: true, title: true, status: true },
+          select: {
+            id: true,
+            userId: true,
+            title: true,
+            status: true,
+            user: {
+              select: {
+                username: true,
+                hospitalName: true,
+              },
+            },
+          },
         });
 
         if (!requirement) {
           throw new NotFoundException('需求单不存在');
         }
 
-        const created = await tx.delivery.create({
-          data: {
-            requirementId,
-            uploadedBy: userId,
-            title,
-            description,
-            fileName: file.originalname,
-            fileUrl: persistedFile.filePath,
-            isFinal,
-          },
-          include: {
-            uploader: {
-              select: {
-                id: true,
-                username: true,
-                role: true,
-              },
-            },
-          },
-        });
+        const description = this.normalizeText(dto.description);
+        const isFinal = Boolean(dto.isFinal);
+        const configuredModelKey = await getConfiguredLicenseKeyForUser(requirement.userId);
+        const persistedFile = await this.persistDeliveryFile(
+          requirementId,
+          file.originalname,
+          file.buffer,
+          configuredModelKey,
+        );
 
-        const nextStatus = isFinal ? RequirementStatus.completed : requirement.status;
-
-        await tx.requirement.update({
-          where: { id: requirementId },
-          data: {
-            latestDeliveryAt: created.createdAt,
-            ...(nextStatus !== requirement.status ? { status: nextStatus } : {}),
-          },
-        });
-
-        if (nextStatus !== requirement.status) {
-          await tx.requirementStatusLog.create({
+        try {
+          const created = await tx.delivery.create({
             data: {
               requirementId,
-              fromStatus: requirement.status,
-              toStatus: nextStatus,
-              changedBy: userId,
-              changedRole: role,
-              reason: '管理员已上传最终交付，需求自动完成',
+              uploadedBy: userId,
+              title,
+              description,
+              fileName: persistedFile.fileName,
+              fileUrl: persistedFile.filePath,
+              isFinal,
+            },
+            include: {
+              uploader: {
+                select: {
+                  id: true,
+                  username: true,
+                  role: true,
+                },
+              },
             },
           });
+
+          const nextStatus = isFinal ? RequirementStatus.completed : requirement.status;
+
+          await tx.requirement.update({
+            where: { id: requirementId },
+            data: {
+              latestDeliveryAt: created.createdAt,
+              ...(nextStatus !== requirement.status ? { status: nextStatus } : {}),
+            },
+          });
+
+          if (nextStatus !== requirement.status) {
+            await tx.requirementStatusLog.create({
+              data: {
+                requirementId,
+                fromStatus: requirement.status,
+                toStatus: nextStatus,
+                changedBy: userId,
+                changedRole: role,
+                reason: '管理员已上传最终交付，需求自动完成',
+              },
+            });
+          }
+
+          const notificationTitle = isFinal ? '您的需求已完成最终交付，请在详情页查看' : '您的需求有新的交付，请在详情页查看';
+          const notificationContent = isFinal
+            ? `需求「${requirement.title}」已收到最终交付：${title}`
+            : `需求「${requirement.title}」已收到新的交付：${title}`;
+          await this.createNotifications(tx, [requirement.userId], requirementId, 'delivery', notificationTitle, notificationContent);
+          await this.mailService.queueRequirementUserNotification(tx, {
+            requirementId,
+            type: 'delivery',
+            subject: isFinal ? '【AICampCloud】您的需求已收到最终交付' : '【AICampCloud】您的需求有新交付',
+            requirementTitle: requirement.title,
+            actionLabel: isFinal ? '最终交付' : '新增交付',
+            summary: notificationContent,
+          });
+
+          const metadata = await this.readEncryptedModelMetadata(persistedFile.filePath);
+          await this.writeEncryptedModelMetadata(persistedFile.filePath, {
+            ...metadata,
+            deliveryId: created.id.toString(),
+            authorizedUserId: requirement.userId.toString(),
+            authorizedUsername: requirement.user?.username ?? null,
+            authorizedHospitalName: requirement.user?.hospitalName ?? null,
+          });
+
+          return {
+            id: created.id.toString(),
+            requirementTitle: requirement.title,
+            title: created.title,
+            description: created.description,
+            fileName: created.fileName,
+            isFinal: created.isFinal,
+            createdAt: created.createdAt,
+            uploader: {
+              id: created.uploader.id.toString(),
+              username: created.uploader.username,
+              role: created.uploader.role,
+            },
+          };
+        } catch (error) {
+          await rm(persistedFile.filePath, { force: true });
+          await rm(getEncryptedModelSidecarPath(persistedFile.filePath), { force: true });
+          throw error;
         }
-
-        const notificationTitle = isFinal ? '您的需求已完成最终交付，请在详情页查看' : '您的需求有新的交付，请在详情页查看';
-        const notificationContent = isFinal
-          ? `需求「${requirement.title}」已收到最终交付：${title}`
-          : `需求「${requirement.title}」已收到新的交付：${title}`;
-        await this.createNotifications(tx, [requirement.userId], requirementId, 'delivery', notificationTitle, notificationContent);
-        await this.mailService.queueRequirementUserNotification(tx, {
-          requirementId,
-          type: 'delivery',
-          subject: isFinal ? '【AICampCloud】您的需求已收到最终交付' : '【AICampCloud】您的需求有新交付',
-          requirementTitle: requirement.title,
-          actionLabel: isFinal ? '最终交付' : '新增交付',
-          summary: notificationContent,
-        });
-
-        return {
-          id: created.id.toString(),
-          requirementTitle: requirement.title,
-          title: created.title,
-          description: created.description,
-          fileName: created.fileName,
-          isFinal: created.isFinal,
-          createdAt: created.createdAt,
-          uploader: {
-            id: created.uploader.id.toString(),
-            username: created.uploader.username,
-            role: created.uploader.role,
-          },
-        };
       });
-    } catch (error) {
-      await rm(persistedFile.filePath, { force: true });
-      throw error;
-    }
   }
 
   async createMessage(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateMessageDto) {
@@ -1912,7 +2066,13 @@ export class RequirementsService {
     });
   }
 
-  async downloadDeliveryFile(userId: bigint, requirementId: bigint, deliveryId: bigint, role: UserRole) {
+  async downloadDeliveryFile(
+    userId: bigint,
+    requirementId: bigint,
+    deliveryId: bigint,
+    role: UserRole,
+    licenseFile?: UploadedBinaryFile,
+  ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
 
     const delivery = await this.prisma.delivery.findFirst({
@@ -1937,9 +2097,85 @@ export class RequirementsService {
       throw new NotFoundException('交付文件不存在');
     }
 
+    if (role !== UserRole.admin) {
+      if (!licenseFile?.buffer) {
+        throw new ForbiddenException('请上传有效的 license 文件后再下载');
+      }
+      const metadata = await this.readEncryptedModelMetadata(safeFilePath).catch(() => null);
+      if (!metadata) {
+        throw new NotFoundException('加密模型元数据不存在');
+      }
+      await validateModelLicenseFile(licenseFile.buffer, userId, requirementId, deliveryId, metadata);
+    }
+
     return {
       path: safeFilePath,
       fileName: delivery.fileName,
+    };
+  }
+
+  async verifyDeliveryLicense(
+    userId: bigint,
+    requirementId: bigint,
+    deliveryId: bigint,
+    role: UserRole,
+    licenseFile?: UploadedBinaryFile,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    if (role === UserRole.admin) {
+      return {
+        success: true,
+        message: '管理员下载不需要 license 校验',
+      };
+    }
+
+    if (!licenseFile?.buffer) {
+      throw new ForbiddenException('请上传有效的 license 文件');
+    }
+
+    const delivery = await this.prisma.delivery.findFirst({
+      where: {
+        id: deliveryId,
+        requirementId,
+      },
+      select: {
+        fileUrl: true,
+      },
+    });
+
+    if (!delivery?.fileUrl) {
+      throw new NotFoundException('交付文件不存在');
+    }
+
+    const safeFilePath = this.ensureSafeDeliveryPath(delivery.fileUrl);
+    const metadata = await this.readEncryptedModelMetadata(safeFilePath).catch(() => null);
+    if (!metadata) {
+      throw new NotFoundException('加密模型元数据不存在');
+    }
+
+    await validateModelLicenseFile(licenseFile.buffer, userId, requirementId, deliveryId, metadata);
+
+    return {
+      success: true,
+      message: 'license 验证成功，可以下载加密模型',
+    };
+  }
+
+  async verifyUserLicense(userId: bigint, licenseFile?: UploadedBinaryFile) {
+    if (!licenseFile?.buffer) {
+      throw new ForbiddenException('请上传有效的 license 文件');
+    }
+
+    const configuredLicenseKey = await getConfiguredLicenseKeyForUser(userId);
+    const uploadedLicenseKey = normalizeLicenseKeyBase64(licenseFile.buffer.toString('utf8'));
+    if (configuredLicenseKey !== uploadedLicenseKey) {
+      throw new ForbiddenException('当前用户不是该 license 的授权用户');
+    }
+
+    return {
+      success: true,
+      message: 'license 验证成功，当前账户可下载加密模型',
     };
   }
 
@@ -2786,6 +3022,14 @@ export class RequirementsService {
       throw new BadRequestException('存在尚未上传完成的文件，请完成后再提交批次');
     }
 
+    const uploadSummary = this.summarizeUploadSessions(sessions);
+    if (uploadSummary.totalBytes > RequirementsService.LARGE_ZIP_UPLOAD_THRESHOLD_BYTES && !uploadSummary.requiresManualAnalysis) {
+      throw new BadRequestException('超过10GB的数据仅支持上传单个 ZIP 压缩包，且系统不会自动解析');
+    }
+    if (sessions.some((session) => this.isZipFileName(session.fileName) || this.isZipFileName(session.relativePath)) && !uploadSummary.requiresManualAnalysis) {
+      throw new BadRequestException('ZIP 上传仅支持超过10GB的单个压缩包，请直接上传文件夹');
+    }
+
     const trimmedSourceName = dto.sourceName?.trim() || null;
     const trimmedRemark = dto.remark?.trim() || null;
     const trimmedModality = dto.modality?.trim() || null;
@@ -2922,20 +3166,32 @@ export class RequirementsService {
       return createdOrUpdated;
     });
 
-    const stagedFiles: StagedUploadFile[] = sessions.map((session) => ({
-      originalname: session.relativePath,
-      path: session.storagePath,
-    }));
-
-    void this.processDatasetBatchFromStagedFiles(batch, requirementId, trimmedRemark, stagedFiles).catch(async () => {
-      await this.prisma.datasetBatch.update({
-        where: { id: batch.id },
-        data: {
-          status: 'failed',
-          remark: trimmedRemark ? `${trimmedRemark}；后台解析失败` : '后台解析失败',
-        },
+    if (uploadSummary.requiresManualAnalysis) {
+      void this.persistManualAnalysisBatchFromStagedFiles(batch, requirementId, trimmedRemark, sessions).catch(async () => {
+        await this.prisma.datasetBatch.update({
+          where: { id: batch.id },
+          data: {
+            status: 'failed',
+            remark: trimmedRemark ? `${trimmedRemark}；超10GB ZIP 保存失败` : '超10GB ZIP 保存失败',
+          },
+        });
       });
-    });
+    } else {
+      const stagedFiles: StagedUploadFile[] = sessions.map((session) => ({
+        originalname: session.relativePath,
+        path: session.storagePath,
+      }));
+
+      void this.processDatasetBatchFromStagedFiles(batch, requirementId, trimmedRemark, stagedFiles).catch(async () => {
+        await this.prisma.datasetBatch.update({
+          where: { id: batch.id },
+          data: {
+            status: 'failed',
+            remark: trimmedRemark ? `${trimmedRemark}；后台解析失败` : '后台解析失败',
+          },
+        });
+      });
+    }
 
     return {
       datasetBatchId: batch.id.toString(),
@@ -2950,6 +3206,7 @@ export class RequirementsService {
       status: batch.status,
       fileCount: batch.fileCount,
       uploadedAt: batch.uploadedAt,
+      requiresManualAnalysis: uploadSummary.requiresManualAnalysis,
     };
   }
 
@@ -2973,6 +3230,13 @@ export class RequirementsService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
+          uploadSessions: {
+            select: {
+              fileName: true,
+              relativePath: true,
+              fileSize: true,
+            },
+          },
           uploader: {
             select: {
               id: true,
@@ -2987,12 +3251,15 @@ export class RequirementsService {
     const items = await Promise.all(
       list.map(async (item) => {
         const failedFiles = await this.readFailedDatasetFilesManifest(requirementId, item.batchNo);
+        const uploadSummary = this.summarizeUploadSessions(item.uploadSessions);
         return {
           id: item.id.toString(),
           batchNo: item.batchNo,
           uploadType: item.uploadType,
           sourceName: item.sourceName,
           fileCount: item.fileCount,
+          totalBytes: uploadSummary.totalBytes,
+          requiresManualAnalysis: uploadSummary.requiresManualAnalysis,
           failedFileCount: failedFiles.length,
           status: item.status,
           remark: item.remark,
@@ -3015,6 +3282,54 @@ export class RequirementsService {
       total,
       page,
       pageSize,
+    };
+  }
+
+  async downloadDatasetBatchRawFile(userId: bigint, requirementId: bigint, batchId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    if (role !== UserRole.admin) {
+      throw new ForbiddenException('仅管理员可下载原始批次文件');
+    }
+
+    const batch = await this.prisma.datasetBatch.findFirst({
+      where: {
+        id: batchId,
+        requirementId,
+      },
+      select: {
+        id: true,
+        batchNo: true,
+        sourceName: true,
+        uploadSessions: {
+          orderBy: { id: 'asc' },
+          select: {
+            fileName: true,
+            relativePath: true,
+            fileSize: true,
+            storagePath: true,
+          },
+        },
+      },
+    });
+
+    if (!batch) {
+      throw new NotFoundException('批次不存在');
+    }
+
+    const uploadSummary = this.summarizeUploadSessions(batch.uploadSessions);
+    if (!uploadSummary.requiresManualAnalysis || batch.uploadSessions.length !== 1) {
+      throw new BadRequestException('当前仅支持下载超10GB ZIP 原始批次');
+    }
+
+    const session = batch.uploadSessions[0];
+    const safeStoragePath = this.ensureSafePathInRoots(session.storagePath, [
+      ...this.uploadRoots,
+      ...this.uploadSessionRoots,
+    ]);
+
+    return {
+      path: safeStoragePath,
+      fileName: batch.sourceName || session.fileName || session.relativePath || `batch_${batch.batchNo}.zip`,
     };
   }
 

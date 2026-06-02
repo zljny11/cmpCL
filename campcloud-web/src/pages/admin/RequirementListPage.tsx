@@ -143,6 +143,7 @@ export function AdminRequirementListPage() {
               {
                 title: '需求信息',
                 key: 'summary',
+                width: 360,
                 render: (_, record) => (
                     <Space direction="vertical" size={4}>
                       <Typography.Text strong>{record.title}</Typography.Text>
@@ -163,6 +164,7 @@ export function AdminRequirementListPage() {
               {
                 title: '状态',
                 dataIndex: 'status',
+                width: 92,
                 render: (_, record) => renderRequirementStatus(record.status),
               },
               {

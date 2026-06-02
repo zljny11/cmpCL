@@ -10,7 +10,6 @@ import { DataPageVisibleTags } from './RequirementExpandPanel';
 import { downloadRequirementDicomZip } from './downloadDicomZip';
 import { SeriesLevel } from './SeriesLevel';
 import { withTextFilter } from './pacsTableFilters';
-import { loadExpandedKeys, saveExpandedKeys } from './treeExpansionState';
 
 interface Props {
   requirementId: string;
@@ -37,8 +36,7 @@ export function StudyLevel({
 }: Props) {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const expandedStorageKey = `AICampCloud:tree:studies:${requirementId}:${patient.id}`;
-  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>(() => loadExpandedKeys(expandedStorageKey));
+  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
   const [downloadingStudyId, setDownloadingStudyId] = useState<string | null>(null);
   const selectedStudyKeys = useMemo(
     () =>
@@ -52,10 +50,6 @@ export function StudyLevel({
     const validKeys = new Set(data.map((study) => study.id));
     setExpandedRowKeys((current) => current.filter((key) => validKeys.has(String(key))));
   }, [data]);
-
-  useEffect(() => {
-    saveExpandedKeys(expandedStorageKey, expandedRowKeys);
-  }, [expandedRowKeys, expandedStorageKey]);
 
   const deleteStudyMutation = useMutation({
     mutationFn: (studyId: string) => requirementsApi.deleteStudy(requirementId, studyId),

@@ -7,6 +7,7 @@ import {
   CreateDatasetBatchPayload,
   CreateUploadSessionPayload,
   DatasetBatchFailedFilesPayload,
+  DatasetBatchCommitResult,
   RequirementMessageItem,
   RequirementDeliveryItem,
   CreateRequirementPayload,
@@ -65,11 +66,35 @@ export const requirementsApi = {
     return response.data;
   },
 
-  async downloadDelivery(requirementId: string, deliveryId: string) {
-    const blob = (await http.get(`/requirements/${requirementId}/deliveries/${deliveryId}/file`, {
+  async downloadDelivery(requirementId: string, deliveryId: string, licenseFile?: File) {
+    const formData = new FormData();
+    if (licenseFile) {
+      formData.append('license', licenseFile);
+    }
+    const blob = (await http.post(`/requirements/${requirementId}/deliveries/${deliveryId}/file`, formData, {
       responseType: 'blob',
     })) as unknown as Blob;
     return blob;
+  },
+
+  async verifyDeliveryLicense(requirementId: string, deliveryId: string, licenseFile: File) {
+    const formData = new FormData();
+    formData.append('license', licenseFile);
+    const response = (await http.post(
+      `/requirements/${requirementId}/deliveries/${deliveryId}/license/verify`,
+      formData,
+    )) as ApiResponse<{ success: boolean; message: string }>;
+    return response.data;
+  },
+
+  async verifyUserLicense(licenseFile: File) {
+    const formData = new FormData();
+    formData.append('license', licenseFile);
+    const response = (await http.post('/requirements/license/verify', formData)) as ApiResponse<{
+      success: boolean;
+      message: string;
+    }>;
+    return response.data;
   },
 
   async updateStatus(id: string, payload: { status: string; reason?: string }) {
@@ -217,13 +242,14 @@ export const requirementsApi = {
   },
 
   async createDatasetBatchFromSessions(id: string, payload: CreateDatasetBatchFromSessionsPayload) {
-    const response = (await http.post(`/requirements/${id}/dataset-batches/commit`, payload)) as ApiResponse<{
-      datasetBatchId: string;
-      batchNo: number;
-      status: string;
-      fileCount: number;
-      uploadedAt: string;
-    }>;
+    const response = (await http.post(`/requirements/${id}/dataset-batches/commit`, payload)) as ApiResponse<DatasetBatchCommitResult>;
     return response.data;
+  },
+
+  async downloadDatasetBatchRawFile(requirementId: string, batchId: string) {
+    const blob = (await http.get(`/requirements/${requirementId}/dataset-batches/${batchId}/raw-file`, {
+      responseType: 'blob',
+    })) as unknown as Blob;
+    return blob;
   },
 };

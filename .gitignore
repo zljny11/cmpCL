@@ -10,6 +10,13 @@
 !/scripts/
 !/scripts/start-campcloud-dev.sh
 !/scripts/stop-campcloud-dev.sh
+!/scripts/generate_license_keypair.sh
+!/scripts/generate_model_license.py
+!/license/
+!/license/README.md
+!/license/__init__.py
+!/license/model_loader.py
+!/license/user-licenses.example.json
 
 # Ignore common generated files inside the included projects.
 campcloud-server/node_modules/
@@ -21,6 +28,11 @@ campcloud-web/node_modules/
 campcloud-web/dist/
 campcloud-web/.env
 campcloud-web/*.tsbuildinfo
+scripts/__pycache__/
+scripts/*.pyc
+license/__pycache__/
+license/*.pyc
+license/user-licenses.json
 
 # macOS / editor noise
 .DS_Store

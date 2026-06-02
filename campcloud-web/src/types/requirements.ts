@@ -221,6 +221,8 @@ export interface DatasetBatchItem {
   uploadType: DatasetUploadType;
   sourceName: string | null;
   fileCount: number;
+  totalBytes: number;
+  requiresManualAnalysis: boolean;
   failedFileCount: number;
   status: DatasetBatchStatus;
   remark: string | null;
@@ -290,6 +292,15 @@ export interface CreateDatasetBatchFromSessionsPayload {
   annotationStatus?: string;
   retryBatchId?: string;
   sessionIds: string[];
+}
+
+export interface DatasetBatchCommitResult {
+  datasetBatchId: string;
+  batchNo: number;
+  status: string;
+  fileCount: number;
+  uploadedAt: string;
+  requiresManualAnalysis: boolean;
 }
 
 export interface RequirementDeliveryItem {
