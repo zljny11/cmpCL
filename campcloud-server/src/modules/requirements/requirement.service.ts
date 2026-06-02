@@ -2,10 +2,11 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
 import { execFile } from 'node:child_process';
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { copyFile, mkdtemp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
+import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
@@ -20,6 +21,7 @@ import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
+import { ListRequirementDataTreeDto } from './dto/list-requirement-data-tree.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
 import {
   ENCRYPTED_MODEL_IV_LENGTH,
@@ -33,9 +35,8 @@ import {
 } from './model-license';
 import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto';
 
-type UploadedFile = { originalname: string; buffer: Buffer };
-type UploadedBinaryFile = { originalname: string; buffer: Buffer; mimetype?: string };
-type StagedUploadFile = { originalname: string; path: string };
+type UploadedBinaryFile = { originalname: string; path: string; mimetype?: string; size?: number };
+type StagedUploadFile = { originalname: string; path: string; mimetype?: string; size?: number };
 
 const execFileAsync = promisify(execFile);
 
@@ -79,6 +80,9 @@ type UploadSessionBatchSummary = {
 @Injectable()
 export class RequirementsService {
   private static readonly LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
+  private static readonly DEFAULT_UPLOAD_SESSION_FILE_MAX_BYTES = 20 * 1024 * 1024 * 1024;
+  private static readonly DEFAULT_UPLOAD_SESSION_QUOTA_BYTES = 20 * 1024 * 1024 * 1024;
+  private static readonly DEFAULT_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -99,6 +103,67 @@ export class RequirementsService {
     resolve(process.cwd(), 'storage', 'deliveries'),
     resolve(__dirname, '..', '..', '..', '..', 'storage', 'deliveries'),
   ];
+
+  private readonly uploadSessionFileMaxBytes = this.getPositiveNumberConfig(
+    'UPLOAD_SESSION_FILE_MAX_BYTES',
+    RequirementsService.DEFAULT_UPLOAD_SESSION_FILE_MAX_BYTES,
+  );
+
+  private readonly uploadSessionQuotaBytes = this.getPositiveNumberConfig(
+    'UPLOAD_SESSION_QUOTA_BYTES',
+    RequirementsService.DEFAULT_UPLOAD_SESSION_QUOTA_BYTES,
+  );
+
+  private readonly uploadSessionRetentionMs = this.getPositiveNumberConfig(
+    'UPLOAD_SESSION_RETENTION_MS',
+    RequirementsService.DEFAULT_UPLOAD_SESSION_RETENTION_MS,
+  );
+
+  private readonly dataTreeMetadataSampleFiles = this.getPositiveIntConfig('DATA_TREE_METADATA_SAMPLE_FILES', 6);
+  private readonly dataTreeSeriesMetadataConcurrency = this.getPositiveIntConfig('DATA_TREE_METADATA_CONCURRENCY', 4);
+  private readonly pacsTagInfoMaxSeries = this.getPositiveIntConfig('PACS_TAG_INFO_MAX_SERIES', 12);
+  private readonly pacsTagInfoMaxFilesPerSeries = this.getPositiveIntConfig('PACS_TAG_INFO_MAX_FILES_PER_SERIES', 200);
+  private readonly pacsTagInfoSeriesConcurrency = this.getPositiveIntConfig('PACS_TAG_INFO_SERIES_CONCURRENCY', 2);
+  private readonly pacsTagInfoFileConcurrency = this.getPositiveIntConfig('PACS_TAG_INFO_FILE_CONCURRENCY', 4);
+  private readonly pacsDownloadMaxSeries = this.getPositiveIntConfig('PACS_DOWNLOAD_MAX_SERIES', 25);
+  private readonly pacsDownloadMaxFiles = this.getPositiveIntConfig('PACS_DOWNLOAD_MAX_FILES', 4000);
+  private lastUploadSessionCleanupAt = 0;
+
+  private getPositiveIntConfig(name: string, fallback: number) {
+    const raw = Number(process.env[name]);
+    return Number.isInteger(raw) && raw > 0 ? raw : fallback;
+  }
+
+  private getPositiveNumberConfig(name: string, fallback: number) {
+    const raw = Number(process.env[name]);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  }
+
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    mapper: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const results = new Array<R>(items.length);
+    let cursor = 0;
+    const workerCount = Math.max(1, Math.min(limit, items.length));
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (cursor < items.length) {
+          const currentIndex = cursor;
+          cursor += 1;
+          results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+      }),
+    );
+
+    return results;
+  }
 
   private async ensureRequirementAccess(userId: bigint, requirementId: bigint, role: UserRole) {
     const requirement = await this.prisma.requirement.findUnique({
@@ -533,7 +598,7 @@ export class RequirementsService {
       const entries = (await readdir(seriesDir))
         .filter((fileName) => !fileName.startsWith('.'))
         .sort((left, right) => left.localeCompare(right, 'en'))
-        .slice(0, 12);
+        .slice(0, this.dataTreeMetadataSampleFiles);
       const summary: DicomSeriesMetadataSummary = {
         manufacturer: null,
         protocolName: null,
@@ -542,8 +607,7 @@ export class RequirementsService {
       };
 
       for (const fileName of entries) {
-        const file = await readFile(join(seriesDir, fileName));
-        const dataSet = dicomParser.parseDicom(new Uint8Array(file));
+        const dataSet = await this.readDicomDataSetFromPath(join(seriesDir, fileName));
 
         summary.manufacturer ??= this.normalizeMetadataTagValue(this.readDicomValue(dataSet, 'x00080070'));
         summary.protocolName ??= this.normalizeMetadataTagValue(this.readDicomValue(dataSet, 'x00181030'));
@@ -733,8 +797,7 @@ export class RequirementsService {
     },
     filePath: string,
   ) {
-    const file = await readFile(filePath);
-    const dataSet = dicomParser.parseDicom(new Uint8Array(file));
+    const dataSet = await this.readDicomDataSetFromPath(filePath);
     const rows = dataSet.uint16('x00280010');
     const columns = dataSet.uint16('x00280011');
     const patientName = this.normalizePatientName(dataSet.string('x00100010'));
@@ -842,9 +905,11 @@ export class RequirementsService {
     ];
   }
 
-  private parseDicomBuffer(buffer: Buffer, originalname: string, storagePath: string): ParsedDicomRecord {
-    const byteArray = new Uint8Array(buffer);
-    const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
+  private buildParsedDicomRecord(
+    dataSet: dicomParser.DataSet,
+    originalname: string,
+    storagePath: string,
+  ): ParsedDicomRecord {
     const patientId = this.normalizeText(dataSet.string('x00100020'));
     const patientName = this.normalizePatientName(dataSet.string('x00100010'));
     const sex = this.normalizeText(dataSet.string('x00100040'));
@@ -885,11 +950,13 @@ export class RequirementsService {
     };
   }
 
-  private parseDicomFile(file: UploadedFile, storagePath: string): ParsedDicomRecord {
-    return this.parseDicomBuffer(file.buffer, file.originalname, storagePath);
+  private parseDicomBuffer(buffer: Buffer, originalname: string, storagePath: string): ParsedDicomRecord {
+    const byteArray = new Uint8Array(buffer);
+    const dataSet = dicomParser.parseDicom(byteArray, { untilTag: 'x7fe00010' });
+    return this.buildParsedDicomRecord(dataSet, originalname, storagePath);
   }
 
-  private async parseDicomFileFromPath(filePath: string, originalname: string, storagePath: string): Promise<ParsedDicomRecord> {
+  private async readDicomDataSetFromPath(filePath: string): Promise<dicomParser.DataSet> {
     const fileHandle = await open(filePath, 'r');
     try {
       const fileInfo = await fileHandle.stat();
@@ -900,7 +967,7 @@ export class RequirementsService {
         const { bytesRead } = await fileHandle.read(buffer, 0, targetSize, 0);
 
         try {
-          return this.parseDicomBuffer(buffer.subarray(0, bytesRead), originalname, storagePath);
+          return dicomParser.parseDicom(new Uint8Array(buffer.subarray(0, bytesRead)), { untilTag: 'x7fe00010' });
         } catch (error) {
           if (bytesRead >= Number(fileInfo.size)) {
             throw error;
@@ -913,6 +980,11 @@ export class RequirementsService {
     } finally {
       await fileHandle.close();
     }
+  }
+
+  private async parseDicomFileFromPath(filePath: string, originalname: string, storagePath: string): Promise<ParsedDicomRecord> {
+    const dataSet = await this.readDicomDataSetFromPath(filePath);
+    return this.buildParsedDicomRecord(dataSet, originalname, storagePath);
   }
 
   private async moveFileToStorage(sourcePath: string, targetPath: string) {
@@ -932,7 +1004,7 @@ export class RequirementsService {
     await rm(sourcePath, { force: true });
   }
 
-  private async persistBatchFiles(requirementId: bigint, batchNo: number, files: UploadedFile[]) {
+  private async persistBatchFiles(requirementId: bigint, batchNo: number) {
     const batchRoot = join(this.uploadRoots[0], requirementId.toString(), `batch-${batchNo}`);
     await mkdir(batchRoot, { recursive: true });
     return { batchRoot };
@@ -954,8 +1026,85 @@ export class RequirementsService {
     return filePath;
   }
 
+  private async cleanupExpiredUploadSessions(force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastUploadSessionCleanupAt < 5 * 60 * 1000) {
+      return;
+    }
+    this.lastUploadSessionCleanupAt = now;
+
+    const expiredBefore = new Date(now - this.uploadSessionRetentionMs);
+    const expiredSessions = await this.prisma.uploadSession.findMany({
+      where: {
+        datasetBatchId: null,
+        status: { in: ['pending', 'uploading', 'uploaded', 'failed'] },
+        updatedAt: { lt: expiredBefore },
+      },
+      select: {
+        id: true,
+        storagePath: true,
+      },
+    });
+
+    if (expiredSessions.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      expiredSessions.map((session) =>
+        session.storagePath ? rm(session.storagePath, { force: true }).catch(() => undefined) : Promise.resolve(undefined),
+      ),
+    );
+
+    await this.prisma.uploadSession.deleteMany({
+      where: {
+        id: {
+          in: expiredSessions.map((session) => session.id),
+        },
+      },
+    });
+  }
+
+  private async ensureUploadSessionQuota(userId: bigint, requirementId: bigint, nextFileSize: number) {
+    if (nextFileSize > this.uploadSessionFileMaxBytes) {
+      throw new BadRequestException(`单个上传文件不能超过 ${Math.floor(this.uploadSessionFileMaxBytes / 1024 / 1024)} MB`);
+    }
+
+    const reserved = await this.prisma.uploadSession.aggregate({
+      where: {
+        requirementId,
+        uploadedBy: userId,
+        datasetBatchId: null,
+        status: { in: ['pending', 'uploading', 'uploaded', 'failed'] },
+      },
+      _sum: {
+        fileSize: true,
+      },
+    });
+
+    const reservedBytes = Number(reserved._sum.fileSize ?? 0n);
+    if (reservedBytes + nextFileSize > this.uploadSessionQuotaBytes) {
+      throw new BadRequestException(
+        `当前需求单的暂存上传总量不能超过 ${Math.floor(this.uploadSessionQuotaBytes / 1024 / 1024 / 1024)} GB`,
+      );
+    }
+  }
+
+  private async readUploadedBinaryFile(file?: UploadedBinaryFile) {
+    if (!file?.path) {
+      throw new ForbiddenException('请上传有效的文件');
+    }
+
+    try {
+      return await readFile(file.path);
+    } finally {
+      await rm(file.path, { force: true }).catch(() => undefined);
+    }
+  }
+
   async createUploadSession(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateUploadSessionDto) {
     await this.ensureRequirementAccess(userId, requirementId, role);
+    await this.cleanupExpiredUploadSessions();
 
     const normalizedRelativePath = dto.relativePath.replace(/\\/g, '/').trim() || dto.fileName.trim();
     if (this.shouldIgnoreUploadedFile(normalizedRelativePath)) {
@@ -989,6 +1138,8 @@ export class RequirementsService {
         status: existing.status,
       };
     }
+
+    await this.ensureUploadSessionQuota(userId, requirementId, dto.fileSize);
 
     const created = await this.prisma.uploadSession.create({
       data: {
@@ -1053,6 +1204,7 @@ export class RequirementsService {
     stream: Readable,
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
+    await this.cleanupExpiredUploadSessions();
     const session = await this.prisma.uploadSession.findFirst({
       where: {
         id: sessionId,
@@ -1113,7 +1265,7 @@ export class RequirementsService {
   private async persistDeliveryFile(
     requirementId: bigint,
     originalname: string,
-    buffer: Buffer,
+    sourcePath: string,
     modelKeyBase64: string,
   ) {
     const deliveryRoot = join(this.deliveryRoots[0], requirementId.toString());
@@ -1125,29 +1277,51 @@ export class RequirementsService {
     const modelKey = Buffer.from(modelKeyBase64, 'base64');
     const iv = randomBytes(ENCRYPTED_MODEL_IV_LENGTH);
     const cipher = createCipheriv('aes-256-cbc', modelKey, iv);
-    const encryptedPayload = Buffer.concat([cipher.update(buffer), cipher.final()]);
-    const fileContent = Buffer.concat([
+    const fileContentPrefix = Buffer.concat([
       ENCRYPTED_MODEL_MAGIC,
       Buffer.from([ENCRYPTED_MODEL_VERSION]),
       iv,
-      encryptedPayload,
     ]);
-    const modelSha256 = createHash('sha256').update(fileContent).digest('hex');
-    await writeFile(filePath, fileContent);
-    await this.writeEncryptedModelMetadata(filePath, {
-      version: ENCRYPTED_MODEL_VERSION,
-      requirementId: requirementId.toString(),
-      deliveryId: null,
-      authorizedUserId: null,
-      authorizedUsername: null,
-      authorizedHospitalName: null,
-      originalFileName: originalname,
-      encryptedFileName: fileName,
-      modelSha256,
-      modelKey: modelKeyBase64,
-      createdAt: new Date().toISOString(),
+    const modelSha256 = createHash('sha256');
+    modelSha256.update(fileContentPrefix);
+    await writeFile(filePath, fileContentPrefix);
+
+    const hashStream = new Transform({
+      transform: (chunk, _encoding, callback) => {
+        modelSha256.update(chunk);
+        callback(null, chunk);
+      },
     });
-    return { filePath, fileName };
+
+    try {
+      await pipeline(
+        createReadStream(sourcePath),
+        cipher,
+        hashStream,
+        createWriteStream(filePath, { flags: 'a' }),
+      );
+
+      await this.writeEncryptedModelMetadata(filePath, {
+        version: ENCRYPTED_MODEL_VERSION,
+        requirementId: requirementId.toString(),
+        deliveryId: null,
+        authorizedUserId: null,
+        authorizedUsername: null,
+        authorizedHospitalName: null,
+        originalFileName: originalname,
+        encryptedFileName: fileName,
+        modelSha256: modelSha256.digest('hex'),
+        modelKey: modelKeyBase64,
+        createdAt: new Date().toISOString(),
+      });
+      return { filePath, fileName };
+    } catch (error) {
+      await rm(filePath, { force: true }).catch(() => undefined);
+      await rm(getEncryptedModelSidecarPath(filePath), { force: true }).catch(() => undefined);
+      throw error;
+    } finally {
+      await rm(sourcePath, { force: true }).catch(() => undefined);
+    }
   }
 
   private async writeEncryptedModelMetadata(filePath: string, metadata: EncryptedModelMetadata) {
@@ -1158,48 +1332,6 @@ export class RequirementsService {
     const metadataPath = getEncryptedModelSidecarPath(filePath);
     const raw = await readFile(metadataPath, 'utf8');
     return JSON.parse(raw) as EncryptedModelMetadata;
-  }
-
-  private async processDatasetBatch(
-    batch: {
-      id: bigint;
-      batchNo: number;
-      uploadedAt: Date;
-    },
-    requirementId: bigint,
-    remark: string | null | undefined,
-    files: UploadedFile[],
-  ) {
-    const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo, files);
-    const parsedRecords: ParsedDicomRecord[] = [];
-    const failedFiles: FailedDatasetFileRecord[] = [];
-    let failedCount = 0;
-
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      if (this.shouldIgnoreUploadedFile(file.originalname)) {
-        continue;
-      }
-      try {
-        const tempRecord = this.parseDicomFile(file, '');
-        const seriesDir = join(batchRoot, this.sanitizePathSegment(tempRecord.seriesUid));
-        await mkdir(seriesDir, { recursive: true });
-        const filename = this.sanitizeFilename(file.originalname, index);
-        const storagePath = join(seriesDir, filename);
-        await writeFile(storagePath, file.buffer);
-        parsedRecords.push({ ...tempRecord, storagePath });
-      } catch (error) {
-        failedCount += 1;
-        failedFiles.push({
-          originalName: file.originalname,
-          reason: error instanceof Error ? error.message : 'DICOM解析失败',
-        });
-      }
-    }
-
-    await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, failedFiles);
-
-    await this.finalizeParsedDatasetBatch(batch, requirementId, remark, parsedRecords, failedCount);
   }
 
   private async finalizeParsedDatasetBatch(
@@ -1356,7 +1488,7 @@ export class RequirementsService {
     remark: string | null | undefined,
     files: StagedUploadFile[],
   ) {
-    const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo, []);
+    const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo);
     const parsedRecords: ParsedDicomRecord[] = [];
     const failedFiles: FailedDatasetFileRecord[] = [];
     let failedCount = 0;
@@ -1748,18 +1880,28 @@ export class RequirementsService {
     dto: CreateDeliveryDto,
     file?: UploadedBinaryFile,
   ) {
+    const cleanupTempFile = async () => {
+      if (file?.path) {
+        await rm(file.path, { force: true }).catch(() => undefined);
+      }
+    };
+
     if (role !== UserRole.admin) {
+      await cleanupTempFile();
       throw new ForbiddenException('仅管理员可上传交付');
     }
 
     const title = dto.title.trim();
     if (!title) {
+      await cleanupTempFile();
       throw new BadRequestException('交付标题不能为空');
     }
-    if (!file?.buffer || !file.originalname) {
+    if (!file?.path || !file.originalname) {
+      await cleanupTempFile();
       throw new BadRequestException('请上传交付文件');
     }
     if (extname(file.originalname).toLowerCase() !== '.pth') {
+      await cleanupTempFile();
       throw new BadRequestException('仅支持上传 .pth 格式算法文件');
     }
 
@@ -1790,7 +1932,7 @@ export class RequirementsService {
         const persistedFile = await this.persistDeliveryFile(
           requirementId,
           file.originalname,
-          file.buffer,
+          file.path,
           configuredModelKey,
         );
 
@@ -2098,14 +2240,15 @@ export class RequirementsService {
     }
 
     if (role !== UserRole.admin) {
-      if (!licenseFile?.buffer) {
+      if (!licenseFile?.path) {
         throw new ForbiddenException('请上传有效的 license 文件后再下载');
       }
+      const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
       const metadata = await this.readEncryptedModelMetadata(safeFilePath).catch(() => null);
       if (!metadata) {
         throw new NotFoundException('加密模型元数据不存在');
       }
-      await validateModelLicenseFile(licenseFile.buffer, userId, requirementId, deliveryId, metadata);
+      await validateModelLicenseFile(licenseBuffer, userId, requirementId, deliveryId, metadata);
     }
 
     return {
@@ -2130,7 +2273,7 @@ export class RequirementsService {
       };
     }
 
-    if (!licenseFile?.buffer) {
+    if (!licenseFile?.path) {
       throw new ForbiddenException('请上传有效的 license 文件');
     }
 
@@ -2154,7 +2297,8 @@ export class RequirementsService {
       throw new NotFoundException('加密模型元数据不存在');
     }
 
-    await validateModelLicenseFile(licenseFile.buffer, userId, requirementId, deliveryId, metadata);
+    const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
+    await validateModelLicenseFile(licenseBuffer, userId, requirementId, deliveryId, metadata);
 
     return {
       success: true,
@@ -2163,12 +2307,12 @@ export class RequirementsService {
   }
 
   async verifyUserLicense(userId: bigint, licenseFile?: UploadedBinaryFile) {
-    if (!licenseFile?.buffer) {
+    if (!licenseFile?.path) {
       throw new ForbiddenException('请上传有效的 license 文件');
     }
 
     const configuredLicenseKey = await getConfiguredLicenseKeyForUser(userId);
-    const uploadedLicenseKey = normalizeLicenseKeyBase64(licenseFile.buffer.toString('utf8'));
+    const uploadedLicenseKey = normalizeLicenseKeyBase64((await this.readUploadedBinaryFile(licenseFile)).toString('utf8'));
     if (configuredLicenseKey !== uploadedLicenseKey) {
       throw new ForbiddenException('当前用户不是该 license 的授权用户');
     }
@@ -2272,49 +2416,67 @@ export class RequirementsService {
     };
   }
 
-  async dataTree(userId: bigint, requirementId: bigint, role: UserRole) {
+  async dataTree(
+    userId: bigint,
+    requirementId: bigint,
+    role: UserRole,
+    query: ListRequirementDataTreeDto,
+  ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
 
-    const patients = await this.prisma.patient.findMany({
-      where: { requirementId },
-      orderBy: { createdAt: 'asc' },
-      include: {
-        studies: {
-          orderBy: { createdAt: 'asc' },
-          include: {
-            series: {
-              orderBy: { createdAt: 'asc' },
-              include: {
-                datasetBatch: {
-                  select: {
-                    id: true,
-                    batchNo: true,
-                    uploadType: true,
-                    sourceName: true,
-                    remark: true,
-                    uploadedAt: true,
-                    diagnosis: true,
-                    clinicalTags: true,
-                    annotationStatus: true,
+    const [total, patients] = await this.prisma.$transaction([
+      this.prisma.patient.count({ where: { requirementId } }),
+      this.prisma.patient.findMany({
+        where: { requirementId },
+        orderBy: { createdAt: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          studies: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              series: {
+                orderBy: { createdAt: 'asc' },
+                include: {
+                  datasetBatch: {
+                    select: {
+                      id: true,
+                      batchNo: true,
+                      uploadType: true,
+                      sourceName: true,
+                      remark: true,
+                      uploadedAt: true,
+                      diagnosis: true,
+                      clinicalTags: true,
+                      annotationStatus: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-    });
+      }),
+    ]);
 
-    const patientsWithMetadata = await Promise.all(
-      patients.map(async (patient) => ({
+    const patientsWithMetadata = await this.mapWithConcurrency(
+      patients,
+      this.dataTreeSeriesMetadataConcurrency,
+      async (patient) => ({
         ...patient,
-        studies: await Promise.all(
-          patient.studies.map(async (study) => {
-            const seriesWithMetadata = await Promise.all(
-              study.series.map(async (series) => ({
+        studies: await this.mapWithConcurrency(
+          patient.studies,
+          this.dataTreeSeriesMetadataConcurrency,
+          async (study) => {
+            const seriesWithMetadata = await this.mapWithConcurrency(
+              study.series,
+              this.dataTreeSeriesMetadataConcurrency,
+              async (series) => ({
                 ...series,
                 metadata: await this.readSeriesMetadataSummary(series.storagePath),
-              })),
+              }),
             );
 
             return {
@@ -2328,13 +2490,17 @@ export class RequirementsService {
                 ),
               },
             };
-          }),
+          },
         ),
-      })),
+      }),
     );
 
     return {
       requirementId: requirementId.toString(),
+      total,
+      page,
+      pageSize,
+      hasMore: page * pageSize < total,
       patients: patientsWithMetadata.map((patient) => ({
         id: patient.id.toString(),
         patientUid: patient.patientUid,
@@ -2416,14 +2582,24 @@ export class RequirementsService {
       return [];
     }
 
-    return Promise.all(
-      orderedSeries.map(async (series) => {
-        const files = await this.listSeriesFileEntries(series);
+    if (orderedSeries.length > this.pacsTagInfoMaxSeries) {
+      throw new BadRequestException(`单次最多只支持读取 ${this.pacsTagInfoMaxSeries} 个序列标签`);
+    }
+
+    return this.mapWithConcurrency(
+      orderedSeries,
+      this.pacsTagInfoSeriesConcurrency,
+      async (series) => {
+        const files = (await this.listSeriesFileEntries(series)).slice(0, this.pacsTagInfoMaxFilesPerSeries);
         if (files.length === 0) {
           return [];
         }
-        return Promise.all(files.map((file) => this.parsePacsTagInfo(series, file.filePath)));
-      }),
+        return this.mapWithConcurrency(
+          files,
+          this.pacsTagInfoFileConcurrency,
+          (file) => this.parsePacsTagInfo(series, file.filePath),
+        );
+      },
     );
   }
 
@@ -2432,6 +2608,10 @@ export class RequirementsService {
 
     if (seriesList.length === 0) {
       throw new NotFoundException('未找到可下载的序列');
+    }
+
+    if (seriesList.length > this.pacsDownloadMaxSeries) {
+      throw new BadRequestException(`单次最多只支持打包下载 ${this.pacsDownloadMaxSeries} 个序列`);
     }
 
     const tempDir = await mkdtemp(join(tmpdir(), 'campcloud-pacs-'));
@@ -2444,7 +2624,14 @@ export class RequirementsService {
       throw new NotFoundException('序列文件不存在');
     }
 
-    await execFileAsync('zip', ['-r', zipPath, ...targetDirs], { cwd: '/' });
+    const uniqueTargetDirs = [...new Set(targetDirs)];
+    const fileCounts = await Promise.all(uniqueTargetDirs.map(async (dir) => (await readdir(dir)).length));
+    const totalFiles = fileCounts.reduce((sum, count) => sum + count, 0);
+    if (totalFiles > this.pacsDownloadMaxFiles) {
+      throw new BadRequestException(`单次最多只支持打包 ${this.pacsDownloadMaxFiles} 个文件`);
+    }
+
+    await execFileAsync('zip', ['-r', zipPath, ...uniqueTargetDirs], { cwd: '/' });
 
     const patientId = seriesList[0].study.patient.patientId || seriesList[0].study.patient.patientUid;
 
@@ -2815,9 +3002,10 @@ export class RequirementsService {
     requirementId: bigint,
     role: UserRole,
     dto: CreateDatasetBatchDto,
-    files: UploadedFile[],
+    files: StagedUploadFile[],
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
+    await this.cleanupExpiredUploadSessions();
 
     const validFiles = files.filter((file) => !this.shouldIgnoreUploadedFile(file.originalname));
     const fileCount = validFiles.length;
@@ -2961,7 +3149,7 @@ export class RequirementsService {
       return createdOrUpdated;
     });
 
-    void this.processDatasetBatch(batch, requirementId, trimmedRemark, validFiles).catch(async () => {
+    void this.processDatasetBatchFromStagedFiles(batch, requirementId, trimmedRemark, validFiles).catch(async () => {
       await this.prisma.datasetBatch.update({
         where: { id: batch.id },
         data: {
@@ -2994,6 +3182,7 @@ export class RequirementsService {
     dto: CreateDatasetBatchFromSessionsDto,
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
+    await this.cleanupExpiredUploadSessions();
 
     const sessionIds = Array.from(new Set(dto.sessionIds.map((item) => item.trim()).filter(Boolean)));
     if (sessionIds.length === 0) {

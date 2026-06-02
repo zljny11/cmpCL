@@ -3,7 +3,6 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { rm } from 'node:fs/promises';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Public } from '../../common/decorators/public.decorator';
 import { AuthUser } from '../../types/auth-user';
 import { RequirementsService } from './requirement.service';
 
@@ -71,14 +70,15 @@ export class PacsCompatController {
       body.seriesUIDs ?? [],
     );
 
-    res.on('finish', () => {
+    const cleanup = () => {
       void rm(zipFile.cleanupDir, { recursive: true, force: true });
-    });
+    };
+    res.on('finish', cleanup);
+    res.on('close', cleanup);
 
     res.download(zipFile.path, zipFile.fileName);
   }
 
-  @Public()
   @Get('pacs/files/:seriesId/:fileName')
   async pacsFile(@Param('seriesId') seriesId: string, @Param('fileName') fileName: string, @Res() res: Response) {
     const filePath = await this.requirementsService.pacsPublicFile(seriesId, decodeURIComponent(fileName));

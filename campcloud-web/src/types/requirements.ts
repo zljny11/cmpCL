@@ -157,6 +157,11 @@ export interface RequirementPatientNode {
 }
 
 export interface RequirementDataTree {
+  requirementId?: string;
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
   patients: RequirementPatientNode[];
 }
 

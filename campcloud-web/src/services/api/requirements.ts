@@ -106,8 +106,8 @@ export const requirementsApi = {
     return response.data;
   },
 
-  async dataTree(id: string) {
-    const response = (await http.get(`/requirements/${id}/data-tree`)) as ApiResponse<RequirementDataTree>;
+  async dataTree(id: string, params?: { page?: number; pageSize?: number }) {
+    const response = (await http.get(`/requirements/${id}/data-tree`, { params })) as ApiResponse<RequirementDataTree>;
     return response.data;
   },
 
