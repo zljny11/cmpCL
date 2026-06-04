@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
+import { downloadViaBrowser } from '../../../../utils/browser-download';
 
 interface Props {
   requirementId: string;
@@ -102,17 +103,16 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
       if (!canUpload && !licenseVerified) {
         throw new Error('请先等待 license 校验成功后再下载');
       }
-      const blob = await requirementsApi.downloadDelivery(
-        requirementId,
-        deliveryId,
-        selectedLicenseFile ? (selectedLicenseFile as File) : undefined,
-      );
-      const objectUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = downloadName || fileName;
-      link.click();
-      window.URL.revokeObjectURL(objectUrl);
+      const formData = new FormData();
+      if (selectedLicenseFile) {
+        formData.append('license', selectedLicenseFile as File);
+      }
+      await downloadViaBrowser({
+        path: `/requirements/${requirementId}/deliveries/${deliveryId}/file`,
+        method: 'POST',
+        body: formData,
+        fileName: downloadName || fileName,
+      });
     } catch (error) {
       const errorMessage = axios.isAxiosError(error)
         ? (error.response?.data as { message?: string } | undefined)?.message

@@ -43,6 +43,7 @@ import {
 } from '@cornerstonejs/core';
 import { utilities as csToolsUtilities } from '@cornerstonejs/tools';
 import { requirementsApi } from '../../../services/api/requirements';
+import { downloadViaBrowser } from '../../../utils/browser-download';
 import {
   RENDERING_ENGINE_ID,
   STACK_TOOL_GROUP_ID,
@@ -200,17 +201,6 @@ function normalizeTagFrames(value: unknown): TagFrames {
   }
 
   return [];
-}
-
-function triggerDownload(blob: Blob, fileName: string) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
 }
 
 function LayoutSelector({
@@ -970,21 +960,24 @@ export function RequirementViewerPage() {
         try {
           setDownloading(true);
           setDownloadProgress(0);
-          const blob = await requirementsApi.downloadViewerSeries(
-            viewerSeries.map((series) => series.id),
-            {
-              onDownloadProgress: (event) => {
-                if (event.progress) {
-                  setDownloadProgress(Math.round(event.progress * 100));
-                }
-              },
-            },
-          );
           const targetLabel =
             previewQuery.data?.target.type === 'study'
               ? previewQuery.data.target.patient.patientId || previewQuery.data.target.patient.patientName || 'viewer'
               : previewQuery.data?.target.study.studyId || 'viewer';
-          triggerDownload(blob, `series_${targetLabel}.zip`);
+          await downloadViaBrowser({
+            path: '/downloadSeries',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ seriesIds: viewerSeries.map((series) => series.id) }),
+            fileName: `series_${targetLabel}.zip`,
+            onProgress: (progress) => {
+              if (progress.percent !== null) {
+                setDownloadProgress(progress.percent);
+              }
+            },
+          });
           message.success('图像序列下载成功');
         } catch (error) {
           console.error('[viewer] download failed:', error);

@@ -41,6 +41,7 @@ import type { FailedDatasetBatchFileItem, RequirementListItem } from '../../type
 import { requirementsApi } from '../../services/api/requirements';
 import { queryClient } from '../../services/query-client';
 import { DatasetBatchItem, DatasetBatchStatus, DatasetUploadType } from '../../types/requirements';
+import { downloadViaBrowser } from '../../utils/browser-download';
 import { isProfileComplete } from '../../utils/profileCompletion';
 import { findAndParseDicomInFiles } from '../../utils/dicom-parser';
 import { useRequirementDataTree } from '../requirements/list/hooks';
@@ -1246,13 +1247,10 @@ export function UploadCenterPage() {
                           style={{ padding: 0, height: 'auto', textAlign: 'left' }}
                           onClick={async () => {
                             try {
-                              const blob = await requirementsApi.downloadDatasetBatchRawFile(requirementId, record.id);
-                              const url = window.URL.createObjectURL(blob);
-                              const link = document.createElement('a');
-                              link.href = url;
-                              link.download = record.sourceName || `batch-${record.batchNo}.zip`;
-                              link.click();
-                              window.URL.revokeObjectURL(url);
+                              await downloadViaBrowser({
+                                path: `/requirements/${requirementId}/dataset-batches/${record.id}/raw-file`,
+                                fileName: record.sourceName || `batch-${record.batchNo}.zip`,
+                              });
                             } catch {
                               message.error('原始 ZIP 下载失败');
                             }

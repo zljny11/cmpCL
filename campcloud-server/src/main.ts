@@ -1,6 +1,5 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -36,6 +35,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ResponseTransformInterceptor(reflector));
 
   if ((process.env.SWAGGER_ENABLED ?? 'true') === 'true') {
+    const { DocumentBuilder, SwaggerModule } = await import('@nestjs/swagger');
     const config = new DocumentBuilder()
       .setTitle('AICampCloud API')
       .setDescription('AICampCloud MVP API')

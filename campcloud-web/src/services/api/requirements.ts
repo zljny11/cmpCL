@@ -66,17 +66,6 @@ export const requirementsApi = {
     return response.data;
   },
 
-  async downloadDelivery(requirementId: string, deliveryId: string, licenseFile?: File) {
-    const formData = new FormData();
-    if (licenseFile) {
-      formData.append('license', licenseFile);
-    }
-    const blob = (await http.post(`/requirements/${requirementId}/deliveries/${deliveryId}/file`, formData, {
-      responseType: 'blob',
-    })) as unknown as Blob;
-    return blob;
-  },
-
   async verifyDeliveryLicense(requirementId: string, deliveryId: string, licenseFile: File) {
     const formData = new FormData();
     formData.append('license', licenseFile);
@@ -140,17 +129,6 @@ export const requirementsApi = {
   async getViewerDicomTags(seriesIds: string[]) {
     const response = (await http.post('/getDICOMTagInfo', { seriesIds })) as ApiResponse<string[][][][]>;
     return response.data;
-  },
-
-  async downloadViewerSeries(
-    seriesIds: string[],
-    options?: { onDownloadProgress?: (event: AxiosProgressEvent) => void },
-  ) {
-    const blob = (await http.post('/downloadSeries', { seriesIds }, {
-      responseType: 'blob',
-      onDownloadProgress: options?.onDownloadProgress,
-    })) as unknown as Blob;
-    return blob;
   },
 
   async deleteSeries(requirementId: string, seriesId: string) {
@@ -246,10 +224,4 @@ export const requirementsApi = {
     return response.data;
   },
 
-  async downloadDatasetBatchRawFile(requirementId: string, batchId: string) {
-    const blob = (await http.get(`/requirements/${requirementId}/dataset-batches/${batchId}/raw-file`, {
-      responseType: 'blob',
-    })) as unknown as Blob;
-    return blob;
-  },
 };

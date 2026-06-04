@@ -3,6 +3,7 @@ import { Alert, App, Button, Card, Checkbox, Dropdown, Empty, List, Space, Tag, 
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { requirementsApi } from '../../services/api/requirements';
+import { downloadViaBrowser } from '../../utils/browser-download';
 import { DataPageVisibleTags, RequirementExpandPanel } from '../requirements/list/components/RequirementExpandPanel';
 import './AdminRequirementDataPage.less';
 
@@ -136,13 +137,10 @@ export function AdminRequirementDataPage() {
                     type="link"
                     onClick={async () => {
                       try {
-                        const blob = await requirementsApi.downloadDatasetBatchRawFile(id, item.id);
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = item.sourceName || `batch-${item.batchNo}.zip`;
-                        link.click();
-                        window.URL.revokeObjectURL(url);
+                        await downloadViaBrowser({
+                          path: `/requirements/${id}/dataset-batches/${item.id}/raw-file`,
+                          fileName: item.sourceName || `batch-${item.batchNo}.zip`,
+                        });
                       } catch {
                         message.error('原始 ZIP 下载失败');
                       }

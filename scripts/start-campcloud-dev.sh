@@ -23,6 +23,16 @@ BACKEND_PID_FILE="$RUN_DIR/backend.pid"
 FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
+BACKEND_ENTRY="$SERVER_DIR/dist/src/main.js"
+NODE_BIN="${NODE_BIN:-}"
+
+if [[ -z "$NODE_BIN" ]]; then
+  if [[ -x /usr/local/bin/node ]]; then
+    NODE_BIN="/usr/local/bin/node"
+  else
+    NODE_BIN="$(command -v node)"
+  fi
+fi
 
 mkdir -p "$LOG_DIR"
 
@@ -69,7 +79,7 @@ wait_for_http() {
   local index
   for ((index = 1; index <= attempts; index += 1)); do
     local status_code
-    status_code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || true)"
+    status_code="$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
     if [[ "$status_code" =~ ^(${accepted_status_pattern})$ ]]; then
       return 0
     fi
@@ -146,9 +156,16 @@ prepare_backend() {
   log 'Preparing backend Prisma client and database schema'
   (
     cd "$SERVER_DIR"
-    npm run prisma:generate >/dev/null
-    npx prisma migrate deploy >/dev/null
-    npm run prisma:seed >/dev/null
+    export DATABASE_URL="${DATABASE_URL:-mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?charset=utf8mb4}"
+
+    log 'Generating Prisma client'
+    ./node_modules/.bin/prisma generate
+
+    log 'Applying Prisma migrations'
+    ./node_modules/.bin/prisma migrate deploy
+
+    log 'Seeding database'
+    "$NODE_BIN" prisma/seed.js
   )
 }
 
@@ -163,7 +180,16 @@ start_backend() {
   log "Starting backend on port ${BACKEND_PORT}"
   (
     cd "$SERVER_DIR"
-    nohup npm run start:dev >"$BACKEND_LOG" 2>&1 &
+    export PORT="${PORT:-$BACKEND_PORT}"
+    export DATABASE_URL="${DATABASE_URL:-mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}?charset=utf8mb4}"
+    export JWT_SECRET="${JWT_SECRET:-campcloud-dev-secret}"
+    export CORS_ORIGIN="${CORS_ORIGIN:-http://127.0.0.1:${FRONTEND_PORT},http://localhost:${FRONTEND_PORT}}"
+    export SWAGGER_ENABLED="${SWAGGER_ENABLED:-false}"
+    export MAIL_ENABLED="${MAIL_ENABLED:-false}"
+    export WEB_BASE_URL="${WEB_BASE_URL:-http://127.0.0.1:${FRONTEND_PORT}}"
+    [[ -f "$BACKEND_ENTRY" ]] || fail "Backend entry not found: $BACKEND_ENTRY"
+    log "Using compiled backend entry $BACKEND_ENTRY"
+    nohup "$NODE_BIN" "$BACKEND_ENTRY" >"$BACKEND_LOG" 2>&1 &
     echo $! >"$BACKEND_PID_FILE"
   )
 
@@ -189,7 +215,7 @@ start_frontend() {
   log "Starting frontend on port ${FRONTEND_PORT}"
   (
     cd "$WEB_DIR"
-    nohup npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT" --force >"$FRONTEND_LOG" 2>&1 &
+    nohup "$NODE_BIN" node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$FRONTEND_PORT" --force >"$FRONTEND_LOG" 2>&1 &
     echo $! >"$FRONTEND_PID_FILE"
   )
 
@@ -226,6 +252,7 @@ require_command curl
 require_command lsof
 require_command npm
 require_command npx
+require_command "$NODE_BIN"
 
 ensure_docker_ready
 ensure_mysql_container
