@@ -16,8 +16,10 @@ import { CreateDatasetBatchFromSessionsDto } from './dto/create-dataset-batch-fr
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { CreateRequirementOssFileDto } from './dto/create-requirement-oss-file.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
+import { ConfirmRequirementOssFileDto } from './dto/confirm-requirement-oss-file.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementDataTreeDto } from './dto/list-requirement-data-tree.dto';
@@ -355,6 +357,53 @@ export class RequirementsController {
       user.role,
       startByte,
       request,
+    );
+  }
+
+  @Post(':id/object-storage-files')
+  createRequirementOssFile(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateRequirementOssFileDto,
+  ) {
+    return this.requirementsService.createRequirementOssFile(BigInt(user.id), BigInt(id), user.role, dto);
+  }
+
+  @Get(':id/object-storage-files')
+  listRequirementOssFiles(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.requirementsService.listRequirementOssFiles(BigInt(user.id), BigInt(id), user.role);
+  }
+
+  @Post(':id/object-storage-files/:fileId/complete')
+  completeRequirementOssFileUpload(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+    @Body() dto: ConfirmRequirementOssFileDto,
+  ) {
+    return this.requirementsService.completeRequirementOssFileUpload(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
+      dto,
+    );
+  }
+
+  @Post(':id/object-storage-files/:fileId/download-authorization')
+  authorizeRequirementOssFileDownload(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+  ) {
+    return this.requirementsService.authorizeRequirementOssFileDownload(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
     );
   }
 

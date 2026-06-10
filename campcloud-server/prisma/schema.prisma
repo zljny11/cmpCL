@@ -43,6 +43,19 @@ enum UploadSessionStatus {
   failed
 }
 
+enum RequirementOssFileKind {
+  dicom
+  model
+}
+
+enum RequirementOssFileStatus {
+  pending_upload
+  uploaded
+  parsing
+  parsed
+  failed
+}
+
 enum MailJobStatus {
   pending
   sent
@@ -81,6 +94,7 @@ model User {
   mailJobs      MailJob[]
   adminOperationLogs AdminOperationLog[] @relation("AdminOperationLogActor")
   uploadSessions UploadSession[]
+  requirementOssFiles RequirementOssFile[]
 
   @@map("users")
 }
@@ -126,6 +140,7 @@ model Requirement {
   notifications           Notification[]
   mailJobs                MailJob[]
   uploadSessions          UploadSession[]
+  ossFiles                RequirementOssFile[]
 
   @@index([userId])
   @@index([status])
@@ -185,6 +200,37 @@ model UploadSession {
   @@index([requirementId, status])
   @@index([datasetBatchId])
   @@map("upload_sessions")
+}
+
+model RequirementOssFile {
+  id              BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  requirementId   BigInt                   @map("requirement_id") @db.UnsignedBigInt
+  uploadedBy      BigInt                   @map("uploaded_by") @db.UnsignedBigInt
+  kind            RequirementOssFileKind
+  status          RequirementOssFileStatus @default(pending_upload)
+  objectKey       String                   @map("object_key") @db.VarChar(500)
+  bucketName      String                   @map("bucket_name") @db.VarChar(128)
+  originalFileName String                  @map("original_file_name") @db.VarChar(255)
+  mimeType        String?                  @map("mime_type") @db.VarChar(128)
+  fileSize        BigInt                   @map("file_size") @db.UnsignedBigInt
+  etag            String?                  @db.VarChar(128)
+  modelName       String?                  @map("model_name") @db.VarChar(128)
+  modelVersion    String?                  @map("model_version") @db.VarChar(64)
+  parsedObjectKey String?                  @map("parsed_object_key") @db.VarChar(500)
+  parsedPayload   Json?                    @map("parsed_payload")
+  uploadCompletedAt DateTime?              @map("upload_completed_at")
+  parsedAt        DateTime?                @map("parsed_at")
+  errorMessage    String?                  @map("error_message") @db.VarChar(255)
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+  requirement     Requirement              @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  uploader        User                     @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+
+  @@unique([bucketName, objectKey])
+  @@index([requirementId, status])
+  @@index([requirementId, kind])
+  @@index([uploadedBy, createdAt])
+  @@map("requirement_oss_files")
 }
 
 model Patient {

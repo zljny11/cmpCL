@@ -16,6 +16,10 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY --from=base /app /app
 
 RUN chmod +x ./docker/docker-entrypoint.sh

@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementStatus, UserRole } from '@prisma/client';
+import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementOssFileKind, RequirementOssFileStatus, RequirementStatus, UserRole } from '@prisma/client';
 import { execFile } from 'node:child_process';
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { copyFile, mkdtemp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { Transform } from 'node:stream';
@@ -14,9 +15,11 @@ import type { Readable } from 'node:stream';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { CreateDatasetBatchFromSessionsDto } from './dto/create-dataset-batch-from-sessions.dto';
+import { ConfirmRequirementOssFileDto } from './dto/confirm-requirement-oss-file.dto';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { CreateRequirementOssFileDto, RequirementOssFileKindDto } from './dto/create-requirement-oss-file.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
@@ -77,6 +80,26 @@ type UploadSessionBatchSummary = {
   requiresManualAnalysis: boolean;
 };
 
+type RequirementOssFileSummary = {
+  id: string;
+  kind: RequirementOssFileKind;
+  status: RequirementOssFileStatus;
+  objectKey: string;
+  fileName: string;
+  mimeType: string | null;
+  fileSize: number;
+  etag: string | null;
+  modelName: string | null;
+  modelVersion: string | null;
+  parsedObjectKey: string | null;
+  parsedPayload: Prisma.JsonValue | null;
+  errorMessage: string | null;
+  uploadCompletedAt: Date | null;
+  parsedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 @Injectable()
 export class RequirementsService {
   private static readonly LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
@@ -118,6 +141,13 @@ export class RequirementsService {
     'UPLOAD_SESSION_RETENTION_MS',
     RequirementsService.DEFAULT_UPLOAD_SESSION_RETENTION_MS,
   );
+
+  private readonly ossBucket = this.normalizeText(process.env.OSS_BUCKET);
+  private readonly ossEndpoint = this.normalizeText(process.env.OSS_ENDPOINT);
+  private readonly ossAccessKeyId = this.normalizeText(process.env.OSS_ACCESS_KEY_ID);
+  private readonly ossAccessKeySecret = this.normalizeText(process.env.OSS_ACCESS_KEY_SECRET);
+  private readonly ossUploadUrlExpiresSeconds = this.getPositiveIntConfig('OSS_UPLOAD_URL_EXPIRES_SECONDS', 15 * 60);
+  private readonly ossDownloadUrlExpiresSeconds = this.getPositiveIntConfig('OSS_DOWNLOAD_URL_EXPIRES_SECONDS', 10 * 60);
 
   private readonly dataTreeMetadataSampleFiles = this.getPositiveIntConfig('DATA_TREE_METADATA_SAMPLE_FILES', 6);
   private readonly dataTreeSeriesMetadataConcurrency = this.getPositiveIntConfig('DATA_TREE_METADATA_CONCURRENCY', 4);
@@ -444,6 +474,143 @@ export class RequirementsService {
     const extension = extname(originalname) || '.dcm';
     const base = originalname.slice(0, originalname.length - extension.length) || `file_${index + 1}`;
     return `${this.sanitizePathSegment(base)}${extension}`;
+  }
+
+  private ensureOssConfigured() {
+    if (!this.ossBucket || !this.ossEndpoint || !this.ossAccessKeyId || !this.ossAccessKeySecret) {
+      throw new BadRequestException('OSS 配置不完整，请先设置 OSS_BUCKET、OSS_ENDPOINT、OSS_ACCESS_KEY_ID、OSS_ACCESS_KEY_SECRET');
+    }
+
+    return {
+      bucket: this.ossBucket,
+      endpoint: this.ossEndpoint.replace(/^https?:\/\//, '').replace(/\/+$/, ''),
+      accessKeyId: this.ossAccessKeyId,
+      accessKeySecret: this.ossAccessKeySecret,
+    };
+  }
+
+  private encodeOssObjectKey(objectKey: string) {
+    return objectKey
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+  }
+
+  private buildOssSignedUrl(
+    method: 'GET' | 'PUT',
+    objectKey: string,
+    expiresInSeconds: number,
+    contentType = '',
+  ) {
+    const { bucket, endpoint, accessKeyId, accessKeySecret } = this.ensureOssConfigured();
+    const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const resource = `/${bucket}/${objectKey}`;
+    const stringToSign = [method, '', contentType, String(expires), resource].join('\n');
+    const signature = createHmac('sha1', accessKeySecret).update(stringToSign).digest('base64');
+    const url = new URL(`https://${bucket}.${endpoint}/${this.encodeOssObjectKey(objectKey)}`);
+    url.searchParams.set('OSSAccessKeyId', accessKeyId);
+    url.searchParams.set('Expires', String(expires));
+    url.searchParams.set('Signature', signature);
+
+    return {
+      url: url.toString(),
+      expiresAt: new Date(expires * 1000),
+    };
+  }
+
+  private buildRequirementOssObjectKey(requirementId: bigint, dto: CreateRequirementOssFileDto) {
+    const extension = extname(dto.fileName.trim()) || (dto.kind === RequirementOssFileKindDto.dicom ? '.dcm' : '.bin');
+    if (dto.kind === RequirementOssFileKindDto.dicom) {
+      return `dicom/incoming/${requirementId.toString()}/${randomUUID()}${extension.toLowerCase()}`;
+    }
+
+    const modelName = this.sanitizePathSegment(dto.modelName ?? 'model');
+    const modelVersion = this.sanitizePathSegment(dto.modelVersion ?? 'v1');
+    return `models/${modelName}/${modelVersion}/${randomUUID()}${extension.toLowerCase()}`;
+  }
+
+  private mapRequirementOssFile(record: {
+    id: bigint;
+    kind: RequirementOssFileKind;
+    status: RequirementOssFileStatus;
+    objectKey: string;
+    originalFileName: string;
+    mimeType: string | null;
+    fileSize: bigint;
+    etag: string | null;
+    modelName: string | null;
+    modelVersion: string | null;
+    parsedObjectKey: string | null;
+    parsedPayload: Prisma.JsonValue | null;
+    errorMessage: string | null;
+    uploadCompletedAt: Date | null;
+    parsedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): RequirementOssFileSummary {
+    return {
+      id: record.id.toString(),
+      kind: record.kind,
+      status: record.status,
+      objectKey: record.objectKey,
+      fileName: record.originalFileName,
+      mimeType: record.mimeType,
+      fileSize: Number(record.fileSize),
+      etag: record.etag,
+      modelName: record.modelName,
+      modelVersion: record.modelVersion,
+      parsedObjectKey: record.parsedObjectKey,
+      parsedPayload: record.parsedPayload,
+      errorMessage: record.errorMessage,
+      uploadCompletedAt: record.uploadCompletedAt,
+      parsedAt: record.parsedAt,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    };
+  }
+
+  private async fetchUrlBuffer(url: string) {
+    return new Promise<Buffer>((resolvePromise, reject) => {
+      const request = httpsRequest(url, { method: 'GET' }, (response) => {
+        if (!response.statusCode || response.statusCode >= 400) {
+          reject(new Error(`OSS GET 失败，状态码 ${response.statusCode ?? 'unknown'}`));
+          response.resume();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.on('end', () => resolvePromise(Buffer.concat(chunks)));
+      });
+
+      request.on('error', reject);
+      request.end();
+    });
+  }
+
+  private async putBufferToUrl(url: string, body: Buffer, contentType: string) {
+    return new Promise<void>((resolvePromise, reject) => {
+      const request = httpsRequest(url, {
+        method: 'PUT',
+        headers: {
+          'content-length': body.byteLength,
+          'content-type': contentType,
+        },
+      }, (response) => {
+        if (!response.statusCode || response.statusCode >= 400) {
+          reject(new Error(`OSS PUT 失败，状态码 ${response.statusCode ?? 'unknown'}`));
+          response.resume();
+          return;
+        }
+
+        response.on('data', () => undefined);
+        response.on('end', () => resolvePromise());
+      });
+
+      request.on('error', reject);
+      request.write(body);
+      request.end();
+    });
   }
 
   private shouldIgnoreUploadedFile(originalname: string) {
@@ -1260,6 +1427,207 @@ export class RequirementsService {
       fileSize: Number(updated.fileSize),
       status: updated.status,
     };
+  }
+
+  async createRequirementOssFile(
+    userId: bigint,
+    requirementId: bigint,
+    role: UserRole,
+    dto: CreateRequirementOssFileDto,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const { bucket } = this.ensureOssConfigured();
+    const objectKey = this.buildRequirementOssObjectKey(requirementId, dto);
+    const normalizedMimeType = this.normalizeText(dto.mimeType) ?? 'application/octet-stream';
+
+    const created = await this.prisma.requirementOssFile.create({
+      data: {
+        requirementId,
+        uploadedBy: userId,
+        kind: dto.kind,
+        status: RequirementOssFileStatus.pending_upload,
+        objectKey,
+        bucketName: bucket,
+        originalFileName: dto.fileName.trim(),
+        mimeType: normalizedMimeType,
+        fileSize: BigInt(dto.fileSize),
+        modelName: dto.kind === RequirementOssFileKindDto.model ? this.normalizeText(dto.modelName) : null,
+        modelVersion: dto.kind === RequirementOssFileKindDto.model ? this.normalizeText(dto.modelVersion) : null,
+      },
+    });
+
+    const signed = this.buildOssSignedUrl('PUT', objectKey, this.ossUploadUrlExpiresSeconds, normalizedMimeType);
+
+    return {
+      fileId: created.id.toString(),
+      kind: created.kind,
+      status: created.status,
+      objectKey: created.objectKey,
+      bucketName: created.bucketName,
+      fileName: created.originalFileName,
+      fileSize: Number(created.fileSize),
+      mimeType: created.mimeType,
+      upload: {
+        method: 'PUT',
+        url: signed.url,
+        headers: {
+          'Content-Type': normalizedMimeType,
+        },
+        expiresAt: signed.expiresAt,
+      },
+    };
+  }
+
+  async listRequirementOssFiles(userId: bigint, requirementId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const items = await this.prisma.requirementOssFile.findMany({
+      where: {
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return items.map((item) => this.mapRequirementOssFile(item));
+  }
+
+  async completeRequirementOssFileUpload(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+    dto: ConfirmRequirementOssFileDto,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const file = await this.prisma.requirementOssFile.findFirst({
+      where: {
+        id: fileId,
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+    });
+    if (!file) {
+      throw new NotFoundException('OSS 文件记录不存在');
+    }
+
+    if (dto.fileSize && dto.fileSize !== Number(file.fileSize)) {
+      throw new ConflictException('上传完成确认的文件大小与申请上传时不一致');
+    }
+
+    const nextStatus =
+      file.kind === RequirementOssFileKind.dicom ? RequirementOssFileStatus.uploaded : RequirementOssFileStatus.parsed;
+    const completed = await this.prisma.requirementOssFile.update({
+      where: { id: file.id },
+      data: {
+        status: nextStatus,
+        etag: this.normalizeText(dto.etag),
+        uploadCompletedAt: new Date(),
+        parsedAt: file.kind === RequirementOssFileKind.dicom ? null : new Date(),
+        errorMessage: null,
+      },
+    });
+
+    if (completed.kind === RequirementOssFileKind.dicom) {
+      void this.parseRequirementOssFile(completed.id).catch(() => undefined);
+    }
+
+    return this.mapRequirementOssFile(completed);
+  }
+
+  async authorizeRequirementOssFileDownload(userId: bigint, requirementId: bigint, fileId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const file = await this.prisma.requirementOssFile.findFirst({
+      where: {
+        id: fileId,
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+    });
+    if (!file) {
+      throw new NotFoundException('OSS 文件记录不存在');
+    }
+    if (file.status !== RequirementOssFileStatus.uploaded && file.status !== RequirementOssFileStatus.parsed) {
+      throw new BadRequestException('当前文件还不能下载');
+    }
+
+    const signed = this.buildOssSignedUrl('GET', file.objectKey, this.ossDownloadUrlExpiresSeconds);
+
+    return {
+      fileId: file.id.toString(),
+      fileName: file.originalFileName,
+      objectKey: file.objectKey,
+      url: signed.url,
+      expiresAt: signed.expiresAt,
+    };
+  }
+
+  private async parseRequirementOssFile(fileId: bigint) {
+    const file = await this.prisma.requirementOssFile.findUnique({
+      where: { id: fileId },
+    });
+    if (!file || file.kind !== RequirementOssFileKind.dicom) {
+      return;
+    }
+
+    await this.prisma.requirementOssFile.update({
+      where: { id: file.id },
+      data: {
+        status: RequirementOssFileStatus.parsing,
+        errorMessage: null,
+      },
+    });
+
+    try {
+      const download = this.buildOssSignedUrl('GET', file.objectKey, this.ossDownloadUrlExpiresSeconds);
+      const buffer = await this.fetchUrlBuffer(download.url);
+      const parsed = this.parseDicomBuffer(buffer, file.originalFileName, file.objectKey);
+      const parsedObjectKey = `dicom/parsed/${file.requirementId.toString()}/${file.id.toString()}.json`;
+      const payload = {
+        fileId: file.id.toString(),
+        requirementId: file.requirementId.toString(),
+        objectKey: file.objectKey,
+        parsedAt: new Date().toISOString(),
+        dicom: {
+          patientUid: parsed.patientUid,
+          patientId: parsed.patientId,
+          patientName: parsed.patientName,
+          sex: parsed.sex,
+          birthday: this.formatUtcDate(parsed.birthday),
+          studyUid: parsed.studyUid,
+          studyId: parsed.studyId,
+          modality: parsed.modality,
+          studyDate: this.formatUtcDateTime(parsed.studyDate),
+          studyDescription: parsed.studyDescription,
+          seriesUid: parsed.seriesUid,
+          seriesDescription: parsed.seriesDescription,
+          hospitalName: parsed.hospitalName,
+          uploadedAt: this.formatUtcDateTime(parsed.uploadedAt),
+        },
+      };
+
+      const upload = this.buildOssSignedUrl('PUT', parsedObjectKey, this.ossUploadUrlExpiresSeconds, 'application/json');
+      await this.putBufferToUrl(upload.url, Buffer.from(JSON.stringify(payload, null, 2), 'utf8'), 'application/json');
+
+      await this.prisma.requirementOssFile.update({
+        where: { id: file.id },
+        data: {
+          status: RequirementOssFileStatus.parsed,
+          parsedObjectKey,
+          parsedPayload: payload,
+          parsedAt: new Date(),
+          errorMessage: null,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message.slice(0, 255) : 'DICOM 解析失败';
+      await this.prisma.requirementOssFile.update({
+        where: { id: file.id },
+        data: {
+          status: RequirementOssFileStatus.failed,
+          errorMessage: message,
+        },
+      });
+    }
   }
 
   private async persistDeliveryFile(
