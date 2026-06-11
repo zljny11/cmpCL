@@ -19,6 +19,15 @@ export type DatasetUploadType = 'initial' | 'supplement';
 
 export type DatasetBatchStatus = 'uploaded' | 'parsed' | 'failed';
 
+export type RequirementOssFileKind = 'dicom' | 'model';
+
+export type RequirementOssFileStatus =
+  | 'pending_upload'
+  | 'uploaded'
+  | 'parsing'
+  | 'parsed'
+  | 'failed';
+
 export interface CreateRequirementPayload {
   type: RequirementType;
   typeCustom: string | null;
@@ -306,6 +315,65 @@ export interface DatasetBatchCommitResult {
   fileCount: number;
   uploadedAt: string;
   requiresManualAnalysis: boolean;
+}
+
+export interface CreateRequirementOssFilePayload {
+  kind: RequirementOssFileKind;
+  fileName: string;
+  fileSize: number;
+  mimeType?: string;
+  modelName?: string;
+  modelVersion?: string;
+}
+
+export interface RequirementOssFileUploadTicket {
+  fileId: string;
+  kind: RequirementOssFileKind;
+  status: RequirementOssFileStatus;
+  objectKey: string;
+  bucketName: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string | null;
+  upload: {
+    method: 'PUT';
+    url: string;
+    headers: Record<string, string>;
+    expiresAt: string;
+  };
+}
+
+export interface ConfirmRequirementOssFileUploadPayload {
+  etag?: string;
+  fileSize?: number;
+}
+
+export interface RequirementOssFileItem {
+  id: string;
+  kind: RequirementOssFileKind;
+  status: RequirementOssFileStatus;
+  objectKey: string;
+  fileName: string;
+  mimeType: string | null;
+  fileSize: number;
+  etag: string | null;
+  modelName: string | null;
+  modelVersion: string | null;
+  parsedObjectKey: string | null;
+  parsedPayload: unknown;
+  errorMessage: string | null;
+  uploadCompletedAt: string | null;
+  parsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequirementOssFileDownloadAuthorization {
+  fileId: string;
+  fileName: string;
+  objectKey: string;
+  url: string;
+  expiresAt: string;
 }
 
 export interface RequirementDeliveryItem {

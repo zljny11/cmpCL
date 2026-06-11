@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AdminOperationLogCategory, AdminOperationLogResult, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuthUser } from '../../types/auth-user';
@@ -18,6 +18,8 @@ type CreateAdminLogPayload = {
 
 @Injectable()
 export class AdminLogsService {
+  private readonly logger = new Logger(AdminLogsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async clearLogs() {
@@ -32,20 +34,27 @@ export class AdminLogsService {
     const actorId = payload.actor?.id ? BigInt(payload.actor.id) : null;
     const actorUsername = payload.actor?.username ?? 'unknown';
 
-    await this.prisma.adminOperationLog.create({
-      data: {
-        actorId,
-        actorUsername,
-        category: payload.category,
-        action: payload.action,
-        targetType: payload.targetType ?? null,
-        targetId: payload.targetId ?? null,
-        targetName: payload.targetName ?? null,
-        result: payload.result ?? AdminOperationLogResult.success,
-        detail: payload.detail,
-        ipAddress: payload.ipAddress ?? null,
-      },
-    });
+    try {
+      await this.prisma.adminOperationLog.create({
+        data: {
+          actorId,
+          actorUsername,
+          category: payload.category,
+          action: payload.action,
+          targetType: payload.targetType ?? null,
+          targetId: payload.targetId ?? null,
+          targetName: payload.targetName ?? null,
+          result: payload.result ?? AdminOperationLogResult.success,
+          detail: payload.detail,
+          ipAddress: payload.ipAddress ?? null,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `failed to create admin operation log: ${message}`,
+      );
+    }
   }
 
   async listLogs(query: ListAdminOperationLogsDto) {

@@ -30,6 +30,7 @@
     "class-validator": "^0.14.1",
     "dicom-parser": "^1.8.21",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
     "nestjs-pino": "^4.3.0",
     "nodemailer": "^8.0.7",
     "pino": "^9.5.0",
@@ -40,6 +41,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.14.0",
     "@nestjs/cli": "^10.4.8",
     "@nestjs/schematics": "^10.1.4",
     "@nestjs/testing": "^10.4.22",

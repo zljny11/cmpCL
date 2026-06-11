@@ -4,6 +4,7 @@ import { ApiResponse, PaginatedData } from '../../types/api';
 import {
   CreateRequirementDeliveryPayload,
   CreateDatasetBatchFromSessionsPayload,
+  CreateRequirementOssFilePayload,
   CreateDatasetBatchPayload,
   CreateUploadSessionPayload,
   DatasetBatchFailedFilesPayload,
@@ -17,7 +18,11 @@ import {
   RequirementListItem,
   RequirementListQuery,
   RequirementPreviewPayload,
+  RequirementOssFileDownloadAuthorization,
+  RequirementOssFileItem,
+  RequirementOssFileUploadTicket,
   UploadSessionItem,
+  ConfirmRequirementOssFileUploadPayload,
 } from '../../types/requirements';
 
 export const requirementsApi = {
@@ -221,6 +226,37 @@ export const requirementsApi = {
 
   async createDatasetBatchFromSessions(id: string, payload: CreateDatasetBatchFromSessionsPayload) {
     const response = (await http.post(`/requirements/${id}/dataset-batches/commit`, payload)) as ApiResponse<DatasetBatchCommitResult>;
+    return response.data;
+  },
+
+  async createRequirementOssFile(id: string, payload: CreateRequirementOssFilePayload) {
+    const response = (await http.post(`/requirements/${id}/object-storage-files`, payload)) as ApiResponse<
+      RequirementOssFileUploadTicket
+    >;
+    return response.data;
+  },
+
+  async listRequirementOssFiles(id: string) {
+    const response = (await http.get(`/requirements/${id}/object-storage-files`)) as ApiResponse<RequirementOssFileItem[]>;
+    return response.data;
+  },
+
+  async completeRequirementOssFileUpload(
+    id: string,
+    fileId: string,
+    payload: ConfirmRequirementOssFileUploadPayload,
+  ) {
+    const response = (await http.post(
+      `/requirements/${id}/object-storage-files/${fileId}/complete`,
+      payload,
+    )) as ApiResponse<RequirementOssFileItem>;
+    return response.data;
+  },
+
+  async authorizeRequirementOssFileDownload(id: string, fileId: string) {
+    const response = (await http.post(
+      `/requirements/${id}/object-storage-files/${fileId}/download-authorization`,
+    )) as ApiResponse<RequirementOssFileDownloadAuthorization>;
     return response.data;
   },
 
