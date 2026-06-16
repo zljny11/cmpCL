@@ -4,6 +4,7 @@
 # Keep the Git metadata files tracked.
 !/.gitignore
 !/.env.docker.example
+!/README.md
 !/DEPLOY_INTRANET.md
 !/DEPLOY_PUBLIC.md
 !/docker-compose.yml

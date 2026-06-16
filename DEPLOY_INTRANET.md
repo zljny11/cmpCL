@@ -1,219 +1,167 @@
-# 内网测试部署说明
+# 内网部署说明
 
-目标：把项目部署到公司内网服务器进行测试，同时不影响服务器上已经运行的其他项目。
+本文档用于在公司内网服务器上以 Docker Compose 方式部署 CampCloud，并约束出一套长期稳定的目录和发布方式。
 
-## 原则
+## 目标
 
-1. 不停现有容器，不改现有 nginx，不抢现有端口。
-2. 使用独立目录、独立 Compose 项目名、独立 `.env`。
-3. 先用高位端口验证可用，再决定是否接入正式反向代理。
+- 保持当前服务可用
+- 后续服务器可以直接 `git pull`
+- 避免再次出现“目录名变了，Compose 项目名也跟着变，结果起了新卷”的问题
 
-## 这个项目当前的部署方式
+## 最终推荐形态
 
-- `docker-compose.yml` 会启动 3 个服务：
-  - `campcloud-mysql`
-  - `campcloud-server`
-  - `campcloud-web`
-- 对外只暴露前端端口，默认是 `80`。
-- 前端容器会把 `/api/` 代理到后端容器。
+服务器最终统一为：
 
-## 第一步：登录服务器，只做检查，不做修改
+- 正式目录：`/home/test/campcloud`
+- Git 分支：`dev/server`
+- Compose 项目名：`campcloud`
+- 部署环境文件：`.env.server`
 
-先确认服务器已有环境和占用情况：
+正式发布命令固定为：
 
 ```bash
-hostname
-whoami
-pwd
-docker --version
-docker compose version
-docker ps
-ss -ltnp | grep -E ':80|:3000|:3306|:8080|:8081|:8088|:9000'
-df -h
-free -h
+cd /home/test/campcloud
+git pull origin dev/server
+docker compose --env-file .env.server -p campcloud up -d --build
 ```
 
-重点确认：
+## 首次整理到最终目录
 
-- 服务器是否已安装 Docker 和 Docker Compose。
-- `80` 端口是否已经被现有项目占用。
-- 是否已经有 MySQL 在宿主机 `3306` 监听。
+如果服务器当前还在使用过渡目录，例如：
 
-如果已有项目正在跑，这一步不要执行任何 `stop`、`down`、`rm`。
+- `/home/test/campcloud-test-next`
+- `/home/test/campcloud-test-next-git`
 
-## 第二步：上传代码到独立目录
+建议单独安排一次整理窗口，把 Git 仓库整理到最终目录，而不是继续长期沿用临时目录名。
 
-建议使用独立目录，例如：
+### 1. 准备最终目录
 
 ```bash
-mkdir -p /opt/campcloud-test
+cd /home/test
+git clone -b dev/server https://github.com/zljny11/cmpCL.git campcloud
+cd /home/test/campcloud
 ```
 
-把当前项目上传到该目录。常见方式：
+### 2. 复制服务器环境文件
 
 ```bash
-scp -r ./ your_user@your_server:/opt/campcloud-test
+cp /home/test/campcloud-test-next-git/.env.server /home/test/campcloud/.env.server
+cp /home/test/campcloud-test-next-git/.env /home/test/campcloud/.env
 ```
 
-或者先本地打包，再上传：
+如果实际生效的是旧目录中的环境文件，就从旧目录复制，原则是“以当前正式运行环境为准”。
+
+### 3. 先确认当前正式项目
+
+检查当前容器和卷：
 
 ```bash
-tar czf campcloud-test.tar.gz .
-scp campcloud-test.tar.gz your_user@your_server:/opt/campcloud-test/
+docker ps --format "table {{.Names}}\t{{.Status}}"
+docker volume ls | grep campcloud
 ```
 
-服务器上解压后进入目录：
+如果当前业务已经依赖某个旧 Compose 项目名，不要立刻改名；先让新目录接管旧项目，确认业务无误后，再安排单独的项目名收口。
+
+## 过渡期接管旧项目
+
+如果当前正式数据卷还挂在旧项目名，例如 `campcloud-test-next`，可以在新目录中临时继续使用旧项目名：
 
 ```bash
-cd /opt/campcloud-test
+cd /home/test/campcloud
+docker compose --env-file .env.server -p campcloud-test-next up -d --build
 ```
 
-## 第三步：准备服务器专用环境变量
+这一步的目的只有一个：让新代码安全接管旧数据卷。
 
-不要直接用仓库里的 `.env`，单独准备一份服务器环境：
+注意：
 
-```bash
-cp .env .env.server
-```
+- 代码目录可以变
+- Compose 项目名不能随便变
+- 只要项目名变了，Docker 默认就会新建另一套卷
 
-至少修改这些值：
+## 收口到最终项目名
+
+当你确认：
+
+- 新目录代码正常
+- 登录正常
+- 管理端日志正常
+- 数据库迁移正常
+
+再单独安排一次窗口，把正式 Compose 项目名统一成 `campcloud`。
+
+这一步一定要谨慎，因为它涉及容器名、网络名、卷名的切换。没有明确回滚方案之前，不要在业务恢复的同一次操作里同时完成。
+
+## 服务器环境文件建议
+
+`.env.server` 至少应包含：
 
 ```env
-MYSQL_ROOT_PASSWORD=改成强密码
+MYSQL_ROOT_PASSWORD=your-password
 MYSQL_DATABASE=campcloud_test
 
-JWT_SECRET=改成随机长字符串
+WEB_BASE_URL=https://aicampcloud.radynhealth.com
+JWT_SECRET=replace-with-a-long-random-secret
 JWT_EXPIRES_IN=7d
-
-CORS_ORIGIN=http://服务器IP:8088
+CORS_ORIGIN=https://aicampcloud.radynhealth.com
 SWAGGER_ENABLED=true
 RUN_SEED=false
 
 FRONTEND_PORT=8088
 VITE_API_BASE_URL=/api/v1
+
+OSS_BUCKET=radyn-aicampcloud-file
+OSS_ENDPOINT=oss-cn-shanghai.aliyuncs.com
+OSS_ACCESS_KEY_ID=replace-me
+OSS_ACCESS_KEY_SECRET=replace-me
+OSS_UPLOAD_URL_EXPIRES_SECONDS=900
+OSS_DOWNLOAD_URL_EXPIRES_SECONDS=600
 ```
 
-说明：
+## 日常发布
 
-- `FRONTEND_PORT` 不要用 `80`，先改成没被占用的端口，比如 `8088`。
-- `MYSQL_DATABASE` 建议用独立库名，例如 `campcloud_test`。
-- `CORS_ORIGIN` 改成你实际访问的地址。
-- `JWT_SECRET` 必须替换，不能保留示例值。
-
-## 第四步：用独立项目名启动
-
-关键点：一定要带 `-p`，给这个部署一个独立 Compose 项目名。
+当服务器已经整理到最终目录后，后续发布统一用：
 
 ```bash
-docker compose --env-file .env.server -p campcloud-test up -d --build
+cd /home/test/campcloud
+git pull origin dev/server
+docker compose --env-file .env.server -p campcloud up -d --build
 ```
 
-这样会把网络、卷、容器都隔离到 `campcloud-test` 这个项目下，不会和别的 Compose 项目混在一起。
-
-## 第五步：启动后检查状态
+只更新后端：
 
 ```bash
-docker compose --env-file .env.server -p campcloud-test ps
-docker compose --env-file .env.server -p campcloud-test logs -f --tail=200
+docker compose --env-file .env.server -p campcloud up -d --build campcloud-server
 ```
 
-重点看：
-
-- `campcloud-mysql` 是否健康。
-- `campcloud-server` 是否成功执行 `prisma migrate deploy`。
-- `campcloud-web` 是否正常启动。
-
-如果只想看某一个服务日志：
+只看后端日志：
 
 ```bash
-docker compose --env-file .env.server -p campcloud-test logs -f campcloud-server
-docker compose --env-file .env.server -p campcloud-test logs -f campcloud-web
-docker compose --env-file .env.server -p campcloud-test logs -f campcloud-mysql
+docker compose --env-file .env.server -p campcloud logs -f campcloud-server
 ```
 
-## 第六步：验证访问
+## 验证清单
 
-在服务器本机先测：
+每次发布后至少检查：
+
+1. `docker compose ... ps` 中三个服务都正常
+2. 后端日志里能看到 `prisma migrate deploy`
+3. 登录正常
+4. 管理侧日志页正常
+5. 如果本次涉及文件能力，上传/下载链路正常
+
+## 不要做的事
+
+不要长期混用多个目录名：
+
+- `/home/test/campcloud-test`
+- `/home/test/campcloud-test-next`
+- `/home/test/campcloud-test-next-git`
+
+不要在不知道当前正式 Compose 项目名的前提下直接执行：
 
 ```bash
-curl -I http://127.0.0.1:8088
-curl http://127.0.0.1:8088/api/v1
-curl -I http://127.0.0.1:8088/api/docs
+docker compose up -d --build
 ```
 
-然后在你办公网电脑浏览器访问：
-
-```text
-http://服务器IP:8088
-http://服务器IP:8088/api/docs
-```
-
-如果打不开，优先检查：
-
-- 服务器防火墙是否放行 `8088`
-- 安全组是否放行 `8088`
-- `CORS_ORIGIN` 是否写对
-
-## 第七步：需要更新版本时
-
-```bash
-cd /opt/campcloud-test
-docker compose --env-file .env.server -p campcloud-test up -d --build
-```
-
-如果只是看状态：
-
-```bash
-docker compose -p campcloud-test ps
-```
-
-如果只是重启当前项目：
-
-```bash
-docker compose --env-file .env.server -p campcloud-test restart
-```
-
-## 第八步：只清理当前测试项目
-
-如果你要下线这套测试环境：
-
-```bash
-docker compose --env-file .env.server -p campcloud-test down
-```
-
-如果连数据库卷也一起删：
-
-```bash
-docker compose --env-file .env.server -p campcloud-test down -v
-```
-
-注意：这只会操作 `campcloud-test` 这个项目，不会动其他 Compose 项目。
-
-## 常见风险
-
-### 1. 不要直接执行
-
-```bash
-docker compose up -d
-```
-
-原因：你如果在默认配置下直接启动，很容易和服务器上现有服务发生端口冲突，或者后续难以区分是哪个项目创建的资源。
-
-### 2. 不要抢占 80 端口
-
-这个项目默认 `FRONTEND_PORT=80`，但内网测试阶段应优先改成 `8088`、`18080` 之类的高位端口。
-
-### 3. 不要复用别人的数据库
-
-当前 Compose 会自己起一个独立 MySQL 容器。除非你明确知道公司内网已有专用测试库，否则不要连到别的业务库。
-
-## 推荐的最小命令集
-
-```bash
-cd /opt/campcloud-test
-cp .env .env.server
-vi .env.server
-docker compose --env-file .env.server -p campcloud-test up -d --build
-docker compose --env-file .env.server -p campcloud-test ps
-docker compose --env-file .env.server -p campcloud-test logs -f --tail=200
-```
+不要把“恢复线上业务”和“重构部署结构”混成一个操作步骤。
