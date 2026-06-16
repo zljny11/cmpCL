@@ -128,6 +128,6 @@ export class AdminLogsService {
       })
       .filter((item): item is string => Boolean(item));
 
-    return entries.length > 0 ? entries.join('；') : '-';
+    return entries.length > 0 ? entries.join('; ') : '-';
   }
 }
