@@ -1,0 +1,9 @@
+{
+  "name": "campcloud-workspace",
+  "private": true,
+  "scripts": {
+    "start": "bash ./scripts/start-campcloud-dev.sh",
+    "stop": "bash ./scripts/stop-campcloud-dev.sh",
+    "reset": "npm --prefix ./campcloud-server run reset:demo-state"
+  }
+}

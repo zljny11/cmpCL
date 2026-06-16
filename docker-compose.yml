@@ -1,0 +1,62 @@
+services:
+  campcloud-mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-campcloud}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - campcloud_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    expose:
+      - "3306"
+
+  campcloud-server:
+    build:
+      context: ./campcloud-server
+    restart: unless-stopped
+    depends_on:
+      campcloud-mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-password}@campcloud-mysql:3306/${MYSQL_DATABASE:-campcloud}?charset=utf8mb4
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://192.168.1.47}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      RUN_SEED: ${RUN_SEED:-false}
+      OSS_BUCKET: ${OSS_BUCKET:-}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
+      OSS_UPLOAD_URL_EXPIRES_SECONDS: ${OSS_UPLOAD_URL_EXPIRES_SECONDS:-900}
+      OSS_DOWNLOAD_URL_EXPIRES_SECONDS: ${OSS_DOWNLOAD_URL_EXPIRES_SECONDS:-600}
+    volumes:
+      - campcloud_server_storage:/app/storage
+    expose:
+      - "3000"
+
+  campcloud-web:
+    build:
+      context: ./campcloud-web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    restart: unless-stopped
+    depends_on:
+      - campcloud-server
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+
+volumes:
+  campcloud_mysql_data:
+  campcloud_server_storage:
