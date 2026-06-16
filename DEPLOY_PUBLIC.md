@@ -1,12 +1,12 @@
 # 公网部署说明
 
-本文档描述 AICampCloud 当前的公网接入方式，以及它和内网 Docker 部署的关系。
+本文档描述 AICampCloud 当前正式的公网接入方式，以及它和内网 Docker 部署的关系。
 
-## 公署目的
+## 部署目标
 
 - Web 页面公网访问
 - 业务 API 公网访问
-- 大文件上传/下载走 OSS
+- 大文件上传和下载走 OSS
 - 内网服务器继续负责核心业务处理
 
 ## 当前架构
@@ -29,7 +29,7 @@ frps <=====> frpc
   +---- 从 OSS 下载
 ```
 
-各模块职责拆分：
+职责拆分：
 
 - ECS: 负责域名入口、HTTPS、Nginx、frps
 - 内网服务器: 负责业务后端、前端容器、数据处理、数据库
@@ -39,23 +39,21 @@ frps <=====> frpc
 
 公网部署默认建立在“内网 Docker 部署已经稳定可用”的基础上。
 
-即内网服务器应先满足：
+内网服务器应先满足：
 
-- Git 仓库已整理到正式目录，例如 `/home/test/campcloud`
+- Git 仓库目录为 `/home/test/campcloud`
 - `docker compose --env-file .env.server -p campcloud up -d --build` 可正常启动
 - 本机 `http://127.0.0.1:8088` 可正常访问
 
-对应的内网部署说明见 [DEPLOY_INTRANET.md](DEPLOY_INTRANET.md)。
+## 端口规划
 
-## 端口说明
-
-ECS 开放：
+ECS 对公网开放：
 
 - `80`
 - `443`
-- `7000` 用于 `frps`通信
+- `7000`
 
-不对公网开放：
+不要对公网开放：
 
 - `3306`
 - `7500`
@@ -71,12 +69,12 @@ ECS:
 bindPort = 7000
 
 auth.method = "token"
-auth.token = "radyn123"
+auth.token = "replace-with-a-strong-random-token"
 
 webServer.addr = "127.0.0.1"
 webServer.port = 7500
 webServer.user = "admin"
-webServer.password = "radyn123"
+webServer.password = "replace-with-a-strong-password"
 ```
 
 ## frpc 配置
@@ -90,7 +88,7 @@ serverAddr = "47.101.135.245"
 serverPort = 7000
 
 auth.method = "token"
-auth.token = "radyn123"
+auth.token = "replace-with-a-strong-random-token"
 
 [[proxies]]
 name = "campcloud-web"
@@ -100,7 +98,7 @@ localPort = 8088
 remotePort = 9000
 ```
 
-如果服务监听的不是 `127.0.0.1:8088`，请改成实际可访问地址。
+如果服务监听的不是 `127.0.0.1:8088`，请改成实际地址。
 
 ## Nginx 配置
 
@@ -138,17 +136,16 @@ server {
 }
 ```
 
-## OSS 原则约束
+## OSS 约束
 
 公网环境下，大文件不要继续穿过 ECS 或 frp 中转。
-
 
 - 前端向后端申请上传凭证
 - 前端直接上传到 OSS
 - 上传完成后回调后端确认
 - 下载时由后端校验权限并签发临时下载地址
 
-对象前缀约束：
+对象前缀：
 
 ```text
 dicom/incoming/
@@ -168,8 +165,6 @@ temp/{requirementId}/{uuid}
 
 ## 发布顺序
 
-公网发布时，顺序如下：
-
 1. 先在内网服务器完成新版本构建与验证
 2. 确认 `http://127.0.0.1:8088` 正常
 3. 确认 frpc 已连接
@@ -185,7 +180,7 @@ curl -I http://127.0.0.1:8088
 curl -I https://aicampcloud.radynhealth.com
 ```
 
-重点业务验证：
+业务验证：
 
 1. 登录正常
 2. 管理端日志正常
@@ -201,4 +196,7 @@ curl -I https://aicampcloud.radynhealth.com
 - 多个 Compose 项目名
 - 不明确的正式数据卷
 
-公网入口本身不会解决这些问题；正式目录、正式 Compose 项目名、正式发布流程必须先在内网部署层面统一。
+当前正式约定已经固定为：
+
+- 目录：`/home/test/campcloud`
+- 项目名：`campcloud`

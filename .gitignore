@@ -7,6 +7,7 @@
 !/README.md
 !/DEPLOY_INTRANET.md
 !/DEPLOY_PUBLIC.md
+!/DEPLOY_INTERNAL.example.md
 !/docker-compose.yml
 !/package.json
 
@@ -43,3 +44,6 @@ license/user-licenses.json
 
 # macOS / editor noise
 .DS_Store
+
+# Local-only deployment notes kept on servers/workstations.
+*.local.md
