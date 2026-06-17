@@ -46,6 +46,13 @@ JWT_EXPIRES_IN=7d
 CORS_ORIGIN=https://aicampcloud.radynhealth.com
 SWAGGER_ENABLED=true
 RUN_SEED=false
+MAIL_ENABLED=true
+MAIL_HOST=smtp.example.com
+MAIL_PORT=465
+MAIL_SECURE=true
+MAIL_USER=notify@example.com
+MAIL_PASS=replace-with-mail-password
+MAIL_FROM=notify@example.com
 
 FRONTEND_PORT=8088
 VITE_API_BASE_URL=/api/v1
