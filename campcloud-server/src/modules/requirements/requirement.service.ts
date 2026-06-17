@@ -2150,6 +2150,16 @@ export class RequirementsService {
         `新需求「${created.title}」已提交，请及时处理。`,
       );
 
+      await this.mailService.queueRequirementAdminNotifications(tx, {
+        requirementId: created.id,
+        type: 'new_requirement',
+        subject: '【AICampCloud】收到新的用户需求',
+        requirementTitle: created.title,
+        actionLabel: '新需求提交',
+        summary: `新需求《${created.title}》已提交，请及时处理。`,
+        excludeUserIds: [userId],
+      });
+
       return created;
     });
 
@@ -2660,6 +2670,14 @@ export class RequirementsService {
           notificationTitle,
           notificationContent,
         );
+        await this.mailService.queueRequirementAdminNotifications(tx, {
+          requirementId,
+          type: 'message_reply',
+          subject: '【AICampCloud】收到新的需求补充消息',
+          requirementTitle: requirement.title,
+          actionLabel: '用户补充消息',
+          summary: notificationContent,
+        });
       }
 
       return {
@@ -3683,6 +3701,14 @@ export class RequirementsService {
           '收到新的用户数据上传，请在管理侧查看',
           `需求「${requirement?.title || requirementId.toString()}」有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
         );
+        await this.mailService.queueRequirementAdminNotifications(tx, {
+          requirementId,
+          type: 'data_upload',
+          subject: '【AICampCloud】收到新的用户数据上传',
+          requirementTitle: requirement?.title || requirementId.toString(),
+          actionLabel: retryBatchId ? '用户批次重传' : '用户数据上传',
+          summary: `需求《${requirement?.title || requirementId.toString()}》有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
+        });
       }
 
       return createdOrUpdated;
@@ -3886,6 +3912,14 @@ export class RequirementsService {
           '收到新的用户数据上传，请在管理侧查看',
           `需求「${requirement?.title || requirementId.toString()}」有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
         );
+        await this.mailService.queueRequirementAdminNotifications(tx, {
+          requirementId,
+          type: 'data_upload',
+          subject: '【AICampCloud】收到新的用户数据上传',
+          requirementTitle: requirement?.title || requirementId.toString(),
+          actionLabel: retryBatchId ? '用户批次重传' : '用户数据上传',
+          summary: `需求《${requirement?.title || requirementId.toString()}》有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
+        });
       }
 
       return createdOrUpdated;
@@ -4132,6 +4166,14 @@ export class RequirementsService {
           '收到新的用户数据上传，请在管理侧确认是否拉取详情数据',
           `需求「${requirement?.title || requirementId.toString()}」有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
         );
+        await this.mailService.queueRequirementAdminNotifications(tx, {
+          requirementId,
+          type: 'data_upload',
+          subject: '【AICampCloud】收到新的用户数据上传',
+          requirementTitle: requirement?.title || requirementId.toString(),
+          actionLabel: retryBatchId ? '用户批次重传' : '用户数据上传',
+          summary: `需求《${requirement?.title || requirementId.toString()}》有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
+        });
       }
 
       return createdOrUpdated;

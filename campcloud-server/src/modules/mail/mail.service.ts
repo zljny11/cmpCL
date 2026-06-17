@@ -13,6 +13,16 @@ type QueueRequirementUserNotificationParams = {
   summary: string;
 };
 
+type QueueRequirementAdminNotificationParams = {
+  requirementId: bigint;
+  type: string;
+  subject: string;
+  requirementTitle: string;
+  actionLabel: string;
+  summary: string;
+  excludeUserIds?: bigint[];
+};
+
 @Injectable()
 export class MailService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MailService.name);
@@ -110,6 +120,65 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
         text: rendered.text,
       },
     });
+  }
+
+  async queueRequirementAdminNotifications(
+    tx: Prisma.TransactionClient,
+    params: QueueRequirementAdminNotificationParams,
+  ) {
+    if (!this.isEnabled()) {
+      return;
+    }
+
+    const excludedUserIds = new Set((params.excludeUserIds ?? []).map((item) => item.toString()));
+    const admins = await tx.user.findMany({
+      where: { role: 'admin' },
+      select: {
+        id: true,
+        username: true,
+        profile: {
+          select: {
+            realName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    const recipients = admins.filter((admin) => {
+      const email = admin.profile?.email?.trim();
+      return email && !excludedUserIds.has(admin.id.toString());
+    });
+
+    for (const admin of recipients) {
+      const toEmail = admin.profile?.email?.trim();
+      if (!toEmail) {
+        continue;
+      }
+
+      const recipientName = admin.profile?.realName?.trim() || admin.username;
+      const detailUrl = this.buildRequirementDetailUrl(params.requirementId, 'admin');
+      const rendered = this.renderRequirementNotificationMail({
+        recipientName,
+        subject: params.subject,
+        requirementTitle: params.requirementTitle,
+        actionLabel: params.actionLabel,
+        summary: params.summary,
+        detailUrl,
+      });
+
+      await tx.mailJob.create({
+        data: {
+          userId: admin.id,
+          requirementId: params.requirementId,
+          type: params.type,
+          toEmail,
+          subject: params.subject,
+          html: rendered.html,
+          text: rendered.text,
+        },
+      });
+    }
   }
 
   async sendVerificationCodeMail(params: {
@@ -234,11 +303,15 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private buildRequirementDetailUrl(requirementId: bigint) {
+  private buildRequirementDetailUrl(requirementId: bigint, audience: 'user' | 'admin' = 'user') {
     const baseUrl =
       this.configService.get<string>('WEB_BASE_URL')?.trim() ||
       'http://127.0.0.1:5173';
-    return `${baseUrl.replace(/\/+$/, '')}/requirements/${requirementId.toString()}`;
+    const path =
+      audience === 'admin'
+        ? `/admin/requirements/${requirementId.toString()}`
+        : `/requirements/${requirementId.toString()}`;
+    return `${baseUrl.replace(/\/+$/, '')}${path}`;
   }
 
   private renderRequirementNotificationMail(params: {
