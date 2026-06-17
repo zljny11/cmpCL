@@ -7,7 +7,7 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
-import { downloadViaBrowser } from '../../../../utils/browser-download';
+import { triggerDirectDownload } from '../../../../utils/browser-download';
 
 interface Props {
   requirementId: string;
@@ -93,7 +93,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
     return `${normalizedTitle}${extension}`;
   };
 
-  const handleDownload = async (deliveryId: string, fileName: string, downloadName?: string) => {
+  const handleDownload = async (deliveryId: string) => {
     setDownloadingId(deliveryId);
     try {
       const selectedLicenseFile = licenseFileList[0]?.originFileObj;
@@ -103,16 +103,12 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
       if (!canUpload && !licenseVerified) {
         throw new Error('请先等待 license 校验成功后再下载');
       }
-      const formData = new FormData();
-      if (selectedLicenseFile) {
-        formData.append('license', selectedLicenseFile as File);
-      }
-      await downloadViaBrowser({
-        path: `/requirements/${requirementId}/deliveries/${deliveryId}/file`,
-        method: 'POST',
-        body: formData,
-        fileName: downloadName || fileName,
-      });
+      const authorization = await requirementsApi.authorizeDeliveryDownload(
+        requirementId,
+        deliveryId,
+        selectedLicenseFile as File | undefined,
+      );
+      triggerDirectDownload(authorization.url);
     } catch (error) {
       const errorMessage = axios.isAxiosError(error)
         ? (error.response?.data as { message?: string } | undefined)?.message
@@ -252,11 +248,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                           icon={<DownloadOutlined />}
                           loading={downloadingId === item.id}
                           onClick={() =>
-                            handleDownload(
-                              item.id,
-                              item.fileName!,
-                              canUpload ? item.fileName! : buildCustomerFileName(item.title, item.isFinal, item.fileName),
-                            )
+                            handleDownload(item.id)
                           }
                         >
                           {canUpload ? '下载加密模型' : '下载加密模型'}

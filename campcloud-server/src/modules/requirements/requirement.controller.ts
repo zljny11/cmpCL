@@ -159,17 +159,13 @@ export class RequirementsController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
-    @Res() res: Response,
   ) {
-    const file = await this.requirementsService.downloadDeliveryFile(
+    return this.requirementsService.downloadDeliveryFile(
       BigInt(user.id),
       BigInt(id),
       BigInt(deliveryId),
       user.role,
     );
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"`);
-    res.sendFile(file.path);
   }
 
   @Post(':id/deliveries/:deliveryId/file')
@@ -182,18 +178,14 @@ export class RequirementsController {
     @Param('id', ParseIntPipe) id: number,
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
     @UploadedFile() licenseFile: Express.Multer.File | undefined,
-    @Res() res: Response,
   ) {
-    const file = await this.requirementsService.downloadDeliveryFile(
+    return this.requirementsService.downloadDeliveryFile(
       BigInt(user.id),
       BigInt(id),
       BigInt(deliveryId),
       user.role,
       licenseFile,
     );
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"`);
-    res.sendFile(file.path);
   }
 
   @Post(':id/deliveries/:deliveryId/license/verify')

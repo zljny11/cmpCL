@@ -12,6 +12,7 @@ import {
   DatasetBatchCommitResult,
   RequirementMessageItem,
   RequirementDeliveryItem,
+  RequirementDeliveryDownloadAuthorization,
   CreateRequirementPayload,
   DatasetBatchItem,
   RequirementDataTree,
@@ -90,6 +91,18 @@ export const requirementsApi = {
       success: boolean;
       message: string;
     }>;
+    return response.data;
+  },
+
+  async authorizeDeliveryDownload(requirementId: string, deliveryId: string, licenseFile?: File) {
+    const formData = new FormData();
+    if (licenseFile) {
+      formData.append('license', licenseFile);
+    }
+    const response = (await http.post(
+      `/requirements/${requirementId}/deliveries/${deliveryId}/file`,
+      formData,
+    )) as ApiResponse<RequirementDeliveryDownloadAuthorization>;
     return response.data;
   },
 

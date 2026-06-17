@@ -536,6 +536,14 @@ export class RequirementsService {
     return `models/${modelName}/${modelVersion}/${randomUUID()}${extension.toLowerCase()}`;
   }
 
+  private buildDeliveryModelObjectKey(requirementId: bigint, fileName: string) {
+    return `deliveries/${requirementId.toString()}/${fileName}`;
+  }
+
+  private buildDeliveryMetadataObjectKey(modelObjectKey: string) {
+    return `${modelObjectKey}.license.json`;
+  }
+
   private mapRequirementOssFile(record: {
     id: bigint;
     datasetBatchId: bigint | null;
@@ -625,6 +633,37 @@ export class RequirementsService {
       request.on('error', reject);
       request.write(body);
       request.end();
+    });
+  }
+
+  private async putFileToUrl(url: string, filePath: string, contentType: string) {
+    const fileStat = await stat(filePath);
+    return new Promise<void>((resolvePromise, reject) => {
+      const request = httpsRequest(
+        url,
+        {
+          method: 'PUT',
+          headers: {
+            'content-length': fileStat.size,
+            'content-type': contentType,
+          },
+        },
+        (response) => {
+          if (!response.statusCode || response.statusCode >= 400) {
+            reject(new Error(`OSS PUT 失败，状态码 ${response.statusCode ?? 'unknown'}`));
+            response.resume();
+            return;
+          }
+
+          response.on('data', () => undefined);
+          response.on('end', () => resolvePromise());
+        },
+      );
+
+      request.on('error', reject);
+      const reader = createReadStream(filePath);
+      reader.on('error', reject);
+      reader.pipe(request);
     });
   }
 
@@ -1848,6 +1887,16 @@ export class RequirementsService {
     return JSON.parse(raw) as EncryptedModelMetadata;
   }
 
+  private async readEncryptedModelMetadataFromOss(objectKey: string) {
+    const signed = this.buildOssSignedUrl(
+      'GET',
+      this.buildDeliveryMetadataObjectKey(objectKey),
+      this.ossDownloadUrlExpiresSeconds,
+    );
+    const raw = await this.fetchUrlBuffer(signed.url);
+    return JSON.parse(raw.toString('utf8')) as EncryptedModelMetadata;
+  }
+
   private async finalizeParsedDatasetBatch(
     batch: {
       id: bigint;
@@ -2454,7 +2503,7 @@ export class RequirementsService {
       throw new BadRequestException('仅支持上传 .pth 格式算法文件');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
         const requirement = await tx.requirement.findUnique({
           where: { id: requirementId },
           select: {
@@ -2484,8 +2533,25 @@ export class RequirementsService {
           file.path,
           configuredModelKey,
         );
+        const metadata = await this.readEncryptedModelMetadata(persistedFile.filePath);
+        await this.writeEncryptedModelMetadata(persistedFile.filePath, {
+          ...metadata,
+          authorizedUserId: requirement.userId.toString(),
+          authorizedUsername: requirement.user?.username ?? null,
+          authorizedHospitalName: requirement.user?.hospitalName ?? null,
+        });
+        const objectKey = this.buildDeliveryModelObjectKey(requirementId, persistedFile.fileName);
+        const signedUpload = this.buildOssSignedUrl('PUT', objectKey, this.ossUploadUrlExpiresSeconds, 'application/octet-stream');
+        const signedMetadataUpload = this.buildOssSignedUrl(
+          'PUT',
+          this.buildDeliveryMetadataObjectKey(objectKey),
+          this.ossUploadUrlExpiresSeconds,
+          'application/json',
+        );
 
         try {
+          await this.putFileToUrl(signedUpload.url, persistedFile.filePath, 'application/octet-stream');
+          await this.putFileToUrl(signedMetadataUpload.url, getEncryptedModelSidecarPath(persistedFile.filePath), 'application/json');
           const created = await tx.delivery.create({
             data: {
               requirementId,
@@ -2493,7 +2559,7 @@ export class RequirementsService {
               title,
               description,
               fileName: persistedFile.fileName,
-              fileUrl: persistedFile.filePath,
+              fileUrl: objectKey,
               isFinal,
             },
             include: {
@@ -2543,16 +2609,6 @@ export class RequirementsService {
             actionLabel: isFinal ? '最终交付' : '新增交付',
             summary: notificationContent,
           });
-
-          const metadata = await this.readEncryptedModelMetadata(persistedFile.filePath);
-          await this.writeEncryptedModelMetadata(persistedFile.filePath, {
-            ...metadata,
-            deliveryId: created.id.toString(),
-            authorizedUserId: requirement.userId.toString(),
-            authorizedUsername: requirement.user?.username ?? null,
-            authorizedHospitalName: requirement.user?.hospitalName ?? null,
-          });
-
           return {
             id: created.id.toString(),
             requirementTitle: requirement.title,
@@ -2568,11 +2624,20 @@ export class RequirementsService {
             },
           };
         } catch (error) {
+          const signedDelete = this.buildOssSignedUrl('DELETE', objectKey, this.ossDownloadUrlExpiresSeconds);
+          const signedMetadataDelete = this.buildOssSignedUrl(
+            'DELETE',
+            this.buildDeliveryMetadataObjectKey(objectKey),
+            this.ossDownloadUrlExpiresSeconds,
+          );
+          await this.deleteUrl(signedDelete.url).catch(() => undefined);
+          await this.deleteUrl(signedMetadataDelete.url).catch(() => undefined);
           await rm(persistedFile.filePath, { force: true });
           await rm(getEncryptedModelSidecarPath(persistedFile.filePath), { force: true });
           throw error;
         }
       });
+    return result;
   }
 
   async createMessage(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateMessageDto) {
@@ -2789,28 +2854,25 @@ export class RequirementsService {
       throw new NotFoundException('交付文件不存在');
     }
 
-    const safeFilePath = this.ensureSafeDeliveryPath(delivery.fileUrl);
-    try {
-      await stat(safeFilePath);
-    } catch {
-      throw new NotFoundException('交付文件不存在');
-    }
-
     if (role !== UserRole.admin) {
       if (!licenseFile?.path) {
         throw new ForbiddenException('请上传有效的 license 文件后再下载');
       }
       const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
-      const metadata = await this.readEncryptedModelMetadata(safeFilePath).catch(() => null);
+      const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
       if (!metadata) {
         throw new NotFoundException('加密模型元数据不存在');
       }
       await validateModelLicenseFile(licenseBuffer, userId, requirementId, deliveryId, metadata);
     }
 
+    const signed = this.buildOssSignedUrl('GET', delivery.fileUrl, this.ossDownloadUrlExpiresSeconds);
+
     return {
-      path: safeFilePath,
       fileName: delivery.fileName,
+      objectKey: delivery.fileUrl,
+      url: signed.url,
+      expiresAt: signed.expiresAt,
     };
   }
 
@@ -2848,8 +2910,7 @@ export class RequirementsService {
       throw new NotFoundException('交付文件不存在');
     }
 
-    const safeFilePath = this.ensureSafeDeliveryPath(delivery.fileUrl);
-    const metadata = await this.readEncryptedModelMetadata(safeFilePath).catch(() => null);
+    const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
     if (!metadata) {
       throw new NotFoundException('加密模型元数据不存在');
     }

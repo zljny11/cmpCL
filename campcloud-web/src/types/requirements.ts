@@ -413,6 +413,13 @@ export interface RequirementDeliveryItem {
   };
 }
 
+export interface RequirementDeliveryDownloadAuthorization {
+  fileName: string;
+  objectKey: string;
+  url: string;
+  expiresAt: string;
+}
+
 export interface CreateRequirementDeliveryPayload {
   title: string;
   description?: string;

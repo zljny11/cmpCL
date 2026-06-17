@@ -119,7 +119,7 @@ export async function validateModelLicenseFile(
     throw new ForbiddenException('license 与当前需求单不匹配');
   }
 
-  if (metadata.deliveryId !== expectedDeliveryId.toString()) {
+  if (metadata.deliveryId && metadata.deliveryId !== expectedDeliveryId.toString()) {
     throw new ForbiddenException('license 与当前交付文件不匹配');
   }
 
