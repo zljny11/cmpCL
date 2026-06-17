@@ -108,6 +108,7 @@ export function UserManagementPage() {
       hospitalName: values.hospitalName.trim(),
       role: values.role,
       status: values.status,
+      email: values.email?.trim() || undefined,
     };
 
     if (values.password?.trim()) {
@@ -254,6 +255,11 @@ export function UserManagementPage() {
               render: (_, record) => <Tag color={record.status === 'active' ? 'green' : 'red'}>{record.status}</Tag>,
             },
             {
+              title: '邮箱',
+              width: 220,
+              render: (_, record) => record.profile?.email || '-',
+            },
+            {
               title: '用户资料',
               width: 140,
               render: (_, record) => (
@@ -383,8 +389,13 @@ export function UserManagementPage() {
             <Form.Item label="真实姓名" name="realName">
               <Input readOnly />
             </Form.Item>
-            <Form.Item label="邮箱" name="email">
-              <Input readOnly />
+            <Form.Item
+              label="邮箱"
+              name="email"
+              rules={[{ type: 'email', message: '请输入正确的邮箱格式' }]}
+              extra="管理员通知邮件会发送到这个邮箱"
+            >
+              <Input placeholder="请输入邮箱地址" />
             </Form.Item>
             <Form.Item label="电话" name="phone">
               <Input readOnly />

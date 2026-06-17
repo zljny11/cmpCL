@@ -135,6 +135,26 @@ export class UserService {
         role: dto.role ?? UserRole.user,
         status: dto.status ?? UserStatus.active,
         hospitalName,
+        profile:
+          dto.realName ||
+          dto.email ||
+          dto.phone ||
+          dto.wechat ||
+          dto.department ||
+          dto.title ||
+          dto.remark
+            ? {
+                create: {
+                  realName: dto.realName?.trim() || null,
+                  email: dto.email?.trim().toLowerCase() || null,
+                  phone: dto.phone?.trim() || null,
+                  wechat: dto.wechat?.trim() || null,
+                  department: dto.department?.trim() || null,
+                  title: dto.title?.trim() || null,
+                  remark: dto.remark?.trim() || null,
+                },
+              }
+            : undefined,
       },
       include: {
         profile: true,
@@ -170,6 +190,37 @@ export class UserService {
         role: dto.role,
         status: dto.status,
         passwordHash: dto.password ? await hash(dto.password, 10) : undefined,
+        profile:
+          dto.realName !== undefined ||
+          dto.email !== undefined ||
+          dto.phone !== undefined ||
+          dto.wechat !== undefined ||
+          dto.department !== undefined ||
+          dto.title !== undefined ||
+          dto.remark !== undefined
+            ? {
+                upsert: {
+                  update: {
+                    realName: dto.realName?.trim() || null,
+                    email: dto.email?.trim().toLowerCase() || null,
+                    phone: dto.phone?.trim() || null,
+                    wechat: dto.wechat?.trim() || null,
+                    department: dto.department?.trim() || null,
+                    title: dto.title?.trim() || null,
+                    remark: dto.remark?.trim() || null,
+                  },
+                  create: {
+                    realName: dto.realName?.trim() || null,
+                    email: dto.email?.trim().toLowerCase() || null,
+                    phone: dto.phone?.trim() || null,
+                    wechat: dto.wechat?.trim() || null,
+                    department: dto.department?.trim() || null,
+                    title: dto.title?.trim() || null,
+                    remark: dto.remark?.trim() || null,
+                  },
+                },
+              }
+            : undefined,
       },
       include: {
         profile: true,
