@@ -17,6 +17,22 @@ DEPLOY_INTRANET.md  内网 Docker 部署说明
 DEPLOY_PUBLIC.md    公网入口、frp、Nginx、OSS 部署说明
 ```
 
+## 标准发布链路
+
+1. 本地开发并验证
+2. `git commit`
+3. `git push origin dev/server`
+4. 服务器进入正式目录 `/home/test/campcloud`
+5. `git pull origin dev/server`
+6. `docker compose --env-file .env.server -p campcloud up -d --build`
+
+```bash
+cd /home/test/campcloud
+git pull origin dev/server
+docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy
+docker compose --env-file .env.server -p campcloud up -d --build
+```
+
 ## 本地开发
 
 后端：
@@ -42,15 +58,6 @@ npm run dev
 docker compose up -d --build
 ```
 
-## 标准发布链路
-
-1. 本地开发并验证
-2. `git commit`
-3. `git push origin dev/server`
-4. 服务器进入正式目录 `/home/test/campcloud`
-5. `git pull origin dev/server`
-6. `docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy`
-7. `docker compose --env-file .env.server -p campcloud up -d --build`
 
 ## 服务器正式约定
 
@@ -98,7 +105,6 @@ docker compose --env-file .env.server -p campcloud logs -f campcloud-server
 重新构建并启动：
 
 ```bash
-docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy
 docker compose --env-file .env.server -p campcloud up -d --build
 ```
 
@@ -123,6 +129,11 @@ docker compose --env-file .env.server -p campcloud exec campcloud-server npm run
 3. 登录正常
 4. 管理侧日志页正常
 5. 如果本次涉及文件能力，上传和下载链路正常
+
+## 邮件信息
+
+- AICampCloud@radynhealth.com
+- radyn123_AICampCloud
 
 ## 文档索引
 
