@@ -49,7 +49,8 @@ docker compose up -d --build
 3. `git push origin dev/server`
 4. 服务器进入正式目录 `/home/test/campcloud`
 5. `git pull origin dev/server`
-6. `docker compose --env-file .env.server -p campcloud up -d --build`
+6. `docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy`
+7. `docker compose --env-file .env.server -p campcloud up -d --build`
 
 ## 服务器正式约定
 
@@ -97,6 +98,7 @@ docker compose --env-file .env.server -p campcloud logs -f campcloud-server
 重新构建并启动：
 
 ```bash
+docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy
 docker compose --env-file .env.server -p campcloud up -d --build
 ```
 

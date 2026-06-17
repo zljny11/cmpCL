@@ -16,6 +16,7 @@
 ```bash
 cd /home/test/campcloud
 git pull origin dev/server
+docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy
 docker compose --env-file .env.server -p campcloud up -d --build
 ```
 
@@ -87,6 +88,7 @@ docker compose --env-file .env.server -p campcloud exec campcloud-server npm run
 ```bash
 cd /home/test/campcloud
 git pull origin dev/server
+docker compose --env-file .env.server -p campcloud exec campcloud-server npx prisma migrate deploy
 docker compose --env-file .env.server -p campcloud up -d --build
 ```
 

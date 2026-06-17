@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { rm } from 'node:fs/promises';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthUser } from '../../types/auth-user';
@@ -28,7 +28,6 @@ export class PacsCompatController {
   @Post('getImgIdArr')
   async getImgIdArr(
     @CurrentUser() user: AuthUser,
-    @Req() req: Request,
     @Body() body: { seriesIds?: string[]; seriesUIDs?: string[] },
   ) {
     const fileGroups = await this.requirementsService.pacsGetImageIdGroups(
@@ -38,18 +37,11 @@ export class PacsCompatController {
       body.seriesUIDs ?? [],
     );
 
-    const host = req.get('host') ?? '';
-    const forwardedProto = req
-      .get('x-forwarded-proto')
-      ?.split(',')[0]
-      ?.trim();
-    const isLocalHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(host);
-    const protocol = forwardedProto || (isLocalHost ? req.protocol : 'https');
-    const origin = `${protocol}://${host}`;
     return fileGroups.map((group) =>
       group.map(
         (file) =>
-          `wadouri:${origin}/api/v1/pacs/files/${file.seriesId}/${encodeURIComponent(file.fileName)}`,
+          // Use a same-origin relative URL so viewer requests inherit the page protocol.
+          `wadouri:/api/v1/pacs/files/${file.seriesId}/${encodeURIComponent(file.fileName)}`,
       ),
     );
   }
