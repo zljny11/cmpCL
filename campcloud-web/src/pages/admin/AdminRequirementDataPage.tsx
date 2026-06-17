@@ -115,7 +115,7 @@ export function AdminRequirementDataPage() {
             </div>
           )}
         >
-          <Button>已选tag</Button>
+          <Button>已选 Tag</Button>
         </Dropdown>
         <Space size={[6, 6]} wrap>
           {selectedTagLabels.map((label) => (
@@ -125,6 +125,9 @@ export function AdminRequirementDataPage() {
           ))}
         </Space>
       </Space>
+
+      <RequirementExpandPanel requirementId={id} expanded readOnly visibleTags={visibleTags} />
+
       <Card title="原始 ZIP 批次">
         {batchQuery.isError ? <Alert type="error" showIcon message="批次列表加载失败" /> : null}
         {manualAnalysisBatches.length ? (
@@ -134,6 +137,7 @@ export function AdminRequirementDataPage() {
               <List.Item
                 actions={[
                   <Button
+                    key="download"
                     type="link"
                     onClick={async () => {
                       try {
@@ -167,7 +171,6 @@ export function AdminRequirementDataPage() {
           <Empty description="当前没有需要本地分析的超大 ZIP 批次" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         )}
       </Card>
-      <RequirementExpandPanel requirementId={id} expanded readOnly visibleTags={visibleTags} />
     </Space>
   );
 }

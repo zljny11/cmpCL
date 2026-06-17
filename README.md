@@ -24,7 +24,7 @@ DEPLOY_PUBLIC.md    公网入口、frp、Nginx、OSS 部署说明
 3. `git push origin dev/server`
 4. 服务器进入正式目录 `/home/test/campcloud`
 5. `git pull origin dev/server`
-6. `docker compose --env-file .env.server -p campcloud up -d --build`
+6. `docker compose --env-file .env.ddserver -p campcloud up -d --build`
 
 ```bash
 cd /home/test/campcloud
