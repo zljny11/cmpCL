@@ -48,6 +48,7 @@ import { useRequirementDataTree } from '../requirements/list/hooks';
 import { PatientLevel } from '../requirements/list/components/PatientLevel';
 
 const LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
+const MAX_SINGLE_DICOM_FILE_BYTES = 10 * 1024 * 1024 * 1024;
 
 const batchStatusColorMap: Record<DatasetBatchStatus, string> = {
   uploaded: 'blue',
@@ -337,6 +338,12 @@ export function UploadCenterPage() {
         ]
       : visibleFiles;
     const uniqueFiles = Array.from(new Map(nextFiles.map((file) => [buildFileKey(file), file])).values());
+    const oversizeFile = uniqueFiles.find((file) => file.size > MAX_SINGLE_DICOM_FILE_BYTES);
+    if (oversizeFile) {
+      setShowFileSelectionError(true);
+      message.warning(`单个 DICOM 文件不能超过 10GB：${oversizeFile.name}`);
+      return;
+    }
     const totalBytes = uniqueFiles.reduce((sum, file) => sum + file.size, 0);
 
     if (totalBytes > LARGE_ZIP_UPLOAD_THRESHOLD_BYTES) {

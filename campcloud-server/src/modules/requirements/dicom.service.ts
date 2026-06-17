@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Buffer } from 'node:buffer';
 import * as dicomParser from 'dicom-parser';
 
 export interface DicomMetadata {
@@ -32,55 +33,55 @@ export class DicomService {
 
     try {
       metadata.modality = this.getString(dataset, '0x00080060');
-    } catch (e) {
+    } catch {
       // 忽略单个字段的解析错误
     }
 
     try {
       metadata.bodyPart = this.getString(dataset, '0x00180015');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.seriesDescription = this.getString(dataset, '0x0008103e');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.sliceThickness = this.getString(dataset, '0x00180050');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.manufacturer = this.getString(dataset, '0x00080070');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.manufacturerModelName = this.getString(dataset, '0x00081090');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.institutionName = this.getString(dataset, '0x00080080');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.patientName = this.getString(dataset, '0x00100010');
-    } catch (e) {
+    } catch {
       //
     }
 
     try {
       metadata.studyDate = this.getString(dataset, '0x00080020');
-    } catch (e) {
+    } catch {
       //
     }
 

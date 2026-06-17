@@ -22,6 +22,10 @@ function formatFileSize(size: number) {
   return `${Math.max(size / 1024 / 1024, 0.01).toFixed(2)} MB`;
 }
 
+function formatEstimatedOssCost(size: number) {
+  return ((size / 1024 / 1024 / 1024) * 0.5).toFixed(2);
+}
+
 export function AdminRequirementDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -153,7 +157,9 @@ export function AdminRequirementDetailPage() {
                         title: '拉取需求详情数据',
                         content: `该操作会将当前待处理的 DICOM 从 OSS 拉取到内网服务器。预计最多产生约 ${formatFileSize(
                           pendingBytes,
-                        )} 的 OSS 出站流量。拉取完成后，后续解析、查看和下载将仅使用本地数据。`,
+                        )} 的 OSS 出站流量，约花费 ￥${formatEstimatedOssCost(
+                          pendingBytes,
+                        )}（按 0.5 元/GB 估算）。拉取完成后，后续解析、查看和下载将仅使用本地数据。`,
                         okText: '确认拉取',
                         cancelText: '取消',
                         onOk: () => pullDetailDataMutation.mutateAsync(),

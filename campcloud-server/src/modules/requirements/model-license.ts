@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import { Buffer } from 'node:buffer';
 import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 

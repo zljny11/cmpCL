@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementOssFileKind, RequirementOssFileStatus, RequirementStatus, UserRole } from '@prisma/client';
+import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import { createCipheriv, createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
@@ -108,6 +109,7 @@ type RequirementOssFileSummary = {
 @Injectable()
 export class RequirementsService {
   private static readonly LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
+  private static readonly MAX_SINGLE_DICOM_FILE_BYTES = 10 * 1024 * 1024 * 1024;
   private static readonly DEFAULT_UPLOAD_SESSION_FILE_MAX_BYTES = 20 * 1024 * 1024 * 1024;
   private static readonly DEFAULT_UPLOAD_SESSION_QUOTA_BYTES = 20 * 1024 * 1024 * 1024;
   private static readonly DEFAULT_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -1066,8 +1068,6 @@ export class RequirementsService {
     const compactStudyDateTime = this.formatCompactStudyDateTime(
       this.parseDicomDateTime(dataSet.string('x00080020'), dataSet.string('x00080030')),
     );
-    const windowCenter = this.readDicomValue(dataSet, 'x00281050');
-    const windowWidth = this.readDicomValue(dataSet, 'x00281051');
     const repetitionTime = this.readDicomValue(dataSet, 'x00180080');
     const echoTime = this.readDicomValue(dataSet, 'x00180081');
     const privateAcquisitionTime = this.readDicomValue(dataSet, 'x0051100a');
@@ -1236,7 +1236,7 @@ export class RequirementsService {
       await rename(sourcePath, targetPath);
       return;
     } catch (error) {
-      const maybeNodeError = error as NodeJS.ErrnoException;
+      const maybeNodeError = error as { code?: string };
       if (maybeNodeError?.code !== 'EXDEV') {
         throw error;
       }
@@ -1511,6 +1511,9 @@ export class RequirementsService {
     dto: CreateRequirementOssFileDto,
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
+    if (dto.kind === RequirementOssFileKindDto.dicom && dto.fileSize > RequirementsService.MAX_SINGLE_DICOM_FILE_BYTES) {
+      throw new BadRequestException('单个 DICOM 文件不能超过 10GB');
+    }
     const { bucket } = this.ensureOssConfigured();
     const objectKey = this.buildRequirementOssObjectKey(requirementId, dto);
     const normalizedMimeType = this.normalizeText(dto.mimeType) ?? 'application/octet-stream';
@@ -3935,242 +3938,8 @@ export class RequirementsService {
     role: UserRole,
     dto: CreateDatasetBatchFromOssFilesDto,
   ) {
-    await this.ensureRequirementAccess(userId, requirementId, role);
-
-    const fileIds = Array.from(new Set(dto.fileIds.map((item) => item.trim()).filter(Boolean)));
-    if (fileIds.length === 0) {
-      throw new BadRequestException('请先上传至少一个 OSS 文件');
-    }
-    if (!dto.modality?.trim()) {
-      throw new BadRequestException('请选择影像模态');
-    }
-    if (!dto.bodyPart?.trim()) {
-      throw new BadRequestException('请选择检查部位');
-    }
-
-    const files = await this.prisma.requirementOssFile.findMany({
-      where: {
-        id: { in: fileIds.map((item) => BigInt(item)) },
-        requirementId,
-        kind: RequirementOssFileKind.dicom,
-        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
-      },
-      orderBy: { id: 'asc' },
-    });
-
-    if (files.length !== fileIds.length) {
-      throw new BadRequestException('存在无效的 OSS 文件记录');
-    }
-    if (
-      files.some(
-        (file) =>
-          file.status !== RequirementOssFileStatus.uploaded &&
-          file.status !== RequirementOssFileStatus.parsing &&
-          file.status !== RequirementOssFileStatus.parsed,
-      )
-    ) {
-      throw new BadRequestException('存在尚未上传完成的 OSS 文件，请稍后重试');
-    }
-
-    const uploadSummary = this.summarizeRequirementOssFiles(files);
-    if (uploadSummary.totalBytes > RequirementsService.LARGE_ZIP_UPLOAD_THRESHOLD_BYTES && !uploadSummary.requiresManualAnalysis) {
-      throw new BadRequestException('超过10GB的数据仅支持上传单个 ZIP 压缩包，且系统不会自动解析');
-    }
-    if (files.some((file) => this.isZipFileName(file.originalFileName)) && !uploadSummary.requiresManualAnalysis) {
-      throw new BadRequestException('ZIP 上传仅支持超过10GB的单个压缩包，请直接上传文件夹');
-    }
-
-    const trimmedSourceName = dto.sourceName?.trim() || null;
-    const trimmedRemark = dto.remark?.trim() || null;
-    const trimmedModality = dto.modality?.trim() || null;
-    const trimmedBodyPart = dto.bodyPart?.trim() || null;
-    const retryBatchId = dto.retryBatchId ? BigInt(dto.retryBatchId) : null;
-
-    const batch = await this.prisma.$transaction(async (tx) => {
-      let createdOrUpdated:
-        | {
-            id: bigint;
-            batchNo: number;
-            status: DatasetBatchStatus;
-            fileCount: number;
-            uploadedAt: Date;
-          }
-        | null = null;
-
-      if (retryBatchId) {
-        const existingBatch = await tx.datasetBatch.findFirst({
-          where: {
-            id: retryBatchId,
-            requirementId,
-          },
-          select: {
-            id: true,
-            batchNo: true,
-          },
-        });
-
-        if (!existingBatch) {
-          throw new NotFoundException('重传批次不存在');
-        }
-
-        createdOrUpdated = await tx.datasetBatch.update({
-          where: { id: existingBatch.id },
-          data: {
-            uploadedBy: userId,
-            sourceName: trimmedSourceName,
-            remark: trimmedRemark,
-            modality: trimmedModality,
-            bodyPart: trimmedBodyPart,
-            diagnosis: dto.diagnosis && dto.diagnosis.length > 0 ? dto.diagnosis : undefined,
-            clinicalTags: dto.clinicalTags && dto.clinicalTags.length > 0 ? dto.clinicalTags : undefined,
-            annotationStatus: dto.annotationStatus?.trim() || null,
-            status: 'uploaded',
-            fileCount: { increment: files.length },
-            uploadedAt: new Date(),
-          },
-          select: {
-            id: true,
-            batchNo: true,
-            status: true,
-            fileCount: true,
-            uploadedAt: true,
-          },
-        });
-      } else {
-        const lastBatch = await tx.datasetBatch.findFirst({
-          where: { requirementId },
-          orderBy: { batchNo: 'desc' },
-          select: { batchNo: true },
-        });
-
-        createdOrUpdated = await tx.datasetBatch.create({
-          data: {
-            requirementId,
-            uploadedBy: userId,
-            batchNo: (lastBatch?.batchNo ?? 0) + 1,
-            uploadType: lastBatch ? DatasetUploadType.supplement : DatasetUploadType.initial,
-            sourceName: trimmedSourceName,
-            remark: trimmedRemark,
-            modality: trimmedModality,
-            bodyPart: trimmedBodyPart,
-            diagnosis: dto.diagnosis && dto.diagnosis.length > 0 ? dto.diagnosis : undefined,
-            clinicalTags: dto.clinicalTags && dto.clinicalTags.length > 0 ? dto.clinicalTags : undefined,
-            annotationStatus: dto.annotationStatus?.trim() || null,
-            fileCount: files.length,
-          },
-          select: {
-            id: true,
-            batchNo: true,
-            status: true,
-            fileCount: true,
-            uploadedAt: true,
-          },
-        });
-      }
-
-      if (role === UserRole.user) {
-        const requirement = await tx.requirement.findUnique({
-          where: { id: requirementId },
-          select: { title: true, status: true },
-        });
-
-        if (requirement?.status === RequirementStatus.waiting_user) {
-          await tx.requirement.update({
-            where: { id: requirementId },
-            data: { status: RequirementStatus.processing },
-          });
-          await tx.requirementStatusLog.create({
-            data: {
-              requirementId,
-              fromStatus: RequirementStatus.waiting_user,
-              toStatus: RequirementStatus.processing,
-              changedBy: userId,
-              changedRole: role,
-              reason: '用户已补充上传数据，需求继续处理中',
-            },
-          });
-        }
-
-        const admins = await tx.user.findMany({
-          where: { role: UserRole.admin },
-          select: { id: true },
-        });
-        await this.createNotifications(
-          tx,
-          admins.map((item) => item.id),
-          requirementId,
-          'data_upload',
-          '收到新的用户数据上传，请在管理侧查看',
-          `需求「${requirement?.title || requirementId.toString()}」有${retryBatchId ? '批次重传' : '新的数据上传'}，请及时处理。`,
-        );
-      }
-
-      return createdOrUpdated;
-    });
-
-    let stagedFiles: StagedUploadFile[];
-    try {
-      stagedFiles = await this.buildStagedFilesFromRequirementOssFiles(
-        files.map((file) => ({
-          objectKey: file.objectKey,
-          originalFileName: file.originalFileName,
-        })),
-      );
-    } catch (error) {
-      await this.prisma.datasetBatch.update({
-        where: { id: batch.id },
-        data: {
-          status: 'failed',
-          remark: trimmedRemark ? `${trimmedRemark}；OSS 文件拉取失败` : 'OSS 文件拉取失败',
-        },
-      });
-      throw error;
-    }
-
-    if (uploadSummary.requiresManualAnalysis) {
-      void this.persistManualAnalysisBatchFiles(
-        batch,
-        requirementId,
-        trimmedRemark,
-        stagedFiles.map((file) => ({
-          relativePath: file.originalname,
-          storagePath: file.path,
-        })),
-      ).catch(async () => {
-        await this.prisma.datasetBatch.update({
-          where: { id: batch.id },
-          data: {
-            status: 'failed',
-            remark: trimmedRemark ? `${trimmedRemark}；超过10GB ZIP 保存失败` : '超过10GB ZIP 保存失败',
-          },
-        });
-      });
-    } else {
-      void this.processDatasetBatchFromStagedFiles(batch, requirementId, trimmedRemark, stagedFiles).catch(async () => {
-        await this.prisma.datasetBatch.update({
-          where: { id: batch.id },
-          data: {
-            status: 'failed',
-            remark: trimmedRemark ? `${trimmedRemark}；后台解析失败` : '后台解析失败',
-          },
-        });
-      });
-    }
-
-    return {
-      datasetBatchId: batch.id.toString(),
-      requirementTitle:
-        role === UserRole.user
-          ? (await this.prisma.requirement.findUnique({
-              where: { id: requirementId },
-              select: { title: true },
-            }))?.title ?? null
-          : null,
-      batchNo: batch.batchNo,
-      requiresManualAnalysis: uploadSummary.requiresManualAnalysis,
-    };
+    return this.prepareDatasetBatchFromOssFiles(userId, requirementId, role, dto);
   }
-
   async prepareDatasetBatchFromOssFiles(
     userId: bigint,
     requirementId: bigint,

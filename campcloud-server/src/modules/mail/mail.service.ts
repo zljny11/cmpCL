@@ -20,7 +20,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
   private readonly batchSize: number;
   private readonly maxRetryCount: number;
   private transporter: Transporter | null = null;
-  private timer: NodeJS.Timeout | null = null;
+  private timer: ReturnType<typeof globalThis.setInterval> | null = null;
   private isProcessing = false;
 
   constructor(
@@ -43,7 +43,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.timer = setInterval(() => {
+    this.timer = globalThis.setInterval(() => {
       void this.processPendingJobs();
     }, this.pollIntervalMs);
 
@@ -52,7 +52,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     if (this.timer) {
-      clearInterval(this.timer);
+      globalThis.clearInterval(this.timer);
       this.timer = null;
     }
   }
