@@ -220,6 +220,8 @@ model RequirementOssFile {
   modelVersion    String?                  @map("model_version") @db.VarChar(64)
   parsedObjectKey String?                  @map("parsed_object_key") @db.VarChar(500)
   parsedPayload   Json?                    @map("parsed_payload")
+  pullRetryCount  Int                      @default(0) @map("pull_retry_count")
+  lastPullAttemptAt DateTime?              @map("last_pull_attempt_at")
   uploadCompletedAt DateTime?              @map("upload_completed_at")
   pulledToLocalAt DateTime?                @map("pulled_to_local_at")
   parsedAt        DateTime?                @map("parsed_at")

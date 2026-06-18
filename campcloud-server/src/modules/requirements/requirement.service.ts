@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DatasetBatchStatus, DatasetUploadType, Prisma, RequirementOssFileKind, RequirementOssFileStatus, RequirementStatus, UserRole } from '@prisma/client';
 import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
@@ -107,17 +107,25 @@ type RequirementOssFileSummary = {
 };
 
 @Injectable()
-export class RequirementsService {
+export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   private static readonly LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
   private static readonly MAX_SINGLE_DICOM_FILE_BYTES = 10 * 1024 * 1024 * 1024;
   private static readonly DEFAULT_UPLOAD_SESSION_FILE_MAX_BYTES = 20 * 1024 * 1024 * 1024;
   private static readonly DEFAULT_UPLOAD_SESSION_QUOTA_BYTES = 20 * 1024 * 1024 * 1024;
   private static readonly DEFAULT_UPLOAD_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
+  private static readonly DEFAULT_OSS_PENDING_UPLOAD_RETENTION_MS = 24 * 60 * 60 * 1000;
+  private static readonly DEFAULT_OSS_UNBOUND_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+  private static readonly DEFAULT_OSS_FAILED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
+  private static readonly DEFAULT_OSS_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+  private static readonly DEFAULT_OSS_PULL_MAX_RETRIES = 3;
+  private static readonly DEFAULT_OSS_PULL_RETRY_DELAY_MS = 30 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
   ) {}
+
+  private readonly logger = new Logger(RequirementsService.name);
 
   private readonly uploadRoots = [
     resolve(process.cwd(), 'storage', 'uploads'),
@@ -148,6 +156,30 @@ export class RequirementsService {
     'UPLOAD_SESSION_RETENTION_MS',
     RequirementsService.DEFAULT_UPLOAD_SESSION_RETENTION_MS,
   );
+  private readonly ossPendingUploadRetentionMs = this.getPositiveNumberConfig(
+    'OSS_PENDING_UPLOAD_RETENTION_MS',
+    RequirementsService.DEFAULT_OSS_PENDING_UPLOAD_RETENTION_MS,
+  );
+  private readonly ossUnboundFileRetentionMs = this.getPositiveNumberConfig(
+    'OSS_UNBOUND_FILE_RETENTION_MS',
+    RequirementsService.DEFAULT_OSS_UNBOUND_FILE_RETENTION_MS,
+  );
+  private readonly ossFailedFileRetentionMs = this.getPositiveNumberConfig(
+    'OSS_FAILED_FILE_RETENTION_MS',
+    RequirementsService.DEFAULT_OSS_FAILED_FILE_RETENTION_MS,
+  );
+  private readonly ossCleanupIntervalMs = this.getPositiveNumberConfig(
+    'OSS_CLEANUP_INTERVAL_MS',
+    RequirementsService.DEFAULT_OSS_CLEANUP_INTERVAL_MS,
+  );
+  private readonly ossPullMaxRetries = this.getPositiveIntConfig(
+    'OSS_PULL_MAX_RETRIES',
+    RequirementsService.DEFAULT_OSS_PULL_MAX_RETRIES,
+  );
+  private readonly ossPullRetryDelayMs = this.getPositiveNumberConfig(
+    'OSS_PULL_RETRY_DELAY_MS',
+    RequirementsService.DEFAULT_OSS_PULL_RETRY_DELAY_MS,
+  );
 
   private readonly ossBucket = this.normalizeText(process.env.OSS_BUCKET);
   private readonly ossEndpoint = this.normalizeText(process.env.OSS_ENDPOINT);
@@ -165,6 +197,19 @@ export class RequirementsService {
   private readonly pacsDownloadMaxSeries = this.getPositiveIntConfig('PACS_DOWNLOAD_MAX_SERIES', 25);
   private readonly pacsDownloadMaxFiles = this.getPositiveIntConfig('PACS_DOWNLOAD_MAX_FILES', 4000);
   private lastUploadSessionCleanupAt = 0;
+  private ossCleanupTimer: NodeJS.Timeout | null = null;
+  private ossCleanupRunning = false;
+
+  onModuleInit() {
+    this.startRequirementOssCleanupLoop();
+  }
+
+  onModuleDestroy() {
+    if (this.ossCleanupTimer) {
+      clearInterval(this.ossCleanupTimer);
+      this.ossCleanupTimer = null;
+    }
+  }
 
   private getPositiveIntConfig(name: string, fallback: number) {
     const raw = Number(process.env[name]);
@@ -174,6 +219,23 @@ export class RequirementsService {
   private getPositiveNumberConfig(name: string, fallback: number) {
     const raw = Number(process.env[name]);
     return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  }
+
+  private startRequirementOssCleanupLoop() {
+    if (this.ossCleanupTimer) {
+      return;
+    }
+
+    this.ossCleanupTimer = setInterval(() => {
+      void this.cleanupExpiredRequirementOssFiles();
+    }, this.ossCleanupIntervalMs);
+    this.ossCleanupTimer.unref?.();
+
+    void this.cleanupExpiredRequirementOssFiles();
+  }
+
+  private async sleep(ms: number) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
   }
 
   private async mapWithConcurrency<T, R>(
@@ -1346,6 +1408,75 @@ export class RequirementsService {
     });
   }
 
+  private async cleanupExpiredRequirementOssFiles() {
+    if (this.ossCleanupRunning) {
+      return;
+    }
+    if (!this.ossBucket || !this.ossEndpoint || !this.ossAccessKeyId || !this.ossAccessKeySecret) {
+      return;
+    }
+
+    this.ossCleanupRunning = true;
+    try {
+      const now = Date.now();
+      const pendingUploadBefore = new Date(now - this.ossPendingUploadRetentionMs);
+      const unboundFileBefore = new Date(now - this.ossUnboundFileRetentionMs);
+      const failedFileBefore = new Date(now - this.ossFailedFileRetentionMs);
+
+      const staleFiles = await this.prisma.requirementOssFile.findMany({
+        where: {
+          ossDeletedAt: null,
+          OR: [
+            {
+              datasetBatchId: null,
+              status: RequirementOssFileStatus.pending_upload,
+              createdAt: { lt: pendingUploadBefore },
+            },
+            {
+              datasetBatchId: null,
+              status: { in: [RequirementOssFileStatus.uploaded, RequirementOssFileStatus.failed] },
+              updatedAt: { lt: unboundFileBefore },
+            },
+            {
+              datasetBatchId: { not: null },
+              status: RequirementOssFileStatus.failed,
+              updatedAt: { lt: failedFileBefore },
+            },
+          ],
+        },
+        select: {
+          id: true,
+          objectKey: true,
+          status: true,
+          datasetBatchId: true,
+        },
+        take: 200,
+      });
+
+      if (staleFiles.length === 0) {
+        return;
+      }
+
+      await this.mapWithConcurrency(staleFiles, 3, async (file) => {
+        await this.reclaimRequirementOssFile(
+          file.id,
+          file.objectKey,
+          file.status === RequirementOssFileStatus.pending_upload
+            ? 'OSS 上传票据已过期，原始文件已自动回收'
+            : file.datasetBatchId
+              ? 'OSS 拉取失败超过保留阈值，原始文件已自动回收'
+              : 'OSS 原始文件长时间未提交，已自动回收',
+        );
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Requirement OSS cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.ossCleanupRunning = false;
+    }
+  }
+
   private async ensureUploadSessionQuota(userId: bigint, requirementId: bigint, nextFileSize: number) {
     if (nextFileSize > this.uploadSessionFileMaxBytes) {
       throw new BadRequestException(`单个上传文件不能超过 ${Math.floor(this.uploadSessionFileMaxBytes / 1024 / 1024)} MB`);
@@ -1638,6 +1769,8 @@ export class RequirementsService {
       data: {
         status: nextStatus,
         etag: this.normalizeText(dto.etag),
+        pullRetryCount: 0,
+        lastPullAttemptAt: null,
         uploadCompletedAt: new Date(),
         pulledToLocalAt: null,
         parsedAt: file.kind === RequirementOssFileKind.dicom ? null : new Date(),
@@ -1743,6 +1876,52 @@ export class RequirementsService {
           },
         });
       }
+    });
+  }
+
+  private async reclaimRequirementOssFile(
+    fileId: bigint,
+    objectKey: string,
+    errorMessage: string,
+  ) {
+    await this.prisma.requirementOssFile.update({
+      where: { id: fileId },
+      data: {
+        status: RequirementOssFileStatus.failed,
+        errorMessage,
+        ossDeleteError: null,
+      },
+    });
+
+    try {
+      await this.deleteRequirementOssObject(objectKey);
+      await this.prisma.requirementOssFile.update({
+        where: { id: fileId },
+        data: {
+          ossDeletedAt: new Date(),
+          ossDeleteError: null,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message.slice(0, 255) : '删除 OSS 原始文件失败';
+      await this.prisma.requirementOssFile.update({
+        where: { id: fileId },
+        data: {
+          ossDeleteError: message,
+        },
+      });
+    }
+  }
+
+  private async reclaimRequirementOssFiles(
+    files: Array<{
+      id: bigint;
+      objectKey: string;
+    }>,
+    errorMessage: string,
+  ) {
+    await this.mapWithConcurrency(files, 3, async (file) => {
+      await this.reclaimRequirementOssFile(file.id, file.objectKey, errorMessage);
     });
   }
 
@@ -4146,6 +4325,8 @@ export class RequirementsService {
             parsedObjectKey: null,
             parsedPayload: Prisma.JsonNull,
             parsedAt: null,
+            pullRetryCount: 0,
+            lastPullAttemptAt: null,
             errorMessage: null,
           },
         });
@@ -4187,6 +4368,8 @@ export class RequirementsService {
             parsedObjectKey: null,
             parsedPayload: Prisma.JsonNull,
             parsedAt: null,
+            pullRetryCount: 0,
+            lastPullAttemptAt: null,
             errorMessage: null,
           },
         });
@@ -4254,6 +4437,117 @@ export class RequirementsService {
     };
   }
 
+  private async processRequirementOssPullBatch(
+    batch: {
+      id: bigint;
+      batchNo: number;
+      uploadedAt: Date;
+      remark: string | null;
+      ossFiles: Array<{
+        id: bigint;
+        objectKey: string;
+        originalFileName: string;
+      }>;
+    },
+    requirementId: bigint,
+  ) {
+    const filesForCleanup = batch.ossFiles.map((file) => ({
+      id: file.id,
+      objectKey: file.objectKey,
+    }));
+    const uploadSummary = this.summarizeRequirementOssFiles(batch.ossFiles);
+    const trimmedRemark = batch.remark?.trim() || null;
+    const fileIds = batch.ossFiles.map((file) => file.id);
+    const maxAttempts = Math.max(1, this.ossPullMaxRetries);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const attemptAt = new Date();
+      await this.prisma.requirementOssFile.updateMany({
+        where: { id: { in: fileIds } },
+        data: {
+          status: RequirementOssFileStatus.parsing,
+          pullRetryCount: attempt,
+          lastPullAttemptAt: attemptAt,
+          errorMessage: null,
+        },
+      });
+
+      try {
+        const stagedFiles = await this.buildStagedFilesFromRequirementOssFiles(
+          batch.ossFiles.map((file) => ({
+            objectKey: file.objectKey,
+            originalFileName: file.originalFileName,
+          })),
+        );
+
+        if (uploadSummary.requiresManualAnalysis) {
+          await this.persistManualAnalysisBatchFiles(
+            {
+              id: batch.id,
+              batchNo: batch.batchNo,
+            },
+            requirementId,
+            trimmedRemark,
+            stagedFiles.map((file) => ({
+              relativePath: file.originalname,
+              storagePath: file.path,
+            })),
+          );
+        } else {
+          await this.processDatasetBatchFromStagedFiles(
+            {
+              id: batch.id,
+              batchNo: batch.batchNo,
+              uploadedAt: batch.uploadedAt,
+            },
+            requirementId,
+            trimmedRemark,
+            stagedFiles,
+          );
+        }
+
+        await this.prisma.requirementOssFile.updateMany({
+          where: { id: { in: fileIds } },
+          data: {
+            status: RequirementOssFileStatus.parsed,
+            errorMessage: null,
+          },
+        });
+        await this.cleanupRequirementOssFiles(filesForCleanup);
+        return;
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : 'OSS 文件拉取失败';
+        const message = rawMessage.slice(0, 255);
+        const hasRetry = attempt < maxAttempts;
+
+        if (hasRetry) {
+          await this.prisma.requirementOssFile.updateMany({
+            where: { id: { in: fileIds } },
+            data: {
+              status: RequirementOssFileStatus.uploaded,
+              errorMessage: `OSS 文件拉取失败，第 ${attempt + 1} 次重试前等待中：${message}`.slice(0, 255),
+            },
+          });
+          await this.sleep(this.ossPullRetryDelayMs * attempt);
+          continue;
+        }
+
+        await this.reclaimRequirementOssFiles(
+          filesForCleanup,
+          `OSS 文件拉取失败，已达最大重试次数并自动回收：${message}`.slice(0, 255),
+        );
+        await this.prisma.datasetBatch.update({
+          where: { id: batch.id },
+          data: {
+            status: 'failed',
+            remark: trimmedRemark ? `${trimmedRemark}；OSS 文件拉取失败并已自动回收` : 'OSS 文件拉取失败并已自动回收',
+          },
+        });
+        return;
+      }
+    }
+  }
+
   async pullRequirementDetailData(userId: bigint, requirementId: bigint, role: UserRole) {
     if (role !== UserRole.admin) {
       throw new ForbiddenException('仅管理员可以拉取需求详情数据');
@@ -4306,6 +4600,21 @@ export class RequirementsService {
       }
 
       startedBatchIds.push(batch.id.toString());
+      void this.processRequirementOssPullBatch(
+        {
+          id: batch.id,
+          batchNo: batch.batchNo,
+          uploadedAt: batch.uploadedAt,
+          remark: batch.remark,
+          ossFiles: batch.ossFiles.map((file) => ({
+            id: file.id,
+            objectKey: file.objectKey,
+            originalFileName: file.originalFileName,
+          })),
+        },
+        requirementId,
+      );
+      continue;
       const uploadSummary = this.summarizeRequirementOssFiles(batch.ossFiles);
       const trimmedRemark = batch.remark?.trim() || null;
 
