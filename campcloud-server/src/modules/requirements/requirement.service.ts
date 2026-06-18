@@ -1784,37 +1784,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async authorizeRequirementOssFileDownload(userId: bigint, requirementId: bigint, fileId: bigint, role: UserRole) {
-    if (role !== UserRole.admin) {
-      throw new ForbiddenException('仅管理员可以下载 OSS 原始文件');
-    }
     await this.ensureRequirementAccess(userId, requirementId, role);
-    const file = await this.prisma.requirementOssFile.findFirst({
-      where: {
-        id: fileId,
-        requirementId,
-        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
-      },
-    });
-    if (!file) {
-      throw new NotFoundException('OSS 文件记录不存在');
-    }
-    if (file.status !== RequirementOssFileStatus.uploaded && file.status !== RequirementOssFileStatus.parsed) {
-      throw new BadRequestException('当前文件还不能下载');
-    }
-
-    if (file.ossDeletedAt) {
-      throw new BadRequestException('OSS 原始文件已回收，无法再次下载');
-    }
-
-    const signed = this.buildOssSignedUrl('GET', file.objectKey, this.ossDownloadUrlExpiresSeconds);
-
-    return {
-      fileId: file.id.toString(),
-      fileName: file.originalFileName,
-      objectKey: file.objectKey,
-      url: signed.url,
-      expiresAt: signed.expiresAt,
-    };
+    throw new ForbiddenException('已禁止直接下载 OSS 原始文件，请使用“拉取详情数据”作为唯一 OSS 出站路径');
   }
 
   private async buildStagedFilesFromRequirementOssFiles(
@@ -4600,6 +4571,16 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       }
 
       startedBatchIds.push(batch.id.toString());
+      await this.prisma.requirementOssFile.updateMany({
+        where: {
+          id: { in: batch.ossFiles.map((file) => file.id) },
+        },
+        data: {
+          status: RequirementOssFileStatus.parsing,
+          lastPullAttemptAt: new Date(),
+          errorMessage: null,
+        },
+      });
       void this.processRequirementOssPullBatch(
         {
           id: batch.id,

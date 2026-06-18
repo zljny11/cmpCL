@@ -41,7 +41,7 @@ import type { FailedDatasetBatchFileItem, RequirementListItem } from '../../type
 import { requirementsApi } from '../../services/api/requirements';
 import { queryClient } from '../../services/query-client';
 import { DatasetBatchItem, DatasetBatchStatus, DatasetUploadType, RequirementOssFileItem } from '../../types/requirements';
-import { downloadViaBrowser, triggerDirectDownload } from '../../utils/browser-download';
+import { downloadViaBrowser } from '../../utils/browser-download';
 import { isProfileComplete } from '../../utils/profileCompletion';
 import { findAndParseDicomInFiles } from '../../utils/dicom-parser';
 import { useRequirementDataTree } from '../requirements/list/hooks';
@@ -1297,6 +1297,13 @@ export function UploadCenterPage() {
           extra={<Button onClick={() => void refetchOssFiles()}>刷新</Button>}
         >
         {isOssFilesError ? <Alert type="error" showIcon message="OSS 文件列表加载失败" style={{ marginBottom: 16 }} /> : null}
+        <Alert
+          type="info"
+          showIcon
+          message="已禁止管理侧直接下载 OSS 原始文件"
+          description="为避免重复产生 OSS 出站费用，请使用“拉取详情数据”作为唯一 OSS 出站路径。"
+          style={{ marginBottom: 16 }}
+        />
         <Table<RequirementOssFileItem>
           rowKey="id"
           loading={isOssFilesLoading}
@@ -1351,11 +1358,10 @@ export function UploadCenterPage() {
               render: (_: unknown, record: RequirementOssFileItem) => (
                 <Button
                   type="link"
-                  disabled={record.ossDeletedAt !== null || (record.status !== 'uploaded' && record.status !== 'parsed')}
+                  disabled
                   onClick={async () => {
                     try {
-                      const authorization = await requirementsApi.authorizeRequirementOssFileDownload(requirementId, record.id);
-                      triggerDirectDownload(authorization.url);
+                      throw new Error('已禁止管理侧直接下载 OSS 原始文件，请使用“拉取详情数据”');
                     } catch (error) {
                       const errorMessage = axios.isAxiosError(error)
                         ? (error.response?.data as { message?: string } | undefined)?.message
