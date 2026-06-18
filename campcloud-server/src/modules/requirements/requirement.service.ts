@@ -4418,6 +4418,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         id: bigint;
         objectKey: string;
         originalFileName: string;
+        fileSize: bigint;
       }>;
     },
     requirementId: bigint,
@@ -4591,6 +4592,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             id: file.id,
             objectKey: file.objectKey,
             originalFileName: file.originalFileName,
+            fileSize: file.fileSize,
           })),
         },
         requirementId,
