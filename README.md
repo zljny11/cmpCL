@@ -139,3 +139,34 @@ docker compose --env-file .env.server -p campcloud exec campcloud-server npm run
 
 - [DEPLOY_INTRANET.md](DEPLOY_INTRANET.md): 内网或单机 Docker 部署
 - [DEPLOY_PUBLIC.md](DEPLOY_PUBLIC.md): 公网入口、frp、Nginx、OSS 方案
+## 加密模型解密说明
+
+算法交付给用户的文件是加密后的 `.model`，不能直接用 `torch.load` 打开。
+
+用户侧使用方式：
+
+1. 准备三个文件：`delivery.model`、`license.txt`、`model_loader.py`
+2. 将三个文件放在同一个目录
+3. 安装依赖：
+
+```bash
+pip install torch cryptography
+```
+
+4. 使用示例：
+
+```python
+from model_loader import load_encrypted_checkpoint
+
+checkpoint = load_encrypted_checkpoint(
+    model_path="delivery.model",
+    license_path="license.txt",
+)
+print(checkpoint.keys())
+```
+
+补充说明：
+
+- `model_loader.py` 是唯一维护版本，位于 [license/model_loader.py](license/model_loader.py)
+- 若未安装 `cryptography`，loader 会回退使用系统里的 `openssl`
+- 如果提示 `decrypt failed`，通常表示 `.model` 与 `license.txt` 不是同一次交付的配套文件

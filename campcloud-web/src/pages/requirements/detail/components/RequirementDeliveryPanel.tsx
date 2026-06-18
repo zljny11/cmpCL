@@ -5,6 +5,7 @@ import type { UploadFile } from 'antd/es/upload/interface';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
 import { triggerDirectDownload } from '../../../../utils/browser-download';
@@ -195,6 +196,11 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 使用方式：将 `.model`、`license.txt` 与 `model_loader.py` 放在同一运行环境中，通过
                 `load_encrypted_checkpoint(model_path, license_path)` 先解密，再读取其中的 `state_dict`。
               </Typography.Text>
+              <Link to="/deliveries/model-loader">
+                <Button type="link" style={{ paddingInline: 0 }}>
+                  打开可复制的 Python Loader 页面
+                </Button>
+              </Link>
               <Typography.Text type="secondary">
                 若当前账户的 license 校验成功，则可下载该账户下的加密交付；最终下载时系统仍会按具体交付记录做二次校验。
               </Typography.Text>

@@ -17,6 +17,7 @@ import { AdminRequirementDetailPage } from '../../pages/admin/RequirementDetailP
 import { AdminRequirementDataPage } from '../../pages/admin/AdminRequirementDataPage';
 import { AdminLogsPage } from '../../pages/admin/AdminLogsPage';
 import { UserManagementPage } from '../../pages/admin/UserManagementPage';
+import { ModelLoaderPage } from '../../pages/deliveries/ModelLoaderPage';
 import { LazyRouteErrorBoundary } from './LazyRouteErrorBoundary';
 
 const RequirementViewerPage = lazy(() =>
@@ -101,6 +102,7 @@ function RouterContainer() {
         { path: 'requirements/:id/upload/data', element: <UploadRequirementDataPage /> },
         { path: 'uploads', element: <UploadCenterPage /> },
         { path: 'uploads/data', element: <UploadRequirementDataPage /> },
+        { path: 'deliveries/model-loader', element: <ModelLoaderPage /> },
         { path: 'notifications', element: <NotificationPage /> },
         {
           path: 'admin',
