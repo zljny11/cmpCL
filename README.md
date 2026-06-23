@@ -139,13 +139,14 @@ docker compose --env-file .env.server -p campcloud exec campcloud-server npm run
 
 - [DEPLOY_INTRANET.md](DEPLOY_INTRANET.md): 内网或单机 Docker 部署
 - [DEPLOY_PUBLIC.md](DEPLOY_PUBLIC.md): 公网入口、frp、Nginx、OSS 方案
+
 ## 加密模型解密说明
 
 算法交付给用户的文件是加密后的 `.model`，不能直接用 `torch.load` 打开。
 
 用户侧使用方式：
 
-1. 准备三个文件：`delivery.model`、`license.txt`、`model_loader.py`
+1. 准备三个文件：收到的交付算法 `.model`、`license.txt`、`model_loader.py`
 2. 将三个文件放在同一个目录
 3. 安装依赖：
 

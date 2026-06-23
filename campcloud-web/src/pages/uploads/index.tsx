@@ -44,8 +44,6 @@ import { DatasetBatchItem, DatasetBatchStatus, DatasetUploadType, RequirementOss
 import { downloadViaBrowser } from '../../utils/browser-download';
 import { isProfileComplete } from '../../utils/profileCompletion';
 import { findAndParseDicomInFiles } from '../../utils/dicom-parser';
-import { useRequirementDataTree } from '../requirements/list/hooks';
-import { PatientLevel } from '../requirements/list/components/PatientLevel';
 
 const LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
 const MAX_SINGLE_DICOM_FILE_BYTES = 10 * 1024 * 1024 * 1024;
@@ -235,7 +233,6 @@ export function UploadCenterPage() {
   const [modalityCustom, setModalityCustom] = useState('');
   const [bodyPartCustom, setBodyPartCustom] = useState('');
   const [enableAutoParseMetadata, setEnableAutoParseMetadata] = useState(true);
-  const hadPendingBatchRef = useRef(false);
   const uploadSessionCacheRef = useRef<Record<string, UploadSessionCacheItem>>({});
 
   const resetSelectedFiles = () => {
@@ -417,11 +414,6 @@ export function UploadCenterPage() {
     enabled: Boolean(requirementId),
   });
 
-  const { data: treeData, isLoading: isTreeLoading, isError: isTreeError, refetch: refetchTree } = useRequirementDataTree(
-    requirementId,
-    Boolean(requirementId),
-  );
-
   const createBatchMutation = useMutation({
     mutationFn: async (values: { modality: string; bodyPart: string; diagnosis?: string[]; clinicalTags?: string[]; annotationStatus?: string; remark?: string }) => {
       const files = fileList
@@ -528,7 +520,6 @@ export function UploadCenterPage() {
       setRetryContext(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'dataset-batches'] }),
-        queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'data-tree'] }),
         queryClient.invalidateQueries({ queryKey: ['requirements', requirementId, 'object-storage-files'] }),
         queryClient.invalidateQueries({ queryKey: ['requirement-detail', requirementId] }),
         queryClient.invalidateQueries({ queryKey: ['user-journey', 'dataset-batches', requirementId] }),
@@ -537,7 +528,6 @@ export function UploadCenterPage() {
       ]);
       void refetchBatches();
       void refetchOssFiles();
-      void refetchTree();
       if (shouldShowInitialUploadNotice && !result.requiresManualAnalysis) {
         modal.info({
           title: '上传完成',
@@ -565,7 +555,6 @@ export function UploadCenterPage() {
   });
 
   const batchItems = pendingBatchPreview ? [pendingBatchPreview, ...(batchData?.list ?? [])] : batchData?.list ?? [];
-  const hasPendingBatch = batchItems.some((item) => item.status === 'uploaded');
   const uploadProgressText = uploadProgress
     ? `${(uploadProgress.loaded / 1024 / 1024).toFixed(2)} MB${
         uploadProgress.total ? ` / ${(uploadProgress.total / 1024 / 1024).toFixed(2)} MB` : ''
@@ -601,29 +590,6 @@ export function UploadCenterPage() {
     }),
     [batchData?.total, batchItems],
   );
-
-  useEffect(() => {
-    if (!requirementId) {
-      return;
-    }
-
-    let timer: ReturnType<typeof setInterval> | null = null;
-    if (hasPendingBatch) {
-      hadPendingBatchRef.current = true;
-      timer = setInterval(() => {
-        void refetchTree();
-      }, 3000);
-    } else if (hadPendingBatchRef.current) {
-      hadPendingBatchRef.current = false;
-      void refetchTree();
-    }
-
-    return () => {
-      if (timer) {
-        clearInterval(timer);
-      }
-    };
-  }, [hasPendingBatch, refetchTree, requirementId]);
 
   if (!requirementId) {
     return (
@@ -1380,44 +1346,6 @@ export function UploadCenterPage() {
         />
         </Card>
       ) : null}
-
-      <Card
-        title={
-          <Space size={12} wrap>
-            <span>文件预览</span>
-            {user?.role === 'admin' ? (
-              <Button type="primary" onClick={() => navigate(`/requirements/${requirementId}/upload/data?from=upload`)}>
-                完整数据页
-              </Button>
-            ) : null}
-          </Space>
-        }
-      >
-        {batchItems.some((item) => item.status === 'uploaded') ? (
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message="存在待拉取批次"
-            description="上传请求已完成，等待管理侧在需求详情中确认拉取详情数据；拉取完成后，列表和三层结构才会出现。"
-          />
-        ) : null}
-        {isTreeError ? <Alert type="error" showIcon message="文件预览加载失败" /> : null}
-        {isTreeLoading ? (
-          <Card loading />
-        ) : treeData?.patients?.length ? (
-          user?.role === 'admin' ? (
-            <PatientLevel requirementId={requirementId} data={treeData.patients} onRefresh={() => void refetchTree()} />
-          ) : (
-            <Alert type="info" showIcon message="用户侧不提供原始 DICOM 查看与下载" />
-          )
-        ) : (
-          <Empty
-            description="当前需求单暂无可预览文件"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        )}
-      </Card>
     </Space>
   );
 }
