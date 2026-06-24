@@ -2612,6 +2612,9 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       description: item.description,
       fileName: item.fileName,
       isFinal: item.isFinal,
+      userDownloadCount: item.userDownloadCount,
+      firstUserDownloadedAt: item.firstUserDownloadedAt,
+      lastUserDownloadedAt: item.lastUserDownloadedAt,
       createdAt: item.createdAt,
       uploader: {
         id: item.uploader.id.toString(),
@@ -2989,41 +2992,86 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
 
-    const delivery = await this.prisma.delivery.findFirst({
-      where: {
-        id: deliveryId,
-        requirementId,
-      },
-      select: {
-        fileUrl: true,
-        fileName: true,
-      },
-    });
+    if (role === UserRole.admin) {
+      const delivery = await this.prisma.delivery.findFirst({
+        where: {
+          id: deliveryId,
+          requirementId,
+        },
+        select: {
+          fileUrl: true,
+          fileName: true,
+        },
+      });
 
-    if (!delivery?.fileUrl || !delivery.fileName) {
-      throw new NotFoundException('交付文件不存在');
+      if (!delivery?.fileUrl || !delivery.fileName) {
+        throw new NotFoundException('Delivery file not found');
+      }
+
+      const signed = this.buildOssSignedUrl('GET', delivery.fileUrl, this.ossDownloadUrlExpiresSeconds);
+
+      return {
+        fileName: delivery.fileName,
+        objectKey: delivery.fileUrl,
+        url: signed.url,
+        expiresAt: signed.expiresAt,
+      };
     }
 
-    if (role !== UserRole.admin) {
-      if (!licenseFile?.path) {
-        throw new ForbiddenException('请上传有效的 license 文件后再下载');
+    if (!licenseFile?.path) {
+      throw new ForbiddenException('Please upload a valid license file before downloading.');
+    }
+
+    const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
+
+    return this.prisma.$transaction(async (tx) => {
+      const delivery = await tx.delivery.findFirst({
+        where: {
+          id: deliveryId,
+          requirementId,
+        },
+        select: {
+          id: true,
+          fileUrl: true,
+          fileName: true,
+          userDownloadCount: true,
+          firstUserDownloadedAt: true,
+        },
+      });
+
+      if (!delivery?.fileUrl || !delivery.fileName) {
+        throw new NotFoundException('Delivery file not found');
       }
-      const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
+
+      if (delivery.userDownloadCount >= 1) {
+        throw new ConflictException('This delivery can only be downloaded once. Please leave a message to contact the administrator for another download.');
+      }
+
       const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
       if (!metadata) {
-        throw new NotFoundException('加密模型元数据不存在');
+        throw new NotFoundException('Encrypted model metadata not found');
       }
       await validateModelLicenseFile(licenseBuffer, userId, requirementId, deliveryId, metadata);
-    }
 
-    const signed = this.buildOssSignedUrl('GET', delivery.fileUrl, this.ossDownloadUrlExpiresSeconds);
+      const signed = this.buildOssSignedUrl('GET', delivery.fileUrl, this.ossDownloadUrlExpiresSeconds);
+      const now = new Date();
 
-    return {
-      fileName: delivery.fileName,
-      objectKey: delivery.fileUrl,
-      url: signed.url,
-      expiresAt: signed.expiresAt,
-    };
+      await tx.delivery.update({
+        where: { id: deliveryId },
+        data: {
+          userDownloadCount: { increment: 1 },
+          firstUserDownloadedAt: delivery.firstUserDownloadedAt ?? now,
+          lastUserDownloadedAt: now,
+        },
+      });
+
+      return {
+        fileName: delivery.fileName,
+        objectKey: delivery.fileUrl,
+        url: signed.url,
+        expiresAt: signed.expiresAt,
+      };
+    });
   }
 
   async verifyDeliveryLicense(

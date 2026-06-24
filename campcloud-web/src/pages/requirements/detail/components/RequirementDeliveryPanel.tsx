@@ -68,9 +68,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
   });
 
   const verifyLicenseMutation = useMutation({
-    mutationFn: async (licenseFile: File) => {
-      return requirementsApi.verifyUserLicense(licenseFile);
-    },
+    mutationFn: async (licenseFile: File) => requirementsApi.verifyUserLicense(licenseFile),
     onSuccess: (result) => {
       setLicenseVerified(true);
       setLicenseVerifyMessage(result.message);
@@ -87,12 +85,6 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
       message.error(errorMessage || 'license 校验失败');
     },
   });
-
-  const buildCustomerFileName = (title: string, isFinal: boolean, fileName: string | null) => {
-    const normalizedTitle = title.trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || (isFinal ? '最终交付' : '阶段交付');
-    const extension = fileName?.includes('.') ? `.${fileName.split('.').pop()}` : '';
-    return `${normalizedTitle}${extension}`;
-  };
 
   const handleDownload = async (deliveryId: string) => {
     setDownloadingId(deliveryId);
@@ -126,13 +118,9 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
     <Card title="交付窗口" loading={deliveriesQuery.isLoading}>
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         {canUpload ? (
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={(values) => createDeliveryMutation.mutate(values)}
-          >
+          <Form form={form} layout="vertical" onFinish={(values) => createDeliveryMutation.mutate(values)}>
             <Typography.Text type="secondary">
-              管理端上传原始 `.pth` 后，服务端会自动转换为加密 `.model` 文件，用户侧只能下载加密后的交付文件。
+              管理端上传原始 `.pth` 后，服务端会自动转换为加密 `.model` 文件，用户侧只会下载加密后的交付文件。
             </Typography.Text>
             <Form.Item label="交付标题" name="title" rules={[{ required: true, message: '请输入交付标题' }]}>
               <Input placeholder="例如：第一版算法权重、最终交付模型" maxLength={200} />
@@ -190,11 +178,11 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 下载前请先上传管理员下发的 license 文件，系统会先校验下载资格，再返回加密后的 `.model` 文件。
               </Typography.Text>
               <Typography.Text type="secondary">
-                下载后的文件不能直接用 `torch.load` 打开，需配合专用 Python loader 解密加载。
+                下载后的文件不能直接用 `torch.load` 打开，需要配合专用 Python loader 解密加载。
               </Typography.Text>
               <Typography.Text type="secondary">
-                使用方式：将 `.model`、`license.txt` 与 `model_loader.py` 放在同一运行环境中，通过
-                `load_encrypted_checkpoint(model_path, license_path)` 先解密，再读取其中的 `state_dict`。
+                使用方式：将 `.model`、`license.txt` 和 `model_loader.py` 放在同一运行环境中，通过
+                ` load_encrypted_checkpoint(model_path, license_path)` 先解密，再读取其中的 `state_dict`。
               </Typography.Text>
               <Link to="/deliveries/model-loader">
                 <Button type="link" style={{ paddingInline: 0 }}>
@@ -202,7 +190,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 </Button>
               </Link>
               <Typography.Text type="secondary">
-                若当前账户的 license 校验成功，则可下载该账户下的加密交付；最终下载时系统仍会按具体交付记录做二次校验。
+                当前算法交付仅支持拉取 1 次。首次拉取后，如需重复拉取，请在本页下方留言联系管理员。
               </Typography.Text>
               <Upload
                 accept=".txt,.lic,.license,.json"
@@ -234,7 +222,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
               </Upload>
               {licenseVerified && licenseVerifyMessage ? <Tag color="success">{licenseVerifyMessage}</Tag> : null}
               {!licenseVerified && licenseFileList.length > 0 && verifyLicenseMutation.isPending ? (
-                <Typography.Text type="secondary">正在校验 license，请稍候…</Typography.Text>
+                <Typography.Text type="secondary">正在校验 license，请稍候</Typography.Text>
               ) : null}
             </Space>
           </Card>
@@ -248,16 +236,20 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 actions={
                   item.fileName
                     ? [
+                        !canUpload && item.userDownloadCount >= 1 ? (
+                          <Typography.Text key="download-limit" type="secondary">
+                            已拉取 1 次
+                          </Typography.Text>
+                        ) : null,
                         <Button
                           key="download"
                           type="link"
                           icon={<DownloadOutlined />}
                           loading={downloadingId === item.id}
-                          onClick={() =>
-                            handleDownload(item.id)
-                          }
+                          disabled={!canUpload && item.userDownloadCount >= 1}
+                          onClick={() => handleDownload(item.id)}
                         >
-                          {canUpload ? '下载加密模型' : '下载加密模型'}
+                          下载加密模型
                         </Button>,
                       ]
                     : []
@@ -274,9 +266,14 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                   <Typography.Text type="secondary">
                     {item.uploader.username} 于 {dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')} 上传
                   </Typography.Text>
+                  {!canUpload && item.userDownloadCount >= 1 ? (
+                    <Typography.Text type="warning">
+                      该算法交付已完成首次拉取。如需再次拉取，请先在本页下方留言联系管理员。
+                    </Typography.Text>
+                  ) : null}
                   {canUpload && item.fileName ? (
                     <Typography.Text type="secondary">
-                      上传前请确认该需求所属用户已在部署配置中绑定 license，当前需求单 ID `{requirementId}`，交付文件 `{item.fileName}`
+                      上传前请确认该需求所属用户已在部署配置中绑定 license，当前需求单 ID `{requirementId}`，交付文件 `{item.fileName}`。
                     </Typography.Text>
                   ) : null}
                 </Space>

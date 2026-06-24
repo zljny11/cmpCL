@@ -405,6 +405,9 @@ export interface RequirementDeliveryItem {
   description: string | null;
   fileName: string | null;
   isFinal: boolean;
+  userDownloadCount: number;
+  firstUserDownloadedAt: string | null;
+  lastUserDownloadedAt: string | null;
   createdAt: string;
   uploader: {
     id: string;

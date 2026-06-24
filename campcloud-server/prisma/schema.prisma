@@ -323,6 +323,9 @@ model Delivery {
   fileUrl       String?     @map("file_url") @db.VarChar(255)
   fileName      String?     @map("file_name") @db.VarChar(255)
   isFinal       Boolean     @default(false) @map("is_final")
+  userDownloadCount Int     @default(0) @map("user_download_count")
+  firstUserDownloadedAt DateTime? @map("first_user_downloaded_at")
+  lastUserDownloadedAt DateTime? @map("last_user_downloaded_at")
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
   requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
@@ -410,3 +413,4 @@ model MailJob {
   @@index([requirementId])
   @@map("mail_jobs")
 }
+
