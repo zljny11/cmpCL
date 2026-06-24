@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Req, Res, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
-import { AdminOperationLogCategory, UserRole } from '@prisma/client';
+import { AdminOperationLogCategory, AdminOperationLogResult, UserRole } from '@prisma/client';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Express, Request, Response } from 'express';
@@ -57,6 +57,13 @@ export class RequirementsController {
     private readonly requirementsService: RequirementsService,
     private readonly adminLogsService: AdminLogsService,
   ) {}
+
+  private getErrorMessage(error: unknown) {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    return String(error);
+  }
 
   @Post()
   async create(@CurrentUser() user: AuthUser, @Req() request: Request, @Body() dto: CreateRequirementDto) {
@@ -157,15 +164,48 @@ export class RequirementsController {
   @Get(':id/deliveries/:deliveryId/file')
   async downloadDeliveryFile(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
   ) {
-    return this.requirementsService.downloadDeliveryFile(
-      BigInt(user.id),
-      BigInt(id),
-      BigInt(deliveryId),
-      user.role,
-    );
+    try {
+      const result = await this.requirementsService.downloadDeliveryFile(
+        BigInt(user.id),
+        BigInt(id),
+        BigInt(deliveryId),
+        user.role,
+      );
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'download_delivery_model',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        detail: {
+          deliveryId,
+          fileName: result.fileName,
+          downloadMode: 'direct',
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      return result;
+    } catch (error) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'download_delivery_model',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        result: AdminOperationLogResult.failed,
+        detail: {
+          deliveryId,
+          downloadMode: 'direct',
+          errorMessage: this.getErrorMessage(error),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      throw error;
+    }
   }
 
   @Post(':id/deliveries/:deliveryId/file')
@@ -175,17 +215,52 @@ export class RequirementsController {
   }))
   async downloadDeliveryFileWithLicense(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
     @UploadedFile() licenseFile: Express.Multer.File | undefined,
   ) {
-    return this.requirementsService.downloadDeliveryFile(
-      BigInt(user.id),
-      BigInt(id),
-      BigInt(deliveryId),
-      user.role,
-      licenseFile,
-    );
+    try {
+      const result = await this.requirementsService.downloadDeliveryFile(
+        BigInt(user.id),
+        BigInt(id),
+        BigInt(deliveryId),
+        user.role,
+        licenseFile,
+      );
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'download_delivery_model',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        detail: {
+          deliveryId,
+          fileName: result.fileName,
+          downloadMode: 'license',
+          licenseFileName: licenseFile?.originalname ?? null,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      return result;
+    } catch (error) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'download_delivery_model',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        result: AdminOperationLogResult.failed,
+        detail: {
+          deliveryId,
+          downloadMode: 'license',
+          licenseFileName: licenseFile?.originalname ?? null,
+          errorMessage: this.getErrorMessage(error),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      throw error;
+    }
   }
 
   @Post(':id/deliveries/:deliveryId/license/verify')
@@ -193,19 +268,38 @@ export class RequirementsController {
     storage: stagedUploadStorage,
     limits: { fileSize: LICENSE_UPLOAD_MAX_BYTES, files: 1 },
   }))
-  verifyDeliveryLicense(
+  async verifyDeliveryLicense(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @Param('id', ParseIntPipe) id: number,
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
     @UploadedFile() licenseFile: Express.Multer.File | undefined,
   ) {
-    return this.requirementsService.verifyDeliveryLicense(
-      BigInt(user.id),
-      BigInt(id),
-      BigInt(deliveryId),
-      user.role,
-      licenseFile,
-    );
+    try {
+      return await this.requirementsService.verifyDeliveryLicense(
+        BigInt(user.id),
+        BigInt(id),
+        BigInt(deliveryId),
+        user.role,
+        licenseFile,
+      );
+    } catch (error) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'verify_delivery_license',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        result: AdminOperationLogResult.failed,
+        detail: {
+          deliveryId,
+          licenseFileName: licenseFile?.originalname ?? null,
+          errorMessage: this.getErrorMessage(error),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      throw error;
+    }
   }
 
   @Post('license/verify')
@@ -213,11 +307,29 @@ export class RequirementsController {
     storage: stagedUploadStorage,
     limits: { fileSize: LICENSE_UPLOAD_MAX_BYTES, files: 1 },
   }))
-  verifyUserLicense(
+  async verifyUserLicense(
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
     @UploadedFile() licenseFile: Express.Multer.File | undefined,
   ) {
-    return this.requirementsService.verifyUserLicense(BigInt(user.id), licenseFile);
+    try {
+      return await this.requirementsService.verifyUserLicense(BigInt(user.id), licenseFile);
+    } catch (error) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'verify_user_license',
+        targetType: 'user',
+        targetId: user.id,
+        result: AdminOperationLogResult.failed,
+        detail: {
+          licenseFileName: licenseFile?.originalname ?? null,
+          errorMessage: this.getErrorMessage(error),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      throw error;
+    }
   }
 
   @Patch(':id/status')
