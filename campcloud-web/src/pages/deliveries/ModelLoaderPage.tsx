@@ -12,27 +12,6 @@ checkpoint = load_encrypted_checkpoint(
 )
 print(checkpoint.keys())`;
 
-const userInstructions = `文件准备：
-1. 将下载得到的 delivery.model、license.txt 与 model_loader.py 放在同一个目录。
-
-环境准备：
-1. 安装 Python 3.10 及以上版本。
-2. 安装依赖：pip install torch cryptography
-3. 如果没有安装 cryptography，也可以改为准备可执行的 openssl 命令。
-
-最小示例：
-from model_loader import load_encrypted_checkpoint
-
-checkpoint = load_encrypted_checkpoint(
-    model_path="delivery.model",
-    license_path="license.txt",
-)
-print(checkpoint.keys())
-
-说明：
-1. 如果提示 decrypt failed，请先确认 .model 与 license.txt 来自同一次交付。
-2. 如果 checkpoint 中包含 state_dict，可继续加载到自己的模型实例。`;
-
 export function ModelLoaderPage() {
   const { message } = App.useApp();
 
@@ -45,14 +24,11 @@ export function ModelLoaderPage() {
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
         <Typography.Title level={3} style={{ marginBottom: 8 }}>
-          Model Loader
+          model loader使用指引
         </Typography.Title>
         <Space direction="vertical" size={6}>
           <Typography.Text type="secondary">
             把下面的 Python loader 复制到本地，文件名保存为 `model_loader.py`，再和 `.model`、`license.txt` 放在同一运行环境中使用。
-          </Typography.Text>
-          <Typography.Text type="secondary">
-            这个页面的目标是让用户不需要再单独找脚本文件，直接复制即可运行。
           </Typography.Text>
         </Space>
       </div>
@@ -129,29 +105,12 @@ export function ModelLoaderPage() {
         </Space>
       </Card>
 
-      <Card
-        title="发给用户的说明"
-        extra={(
-          <Button icon={<CopyOutlined />} onClick={() => void handleCopy(userInstructions, '已复制用户说明')}>
-            复制说明
-          </Button>
-        )}
-      >
-        <pre
-          style={{
-            margin: 0,
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap',
-            padding: 16,
-            borderRadius: 12,
-            background: '#fffdf5',
-            color: '#3f3f46',
-            fontSize: 13,
-            lineHeight: 1.7,
-          }}
-        >
-          {userInstructions}
-        </pre>
+      <Card title="说明">
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Typography.Text>说明：</Typography.Text>
+          <Typography.Text>1. 如果提示 decrypt failed，请先确认 .model 与 license.txt 来自同一次交付。</Typography.Text>
+          <Typography.Text>2. 如果 checkpoint 中包含 state_dict，可继续加载到自己的模型实例。</Typography.Text>
+        </Space>
       </Card>
     </Space>
   );
