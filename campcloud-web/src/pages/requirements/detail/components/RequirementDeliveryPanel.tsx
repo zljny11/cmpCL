@@ -89,6 +89,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
   const resetDownloadStateMutation = useMutation({
     mutationFn: async (deliveryId: string) => requirementsApi.resetDeliveryDownloadState(requirementId, deliveryId),
   });
+
   const handleDownload = async (deliveryId: string, fileName: string | null) => {
     setDownloadingId(deliveryId);
     try {
@@ -101,10 +102,10 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
 
       const selectedLicenseFile = licenseFileList[0]?.originFileObj;
       if (!selectedLicenseFile) {
-        throw new Error('璇峰厛涓婁紶 license 鏂囦欢');
+        throw new Error('请先上传 license 文件');
       }
       if (!licenseVerified) {
-        throw new Error('璇峰厛绛夊緟 license 鏍￠獙鎴愬姛鍚庡啀涓嬭浇');
+        throw new Error('请先等待 license 校验成功后再下载');
       }
 
       const formData = new FormData();
@@ -124,7 +125,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
         : error instanceof Error
           ? error.message
           : undefined;
-      message.error(errorMessage || (canUpload ? '重置用户下载次数失败' : '浜や粯鏂囦欢涓嬭浇澶辫触'));
+      message.error(errorMessage || (canUpload ? '重置用户下载次数失败' : '交付文件下载失败'));
       await queryClient.invalidateQueries({ queryKey: ['requirement-deliveries', requirementId] });
     } finally {
       setDownloadingId(null);
@@ -137,7 +138,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
         {canUpload ? (
           <Form form={form} layout="vertical" onFinish={(values) => createDeliveryMutation.mutate(values)}>
             <Typography.Text type="secondary">
-              管理端上传原始 `.pth` 后，服务端会自动转换为加密 `.model` 文件，用户侧只会下载加密后的交付文件。
+              管理侧上传原始 `.pth` 后，服务端会自动转换为加密 `.model` 文件，用户侧只会下载加密后的交付文件。
             </Typography.Text>
             <Form.Item label="交付标题" name="title" rules={[{ required: true, message: '请输入交付标题' }]}>
               <Input placeholder="例如：第一版算法权重、最终交付模型" maxLength={200} />
@@ -198,7 +199,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 下载后的文件不能直接用 `torch.load` 打开，需要配合专用 Python loader 解密加载。
               </Typography.Text>
               <Typography.Text type="secondary">
-                当前规则：完整下载成功后记为唯一一次正式拉取；失败不记正式次数，但 5 分钟内只能发起 1 次下载，累计失败 2 次后需要管理员处理。
+                当前规则：完整下载成功后记为唯一一次正式拉取；失败不记正式次数，但 5 分钟内只允许发起 1 次下载，累计失败 2 次后需要管理员处理。
               </Typography.Text>
               <Link to="/deliveries/model-loader">
                 <Button type="link" style={{ paddingInline: 0 }}>
@@ -270,7 +271,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                             disabled={!canUpload && (alreadyDownloaded || locked)}
                             onClick={() => handleDownload(item.id, item.fileName)}
                           >
-                            {canUpload ? '重置用户下载次数' : '涓嬭浇鍔犲瘑妯″瀷'}
+                            {canUpload ? '重置用户下载次数' : '下载加密模型'}
                           </Button>,
                         ]
                       : []
