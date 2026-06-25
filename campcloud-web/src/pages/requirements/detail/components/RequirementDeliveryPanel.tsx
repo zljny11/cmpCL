@@ -199,7 +199,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 下载后的文件不能直接用 `torch.load` 打开，需要配合专用 Python loader 解密加载。
               </Typography.Text>
               <Typography.Text type="secondary">
-                出于流量安全，一分钟内只可进行一次下载，共有两次下载次数，若锁定请留言联系管理员。
+                出于流量安全考虑，一分钟内只可进行一次下载，共有两次下载次数，若锁定请留言联系管理员。
               </Typography.Text>
               <Link to="/deliveries/model-loader">
                 <Button type="link" style={{ paddingInline: 0 }}>
