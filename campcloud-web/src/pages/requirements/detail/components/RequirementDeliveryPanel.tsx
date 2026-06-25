@@ -199,7 +199,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                 下载后的文件不能直接用 `torch.load` 打开，需要配合专用 Python loader 解密加载。
               </Typography.Text>
               <Typography.Text type="secondary">
-                当前规则：完整下载成功后记为唯一一次正式拉取；失败不记正式次数，但 5 分钟内只允许发起 1 次下载，累计失败 2 次后需要管理员处理。
+                出于流量安全，一分钟内只可进行一次下载，共有两次下载次数，若锁定请留言联系管理员。
               </Typography.Text>
               <Link to="/deliveries/model-loader">
                 <Button type="link" style={{ paddingInline: 0 }}>
@@ -246,7 +246,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
           <List
             dataSource={deliveriesQuery.data}
             renderItem={(item) => {
-              const alreadyDownloaded = item.userDownloadCount >= 1;
+              const alreadyDownloaded = item.userDownloadCount >= 2;
               const locked = Boolean(item.userDownloadLockedAt);
               return (
                 <List.Item
@@ -290,7 +290,7 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
                     </Typography.Text>
                     {!canUpload && alreadyDownloaded ? (
                       <Typography.Text type="warning">
-                        该算法交付已完成正式拉取。如需再次获取，请先在本页下方留言联系管理员。
+                        该算法交付已用完正式拉取次数。如需再次获取，请留言联系管理员。
                       </Typography.Text>
                     ) : null}
                     {!canUpload && !alreadyDownloaded && item.userDownloadFailedCount > 0 ? (

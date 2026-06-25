@@ -107,8 +107,8 @@ type RequirementOssFileSummary = {
   updatedAt: Date;
 };
 
-const DELIVERY_DOWNLOAD_COOLDOWN_MS = 5 * 60 * 1000;
-const DELIVERY_DOWNLOAD_FAILURE_LOCK_THRESHOLD = 2;
+const DELIVERY_DOWNLOAD_COOLDOWN_MS = 1 * 60 * 1000;
+const DELIVERY_DOWNLOAD_FAILURE_LOCK_THRESHOLD = 3;
 
 @Injectable()
 export class RequirementsService implements OnModuleInit, OnModuleDestroy {
@@ -3113,8 +3113,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         throw new NotFoundException('Delivery file not found');
       }
 
-      if (delivery.userDownloadCount >= 1) {
-        throw new ConflictException('This delivery can only be downloaded once. Please leave a message to contact the administrator for another download.');
+      if (delivery.userDownloadCount >= 2) {
+        throw new ConflictException('This delivery can only be successfully downloaded twice. Please leave a message to contact the administrator if you need another download.');
       }
 
       const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
@@ -3180,8 +3180,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         throw new NotFoundException('Delivery file not found');
       }
 
-      if (delivery.userDownloadCount >= 1) {
-        throw new ConflictException('This delivery has already been successfully downloaded once. Please leave a message to contact the administrator if you need another download.');
+      if (delivery.userDownloadCount >= 2) {
+        throw new ConflictException('This delivery has already reached the maximum of two successful downloads. Please leave a message to contact the administrator if you need another download.');
       }
 
       if (delivery.userDownloadLockedAt) {
@@ -3189,7 +3189,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (delivery.lastUserDownloadAttemptAt && delivery.lastUserDownloadAttemptAt.getTime() > cooldownStartedAt.getTime()) {
-        throw new BadRequestException('You can only start one download attempt every 5 minutes for the same delivery. Please try again later.');
+        throw new BadRequestException('You can only start one download attempt every 1 minute for the same delivery. Please try again later.');
       }
 
       const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
@@ -3203,7 +3203,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         where: {
           id: deliveryId,
           requirementId,
-          userDownloadCount: 0,
+          userDownloadCount: { lt: 2 },
           userDownloadLockedAt: null,
           OR: [
             { lastUserDownloadAttemptAt: null },
@@ -3232,14 +3232,23 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
   private async markTrackedDeliveryDownloadSucceeded(deliveryId: bigint) {
     const now = new Date();
-    await this.prisma.delivery.updateMany({
-      where: {
-        id: deliveryId,
-        userDownloadCount: 0,
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: {
+        userDownloadCount: true,
+        firstUserDownloadedAt: true,
       },
+    });
+
+    if (!delivery || delivery.userDownloadCount >= 2) {
+      return;
+    }
+
+    await this.prisma.delivery.update({
+      where: { id: deliveryId },
       data: {
-        userDownloadCount: 1,
-        firstUserDownloadedAt: now,
+        userDownloadCount: { increment: 1 },
+        firstUserDownloadedAt: delivery.firstUserDownloadedAt ?? now,
         lastUserDownloadedAt: now,
       },
     });
@@ -3256,7 +3265,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    if (!delivery || delivery.userDownloadCount >= 1) {
+    if (!delivery || delivery.userDownloadCount >= 2) {
       return;
     }
 
