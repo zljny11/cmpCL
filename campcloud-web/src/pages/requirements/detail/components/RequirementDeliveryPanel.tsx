@@ -1,4 +1,4 @@
-import { DownloadOutlined, InboxOutlined, SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, InboxOutlined, ReloadOutlined, SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { App, Button, Card, Checkbox, Empty, Form, Input, List, Space, Tag, Typography, Upload } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { requirementsApi } from '../../../../services/api/requirements';
 import { queryClient } from '../../../../services/query-client';
-import { triggerDirectDownload } from '../../../../utils/browser-download';
+import { downloadViaBrowser } from '../../../../utils/browser-download';
 
 interface Props {
   requirementId: string;
@@ -86,29 +86,46 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
     },
   });
 
-  const handleDownload = async (deliveryId: string) => {
+  const resetDownloadStateMutation = useMutation({
+    mutationFn: async (deliveryId: string) => requirementsApi.resetDeliveryDownloadState(requirementId, deliveryId),
+  });
+  const handleDownload = async (deliveryId: string, fileName: string | null) => {
     setDownloadingId(deliveryId);
     try {
+      if (canUpload) {
+        await resetDownloadStateMutation.mutateAsync(deliveryId);
+        message.success('用户下载次数已重置');
+        await queryClient.invalidateQueries({ queryKey: ['requirement-deliveries', requirementId] });
+        return;
+      }
+
       const selectedLicenseFile = licenseFileList[0]?.originFileObj;
-      if (!canUpload && !selectedLicenseFile) {
-        throw new Error('请先上传 license 文件');
+      if (!selectedLicenseFile) {
+        throw new Error('璇峰厛涓婁紶 license 鏂囦欢');
       }
-      if (!canUpload && !licenseVerified) {
-        throw new Error('请先等待 license 校验成功后再下载');
+      if (!licenseVerified) {
+        throw new Error('璇峰厛绛夊緟 license 鏍￠獙鎴愬姛鍚庡啀涓嬭浇');
       }
-      const authorization = await requirementsApi.authorizeDeliveryDownload(
-        requirementId,
-        deliveryId,
-        selectedLicenseFile as File | undefined,
-      );
-      triggerDirectDownload(authorization.url);
+
+      const formData = new FormData();
+      formData.append('license', selectedLicenseFile as File);
+
+      await downloadViaBrowser({
+        path: `/requirements/${requirementId}/deliveries/${deliveryId}/file`,
+        method: 'POST',
+        body: formData,
+        fileName: fileName || 'delivery.model',
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ['requirement-deliveries', requirementId] });
     } catch (error) {
       const errorMessage = axios.isAxiosError(error)
         ? (error.response?.data as { message?: string } | undefined)?.message
         : error instanceof Error
           ? error.message
           : undefined;
-      message.error(errorMessage || '交付文件下载失败');
+      message.error(errorMessage || (canUpload ? '重置用户下载次数失败' : '浜や粯鏂囦欢涓嬭浇澶辫触'));
+      await queryClient.invalidateQueries({ queryKey: ['requirement-deliveries', requirementId] });
     } finally {
       setDownloadingId(null);
     }
@@ -175,23 +192,19 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
           <Card size="small" title="License 校验">
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Typography.Text type="secondary">
-                下载前请先上传管理员下发的 license 文件，系统会先校验下载资格，再返回加密后的 `.model` 文件。
+                下载前请先上传管理员下发的 license 文件，系统会先校验下载资格，再由服务端代理输出加密后的 `.model` 文件。
               </Typography.Text>
               <Typography.Text type="secondary">
                 下载后的文件不能直接用 `torch.load` 打开，需要配合专用 Python loader 解密加载。
               </Typography.Text>
               <Typography.Text type="secondary">
-                使用方式：将 `.model`、`license.txt` 和 `model_loader.py` 放在同一运行环境中，通过
-                ` load_encrypted_checkpoint(model_path, license_path)` 先解密，再读取其中的 `state_dict`。
+                当前规则：完整下载成功后记为唯一一次正式拉取；失败不记正式次数，但 5 分钟内只能发起 1 次下载，累计失败 2 次后需要管理员处理。
               </Typography.Text>
               <Link to="/deliveries/model-loader">
                 <Button type="link" style={{ paddingInline: 0 }}>
-                  打开可复制的 Python Loader 页面
+                  打开 Python Loader 使用指引
                 </Button>
               </Link>
-              <Typography.Text type="secondary">
-                当前算法交付仅支持拉取 1 次。首次拉取后，如需重复拉取，请在本页下方留言联系管理员。
-              </Typography.Text>
               <Upload
                 accept=".txt,.lic,.license,.json"
                 maxCount={1}
@@ -231,54 +244,73 @@ export function RequirementDeliveryPanel({ requirementId, canUpload = false }: P
         {deliveriesQuery.data && deliveriesQuery.data.length > 0 ? (
           <List
             dataSource={deliveriesQuery.data}
-            renderItem={(item) => (
-              <List.Item
-                actions={
-                  item.fileName
-                    ? [
-                        !canUpload && item.userDownloadCount >= 1 ? (
-                          <Typography.Text key="download-limit" type="secondary">
-                            已拉取 1 次
-                          </Typography.Text>
-                        ) : null,
-                        <Button
-                          key="download"
-                          type="link"
-                          icon={<DownloadOutlined />}
-                          loading={downloadingId === item.id}
-                          disabled={!canUpload && item.userDownloadCount >= 1}
-                          onClick={() => handleDownload(item.id)}
-                        >
-                          下载加密模型
-                        </Button>,
-                      ]
-                    : []
-                }
-              >
-                <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                  <Space wrap>
-                    <Typography.Text strong>{item.title}</Typography.Text>
-                    {item.isFinal ? <Tag color="success">最终交付</Tag> : <Tag color="blue">阶段交付</Tag>}
-                    {canUpload ? <Tag color="processing">对外交付：加密 .model</Tag> : null}
-                    {canUpload ? <Tag icon={<InboxOutlined />}>{item.fileName || '未命名文件'}</Tag> : null}
-                  </Space>
-                  {item.description ? <Typography.Paragraph style={{ marginBottom: 0 }}>{item.description}</Typography.Paragraph> : null}
-                  <Typography.Text type="secondary">
-                    {item.uploader.username} 于 {dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')} 上传
-                  </Typography.Text>
-                  {!canUpload && item.userDownloadCount >= 1 ? (
-                    <Typography.Text type="warning">
-                      该算法交付已完成首次拉取。如需再次拉取，请先在本页下方留言联系管理员。
-                    </Typography.Text>
-                  ) : null}
-                  {canUpload && item.fileName ? (
+            renderItem={(item) => {
+              const alreadyDownloaded = item.userDownloadCount >= 1;
+              const locked = Boolean(item.userDownloadLockedAt);
+              return (
+                <List.Item
+                  actions={
+                    item.fileName
+                      ? [
+                          alreadyDownloaded ? (
+                            <Typography.Text key="download-success" type="secondary">
+                              已成功拉取
+                            </Typography.Text>
+                          ) : null,
+                          locked ? (
+                            <Typography.Text key="download-locked" type="danger">
+                              已锁定
+                            </Typography.Text>
+                          ) : null,
+                          <Button
+                            key="download"
+                            type="link"
+                            icon={canUpload ? <ReloadOutlined /> : <DownloadOutlined />}
+                            loading={downloadingId === item.id}
+                            disabled={!canUpload && (alreadyDownloaded || locked)}
+                            onClick={() => handleDownload(item.id, item.fileName)}
+                          >
+                            {canUpload ? '重置用户下载次数' : '涓嬭浇鍔犲瘑妯″瀷'}
+                          </Button>,
+                        ]
+                      : []
+                  }
+                >
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Typography.Text strong>{item.title}</Typography.Text>
+                      {item.isFinal ? <Tag color="success">最终交付</Tag> : <Tag color="blue">阶段交付</Tag>}
+                      {canUpload ? <Tag color="processing">对外交付：加密 .model</Tag> : null}
+                      {canUpload ? <Tag icon={<InboxOutlined />}>{item.fileName || '未命名文件'}</Tag> : null}
+                    </Space>
+                    {item.description ? <Typography.Paragraph style={{ marginBottom: 0 }}>{item.description}</Typography.Paragraph> : null}
                     <Typography.Text type="secondary">
-                      上传前请确认该需求所属用户已在部署配置中绑定 license，当前需求单 ID `{requirementId}`，交付文件 `{item.fileName}`。
+                      {item.uploader.username} 于 {dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')} 上传
                     </Typography.Text>
-                  ) : null}
-                </Space>
-              </List.Item>
-            )}
+                    {!canUpload && alreadyDownloaded ? (
+                      <Typography.Text type="warning">
+                        该算法交付已完成正式拉取。如需再次获取，请先在本页下方留言联系管理员。
+                      </Typography.Text>
+                    ) : null}
+                    {!canUpload && !alreadyDownloaded && item.userDownloadFailedCount > 0 ? (
+                      <Typography.Text type={locked ? 'danger' : 'secondary'}>
+                        已失败 {item.userDownloadFailedCount} 次{locked ? '，当前已锁定，请联系管理员处理。' : '。'}
+                      </Typography.Text>
+                    ) : null}
+                    {!canUpload && !alreadyDownloaded && item.lastUserDownloadAttemptAt ? (
+                      <Typography.Text type="secondary">
+                        最近一次发起下载：{dayjs(item.lastUserDownloadAttemptAt).format('YYYY-MM-DD HH:mm:ss')}
+                      </Typography.Text>
+                    ) : null}
+                    {canUpload && item.fileName ? (
+                      <Typography.Text type="secondary">
+                        上传前请确认该需求所属用户已在部署配置中绑定 license，当前需求单 ID `{requirementId}`，交付文件 `{item.fileName}`。
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
+                </List.Item>
+              );
+            }}
           />
         ) : (
           <Empty description="暂无交付记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />

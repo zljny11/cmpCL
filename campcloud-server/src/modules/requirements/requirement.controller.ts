@@ -161,6 +161,50 @@ export class RequirementsController {
     return result;
   }
 
+  @Post(':id/deliveries/:deliveryId/reset-download')
+  async resetDeliveryDownloadState(
+    @CurrentUser() user: AuthUser,
+    @Req() request: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('deliveryId', ParseIntPipe) deliveryId: number,
+  ) {
+    try {
+      const result = await this.requirementsService.resetDeliveryDownloadState(
+        BigInt(user.id),
+        BigInt(id),
+        BigInt(deliveryId),
+        user.role,
+      );
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'reset_delivery_download_state',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        detail: {
+          deliveryId,
+          deliveryTitle: result.title,
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      return result;
+    } catch (error) {
+      await this.adminLogsService.createLog({
+        actor: user,
+        category: AdminOperationLogCategory.data,
+        action: 'reset_delivery_download_state',
+        targetType: 'requirement',
+        targetId: id.toString(),
+        result: AdminOperationLogResult.failed,
+        detail: {
+          deliveryId,
+          errorMessage: this.getErrorMessage(error),
+        },
+        ipAddress: extractRequestIp(request),
+      });
+      throw error;
+    }
+  }
   @Get(':id/deliveries/:deliveryId/file')
   async downloadDeliveryFile(
     @CurrentUser() user: AuthUser,
@@ -219,14 +263,16 @@ export class RequirementsController {
     @Param('id', ParseIntPipe) id: number,
     @Param('deliveryId', ParseIntPipe) deliveryId: number,
     @UploadedFile() licenseFile: Express.Multer.File | undefined,
+    @Res() res: Response,
   ) {
     try {
-      const result = await this.requirementsService.downloadDeliveryFile(
+      const result = await this.requirementsService.streamDeliveryFileToResponse(
         BigInt(user.id),
         BigInt(id),
         BigInt(deliveryId),
         user.role,
         licenseFile,
+        res,
       );
       await this.adminLogsService.createLog({
         actor: user,
@@ -237,12 +283,11 @@ export class RequirementsController {
         detail: {
           deliveryId,
           fileName: result.fileName,
-          downloadMode: 'license',
+          downloadMode: 'license_stream',
           licenseFileName: licenseFile?.originalname ?? null,
         },
         ipAddress: extractRequestIp(request),
       });
-      return result;
     } catch (error) {
       await this.adminLogsService.createLog({
         actor: user,
@@ -253,13 +298,22 @@ export class RequirementsController {
         result: AdminOperationLogResult.failed,
         detail: {
           deliveryId,
-          downloadMode: 'license',
+          downloadMode: 'license_stream',
           licenseFileName: licenseFile?.originalname ?? null,
           errorMessage: this.getErrorMessage(error),
         },
         ipAddress: extractRequestIp(request),
       });
-      throw error;
+      if (!res.headersSent) {
+        throw error;
+      }
+      if (!res.writableEnded) {
+        res.end();
+      }
+    } finally {
+      if (licenseFile?.path) {
+        await rm(licenseFile.path, { force: true }).catch(() => undefined);
+      }
     }
   }
 

@@ -408,6 +408,10 @@ export interface RequirementDeliveryItem {
   userDownloadCount: number;
   firstUserDownloadedAt: string | null;
   lastUserDownloadedAt: string | null;
+  userDownloadFailedCount: number;
+  lastUserDownloadAttemptAt: string | null;
+  lastUserDownloadFailedAt: string | null;
+  userDownloadLockedAt: string | null;
   createdAt: string;
   uploader: {
     id: string;

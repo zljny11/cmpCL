@@ -12,6 +12,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import * as dicomParser from 'dicom-parser';
+import type { Response } from 'express';
 import type { Readable } from 'node:stream';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -105,6 +106,9 @@ type RequirementOssFileSummary = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+const DELIVERY_DOWNLOAD_COOLDOWN_MS = 5 * 60 * 1000;
+const DELIVERY_DOWNLOAD_FAILURE_LOCK_THRESHOLD = 2;
 
 @Injectable()
 export class RequirementsService implements OnModuleInit, OnModuleDestroy {
@@ -768,6 +772,27 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         response.on('error', reject);
         writer.on('finish', () => resolvePromise());
         response.pipe(writer);
+      });
+
+      request.on('error', reject);
+      request.end();
+    });
+  }
+
+  private async openUrlStream(url: string) {
+    return new Promise<{ stream: Readable; headers: Record<string, string | string[] | undefined> }>((resolvePromise, reject) => {
+      const request = httpsRequest(url, { method: 'GET' }, (response) => {
+        if (!response.statusCode || response.statusCode >= 400) {
+          reject(new Error(`OSS GET failed with status ${response.statusCode ?? 'unknown'}`));
+          response.resume();
+          return;
+        }
+
+        response.on('error', reject);
+        resolvePromise({
+          stream: response,
+          headers: response.headers,
+        });
       });
 
       request.on('error', reject);
@@ -2615,6 +2640,10 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       userDownloadCount: item.userDownloadCount,
       firstUserDownloadedAt: item.firstUserDownloadedAt,
       lastUserDownloadedAt: item.lastUserDownloadedAt,
+      userDownloadFailedCount: item.userDownloadFailedCount,
+      lastUserDownloadAttemptAt: item.lastUserDownloadAttemptAt,
+      lastUserDownloadFailedAt: item.lastUserDownloadFailedAt,
+      userDownloadLockedAt: item.userDownloadLockedAt,
       createdAt: item.createdAt,
       uploader: {
         id: item.uploader.id.toString(),
@@ -2983,6 +3012,47 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async resetDeliveryDownloadState(userId: bigint, requirementId: bigint, deliveryId: bigint, role: UserRole) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    if (role !== UserRole.admin) {
+      throw new ForbiddenException('Only administrators can reset delivery download state.');
+    }
+
+    const delivery = await this.prisma.delivery.findFirst({
+      where: {
+        id: deliveryId,
+        requirementId,
+      },
+      select: {
+        id: true,
+        title: true,
+      },
+    });
+
+    if (!delivery) {
+      throw new NotFoundException('Delivery file not found');
+    }
+
+    await this.prisma.delivery.update({
+      where: { id: deliveryId },
+      data: {
+        userDownloadCount: 0,
+        firstUserDownloadedAt: null,
+        lastUserDownloadedAt: null,
+        userDownloadFailedCount: 0,
+        lastUserDownloadAttemptAt: null,
+        lastUserDownloadFailedAt: null,
+        userDownloadLockedAt: null,
+      },
+    });
+
+    return {
+      success: true,
+      deliveryId: delivery.id.toString(),
+      title: delivery.title,
+    };
+  }
   async downloadDeliveryFile(
     userId: bigint,
     requirementId: bigint,
@@ -3072,6 +3142,186 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         expiresAt: signed.expiresAt,
       };
     });
+  }
+
+  private async prepareTrackedDeliveryDownload(
+    userId: bigint,
+    requirementId: bigint,
+    deliveryId: bigint,
+    licenseFile?: UploadedBinaryFile,
+  ) {
+    if (!licenseFile?.path) {
+      throw new ForbiddenException('Please upload a valid license file before downloading.');
+    }
+
+    const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
+    const now = new Date();
+    const cooldownStartedAt = new Date(now.getTime() - DELIVERY_DOWNLOAD_COOLDOWN_MS);
+
+    return this.prisma.$transaction(async (tx) => {
+      const delivery = await tx.delivery.findFirst({
+        where: {
+          id: deliveryId,
+          requirementId,
+        },
+        select: {
+          id: true,
+          fileUrl: true,
+          fileName: true,
+          userDownloadCount: true,
+          firstUserDownloadedAt: true,
+          userDownloadFailedCount: true,
+          lastUserDownloadAttemptAt: true,
+          userDownloadLockedAt: true,
+        },
+      });
+
+      if (!delivery?.fileUrl || !delivery.fileName) {
+        throw new NotFoundException('Delivery file not found');
+      }
+
+      if (delivery.userDownloadCount >= 1) {
+        throw new ConflictException('This delivery has already been successfully downloaded once. Please leave a message to contact the administrator if you need another download.');
+      }
+
+      if (delivery.userDownloadLockedAt) {
+        throw new ConflictException('This delivery is locked after repeated failed download attempts. Please leave a message to contact the administrator.');
+      }
+
+      if (delivery.lastUserDownloadAttemptAt && delivery.lastUserDownloadAttemptAt.getTime() > cooldownStartedAt.getTime()) {
+        throw new BadRequestException('You can only start one download attempt every 5 minutes for the same delivery. Please try again later.');
+      }
+
+      const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
+      if (!metadata) {
+        throw new NotFoundException('Encrypted model metadata not found');
+      }
+
+      await validateModelLicenseFile(licenseBuffer, userId, requirementId, deliveryId, metadata);
+
+      const attemptUpdate = await tx.delivery.updateMany({
+        where: {
+          id: deliveryId,
+          requirementId,
+          userDownloadCount: 0,
+          userDownloadLockedAt: null,
+          OR: [
+            { lastUserDownloadAttemptAt: null },
+            { lastUserDownloadAttemptAt: { lt: cooldownStartedAt } },
+          ],
+        },
+        data: {
+          lastUserDownloadAttemptAt: now,
+        },
+      });
+
+      if (attemptUpdate.count !== 1) {
+        throw new ConflictException('A download attempt for this delivery is already in progress or is still in the cooldown window. Please try again later.');
+      }
+
+      const signed = this.buildOssSignedUrl('GET', delivery.fileUrl, this.ossDownloadUrlExpiresSeconds);
+
+      return {
+        fileName: delivery.fileName,
+        objectKey: delivery.fileUrl,
+        url: signed.url,
+        expiresAt: signed.expiresAt,
+      };
+    });
+  }
+
+  private async markTrackedDeliveryDownloadSucceeded(deliveryId: bigint) {
+    const now = new Date();
+    await this.prisma.delivery.updateMany({
+      where: {
+        id: deliveryId,
+        userDownloadCount: 0,
+      },
+      data: {
+        userDownloadCount: 1,
+        firstUserDownloadedAt: now,
+        lastUserDownloadedAt: now,
+      },
+    });
+  }
+
+  private async markTrackedDeliveryDownloadFailed(deliveryId: bigint) {
+    const now = new Date();
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: {
+        userDownloadCount: true,
+        userDownloadFailedCount: true,
+        userDownloadLockedAt: true,
+      },
+    });
+
+    if (!delivery || delivery.userDownloadCount >= 1) {
+      return;
+    }
+
+    const failedCount = delivery.userDownloadFailedCount + 1;
+    await this.prisma.delivery.update({
+      where: { id: deliveryId },
+      data: {
+        userDownloadFailedCount: failedCount,
+        lastUserDownloadFailedAt: now,
+        userDownloadLockedAt: delivery.userDownloadLockedAt ?? (failedCount >= DELIVERY_DOWNLOAD_FAILURE_LOCK_THRESHOLD ? now : null),
+      },
+    });
+  }
+
+  async streamDeliveryFileToResponse(
+    userId: bigint,
+    requirementId: bigint,
+    deliveryId: bigint,
+    role: UserRole,
+    licenseFile: UploadedBinaryFile | undefined,
+    res: Response,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+
+    let download: { fileName: string; objectKey: string; url: string; expiresAt: Date };
+    let shouldTrackAttempt = false;
+
+    if (role === UserRole.admin) {
+      download = await this.downloadDeliveryFile(userId, requirementId, deliveryId, role);
+    } else {
+      download = await this.prepareTrackedDeliveryDownload(userId, requirementId, deliveryId, licenseFile);
+      shouldTrackAttempt = true;
+    }
+
+    try {
+      const upstream = await this.openUrlStream(download.url);
+      const contentTypeHeader = upstream.headers['content-type'];
+      const contentLengthHeader = upstream.headers['content-length'];
+      const contentType = typeof contentTypeHeader === 'string' ? contentTypeHeader : 'application/octet-stream';
+      const contentLength = typeof contentLengthHeader === 'string' ? contentLengthHeader : null;
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(download.fileName)}"; filename*=UTF-8''${encodeURIComponent(download.fileName)}`);
+      if (contentLength) {
+        res.setHeader('Content-Length', contentLength);
+      }
+
+      await pipeline(upstream.stream, res);
+
+      if (shouldTrackAttempt) {
+        await this.markTrackedDeliveryDownloadSucceeded(deliveryId);
+      }
+
+      return {
+        fileName: download.fileName,
+        objectKey: download.objectKey,
+      };
+    } catch (error) {
+      if (shouldTrackAttempt) {
+        await this.markTrackedDeliveryDownloadFailed(deliveryId).catch((markError) => {
+          this.logger.warn(`Failed to record delivery download failure for ${deliveryId.toString()}: ${markError instanceof Error ? markError.message : String(markError)}`);
+        });
+      }
+      throw error;
+    }
   }
 
   async verifyDeliveryLicense(

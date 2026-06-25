@@ -106,6 +106,12 @@ export const requirementsApi = {
     return response.data;
   },
 
+  async resetDeliveryDownloadState(requirementId: string, deliveryId: string) {
+    const response = (await http.post(
+      `/requirements/${requirementId}/deliveries/${deliveryId}/reset-download`,
+    )) as ApiResponse<{ success: boolean; deliveryId: string; title: string }>;
+    return response.data;
+  },
   async updateStatus(id: string, payload: { status: string; reason?: string }) {
     const response = (await http.patch(`/requirements/${id}/status`, payload)) as ApiResponse<{
       id: string;
