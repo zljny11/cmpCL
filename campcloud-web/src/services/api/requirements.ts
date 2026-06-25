@@ -24,6 +24,12 @@ import {
   RequirementOssFileDownloadAuthorization,
   RequirementOssFileItem,
   RequirementOssFileUploadTicket,
+  RequirementOssMultipartInitResult,
+  RequirementOssMultipartPartsResult,
+  RequirementOssMultipartSignedPart,
+  SignRequirementOssMultipartPartPayload,
+  CompleteRequirementOssMultipartUploadPayload,
+  AbortRequirementOssMultipartUploadPayload,
   UploadSessionItem,
   ConfirmRequirementOssFileUploadPayload,
 } from '../../types/requirements';
@@ -279,6 +285,53 @@ export const requirementsApi = {
       `/requirements/${id}/object-storage-files/${fileId}/complete`,
       payload,
     )) as ApiResponse<RequirementOssFileItem>;
+    return response.data;
+  },
+
+  async initiateRequirementOssMultipartUpload(id: string, fileId: string) {
+    const response = (await http.post(
+      `/requirements/${id}/object-storage-files/${fileId}/multipart/init`,
+    )) as ApiResponse<RequirementOssMultipartInitResult>;
+    return response.data;
+  },
+
+  async listRequirementOssMultipartParts(id: string, fileId: string, uploadId: string) {
+    const response = (await http.get(
+      `/requirements/${id}/object-storage-files/${fileId}/multipart/parts`,
+      { params: { uploadId } },
+    )) as ApiResponse<RequirementOssMultipartPartsResult>;
+    return response.data;
+  },
+
+  async signRequirementOssMultipartPart(id: string, fileId: string, payload: SignRequirementOssMultipartPartPayload) {
+    const response = (await http.post(
+      `/requirements/${id}/object-storage-files/${fileId}/multipart/sign-part`,
+      payload,
+    )) as ApiResponse<RequirementOssMultipartSignedPart>;
+    return response.data;
+  },
+
+  async completeRequirementOssMultipartUpload(
+    id: string,
+    fileId: string,
+    payload: CompleteRequirementOssMultipartUploadPayload,
+  ) {
+    const response = (await http.post(
+      `/requirements/${id}/object-storage-files/${fileId}/multipart/complete`,
+      payload,
+    )) as ApiResponse<RequirementOssFileItem>;
+    return response.data;
+  },
+
+  async abortRequirementOssMultipartUpload(
+    id: string,
+    fileId: string,
+    payload: AbortRequirementOssMultipartUploadPayload,
+  ) {
+    const response = (await http.post(
+      `/requirements/${id}/object-storage-files/${fileId}/multipart/abort`,
+      payload,
+    )) as ApiResponse<{ success: boolean; fileId: string; uploadId: string }>;
     return response.data;
   },
 

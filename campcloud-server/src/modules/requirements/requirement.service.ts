@@ -18,6 +18,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { CreateDatasetBatchFromOssFilesDto } from './dto/create-dataset-batch-from-oss-files.dto';
 import { CreateDatasetBatchFromSessionsDto } from './dto/create-dataset-batch-from-sessions.dto';
+﻿import { CompleteRequirementOssMultipartUploadDto } from './dto/complete-requirement-oss-multipart-upload.dto';
 import { ConfirmRequirementOssFileDto } from './dto/confirm-requirement-oss-file.dto';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { CreateDatasetBatchDto } from './dto/create-dataset-batch.dto';
@@ -29,6 +30,8 @@ import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementDataTreeDto } from './dto/list-requirement-data-tree.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
+﻿import { SignRequirementOssMultipartPartDto } from './dto/sign-requirement-oss-multipart-part.dto';
+
 import {
   ENCRYPTED_MODEL_IV_LENGTH,
   ENCRYPTED_MODEL_MAGIC,
@@ -591,6 +594,123 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+﻿  private buildOssCanonicalizedResource(
+    bucket: string,
+    objectKey: string,
+    subresources: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    const entries = Object.entries(subresources)
+      .filter(([, value]) => value !== undefined && value !== false)
+      .sort(([left], [right]) => left.localeCompare(right));
+
+    if (entries.length === 0) {
+      return `/${bucket}/${objectKey}`;
+    }
+
+    const query = entries
+      .map(([key, value]) => (value === true || value === '' ? key : `${key}=${String(value)}`))
+      .join('&');
+    return `/${bucket}/${objectKey}?${query}`;
+  }
+
+  private buildMultipartOssSignedUrl(
+    method: 'GET' | 'PUT' | 'POST' | 'DELETE',
+    objectKey: string,
+    expiresInSeconds: number,
+    contentType = '',
+    subresources: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    const { bucket, endpoint, accessKeyId, accessKeySecret } = this.ensureOssConfigured();
+    const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const resource = this.buildOssCanonicalizedResource(bucket, objectKey, subresources);
+    const stringToSign = [method, '', contentType, String(expires), resource].join('\n');
+    const signature = createHmac('sha1', accessKeySecret).update(stringToSign).digest('base64');
+    const url = new URL(`https://${bucket}.${endpoint}/${this.encodeOssObjectKey(objectKey)}`);
+    for (const [key, value] of Object.entries(subresources)) {
+      if (value === undefined || value === false) {
+        continue;
+      }
+      url.searchParams.set(key, value === true ? '' : String(value));
+    }
+    url.searchParams.set('OSSAccessKeyId', accessKeyId);
+    url.searchParams.set('Expires', String(expires));
+    url.searchParams.set('Signature', signature);
+
+    return {
+      url: url.toString(),
+      expiresAt: new Date(expires * 1000),
+    };
+  }
+
+  private async requestMultipartOss(
+    method: 'GET' | 'PUT' | 'POST' | 'DELETE',
+    signedUrl: string,
+    options?: {
+      body?: Buffer | string;
+      headers?: Record<string, string>;
+    },
+  ) {
+    return new Promise<{ statusCode: number; headers: Record<string, string | string[] | undefined>; body: Buffer }>((resolvePromise, reject) => {
+      const request = httpsRequest(signedUrl, {
+        method,
+        headers: options?.headers,
+      }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.on('end', () => {
+          resolvePromise({
+            statusCode: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks),
+          });
+        });
+        response.on('error', reject);
+      });
+
+      request.on('error', reject);
+      if (options?.body) {
+        request.write(options.body);
+      }
+      request.end();
+    });
+  }
+
+  private readMultipartOssXmlTag(xml: string, tag: string) {
+    const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\  private buildRequirementOssObjectKey(requirementId: bigint, dto: CreateRequirementOssFileDto) {');
+    const match = new RegExp(`<${escapedTag}>([\\s\\S]*?)</${escapedTag}>`).exec(xml);
+    return match?.[1]?.trim() ?? null;
+  }
+
+  private normalizeMultipartEtag(value: string | null | undefined) {
+    const normalized = this.normalizeText(value);
+    return normalized ? normalized.replace(/^"+|"+$/g, '') : null;
+  }
+
+  private escapeMultipartXml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  private parseMultipartUploadedParts(xml: string) {
+    const parts: Array<{ partNumber: number; etag: string; size: number }> = [];
+    const matcher = /<Part>([\s\S]*?)<\/Part>/g;
+    let match: RegExpExecArray | null = null;
+    while ((match = matcher.exec(xml)) !== null) {
+      const partXml = match[1];
+      const partNumber = Number(this.readMultipartOssXmlTag(partXml, 'PartNumber') ?? '0');
+      const etag = this.normalizeMultipartEtag(this.readMultipartOssXmlTag(partXml, 'ETag'));
+      const size = Number(this.readMultipartOssXmlTag(partXml, 'Size') ?? '0');
+      if (partNumber > 0 && etag) {
+        parts.push({ partNumber, etag, size: Number.isFinite(size) ? size : 0 });
+      }
+    }
+    return parts;
+  }
+
   private buildRequirementOssObjectKey(requirementId: bigint, dto: CreateRequirementOssFileDto) {
     const extension = extname(dto.fileName.trim()) || (dto.kind === RequirementOssFileKindDto.dicom ? '.dcm' : '.bin');
     if (dto.kind === RequirementOssFileKindDto.dicom) {
@@ -1751,6 +1871,232 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+﻿  private async getRequirementOssFileForMultipart(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+  ) {
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    const file = await this.prisma.requirementOssFile.findFirst({
+      where: {
+        id: fileId,
+        requirementId,
+        ...(role === UserRole.admin ? {} : { uploadedBy: userId }),
+      },
+    });
+    if (!file) {
+      throw new NotFoundException('OSS file record not found');
+    }
+    if (file.datasetBatchId) {
+      throw new BadRequestException('OSS file has already been committed');
+    }
+    return file;
+  }
+
+  private async finalizeRequirementOssUpload(
+    file: { id: bigint; kind: RequirementOssFileKind },
+    etag?: string | null,
+  ) {
+    const nextStatus =
+      file.kind === RequirementOssFileKind.dicom ? RequirementOssFileStatus.uploaded : RequirementOssFileStatus.parsed;
+    const completed = await this.prisma.requirementOssFile.update({
+      where: { id: file.id },
+      data: {
+        status: nextStatus,
+        etag: this.normalizeMultipartEtag(etag) ?? this.normalizeText(etag),
+        pullRetryCount: 0,
+        lastPullAttemptAt: null,
+        uploadCompletedAt: new Date(),
+        pulledToLocalAt: null,
+        parsedAt: file.kind === RequirementOssFileKind.dicom ? null : new Date(),
+        ossDeletedAt: null,
+        ossDeleteError: null,
+        errorMessage: null,
+      },
+    });
+    return this.mapRequirementOssFile(completed);
+  }
+
+  async initiateRequirementOssMultipartUpload(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+  ) {
+    const file = await this.getRequirementOssFileForMultipart(userId, requirementId, fileId, role);
+    const signed = this.buildMultipartOssSignedUrl('POST', file.objectKey, this.ossUploadUrlExpiresSeconds, '', { uploads: true });
+    const response = await this.requestMultipartOss('POST', signed.url, { headers: { 'Content-Length': '0' } });
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new BadRequestException(`Failed to initiate OSS multipart upload: ${response.statusCode}`);
+    }
+    const uploadId = this.readMultipartOssXmlTag(response.body.toString('utf8'), 'UploadId');
+    if (!uploadId) {
+      throw new BadRequestException('OSS did not return uploadId');
+    }
+    return {
+      fileId: file.id.toString(),
+      uploadId,
+      objectKey: file.objectKey,
+      bucketName: file.bucketName,
+      partSize: 16 * 1024 * 1024,
+      expiresAt: signed.expiresAt,
+    };
+  }
+
+  async listRequirementOssMultipartParts(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+    uploadId: string,
+  ) {
+    const file = await this.getRequirementOssFileForMultipart(userId, requirementId, fileId, role);
+    const normalizedUploadId = this.normalizeText(uploadId);
+    if (!normalizedUploadId) {
+      throw new BadRequestException('uploadId is required');
+    }
+    const parts: Array<{ partNumber: number; etag: string; size: number }> = [];
+    let marker = 0;
+    while (true) {
+      const signed = this.buildMultipartOssSignedUrl('GET', file.objectKey, this.ossUploadUrlExpiresSeconds, '', {
+        uploadId: normalizedUploadId,
+        'part-number-marker': marker > 0 ? marker : undefined,
+        'max-parts': 1000,
+      });
+      const response = await this.requestMultipartOss('GET', signed.url);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new BadRequestException(`Failed to list OSS multipart parts: ${response.statusCode}`);
+      }
+      const xml = response.body.toString('utf8');
+      const batchParts = this.parseMultipartUploadedParts(xml);
+      parts.push(...batchParts);
+      const isTruncated = (this.readMultipartOssXmlTag(xml, 'IsTruncated') ?? '').toLowerCase() === 'true';
+      if (!isTruncated) {
+        break;
+      }
+      const nextMarker = Number(this.readMultipartOssXmlTag(xml, 'NextPartNumberMarker') ?? '0');
+      marker = Number.isFinite(nextMarker) && nextMarker > 0 ? nextMarker : (batchParts.at(-1)?.partNumber ?? 0);
+      if (marker <= 0) {
+        break;
+      }
+    }
+    return {
+      fileId: file.id.toString(),
+      uploadId: normalizedUploadId,
+      parts,
+    };
+  }
+
+  async signRequirementOssMultipartPart(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+    dto: SignRequirementOssMultipartPartDto,
+  ) {
+    const file = await this.getRequirementOssFileForMultipart(userId, requirementId, fileId, role);
+    const normalizedUploadId = this.normalizeText(dto.uploadId);
+    if (!normalizedUploadId) {
+      throw new BadRequestException('uploadId is required');
+    }
+    const signed = this.buildMultipartOssSignedUrl('PUT', file.objectKey, this.ossUploadUrlExpiresSeconds, 'application/octet-stream', {
+      uploadId: normalizedUploadId,
+      partNumber: dto.partNumber,
+    });
+    return {
+      fileId: file.id.toString(),
+      uploadId: normalizedUploadId,
+      partNumber: dto.partNumber,
+      upload: {
+        method: 'PUT',
+        url: signed.url,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        expiresAt: signed.expiresAt,
+      },
+    };
+  }
+
+  async completeRequirementOssMultipartUpload(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+    dto: CompleteRequirementOssMultipartUploadDto,
+  ) {
+    const file = await this.getRequirementOssFileForMultipart(userId, requirementId, fileId, role);
+    const normalizedUploadId = this.normalizeText(dto.uploadId);
+    if (!normalizedUploadId) {
+      throw new BadRequestException('uploadId is required');
+    }
+    if (dto.fileSize && dto.fileSize !== Number(file.fileSize)) {
+      throw new ConflictException('Confirmed file size does not match the original request');
+    }
+    const parts = Array.from(
+      new Map(
+        dto.parts
+          .map((part) => ({ partNumber: part.partNumber, etag: this.normalizeMultipartEtag(part.etag) }))
+          .filter((part): part is { partNumber: number; etag: string } => part.partNumber > 0 && Boolean(part.etag))
+          .map((part) => [part.partNumber, part]),
+      ).values(),
+    ).sort((left, right) => left.partNumber - right.partNumber);
+    if (parts.length === 0) {
+      throw new BadRequestException('At least one multipart part is required');
+    }
+    const xmlBody = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<CompleteMultipartUpload>',
+      ...parts.map((part) => {
+        const quotedEtag = `"${part.etag}"`;
+        return `  <Part><PartNumber>${part.partNumber}</PartNumber><ETag>${this.escapeMultipartXml(quotedEtag)}</ETag></Part>`;
+      }),
+      '</CompleteMultipartUpload>',
+    ].join('\n');
+    const signed = this.buildMultipartOssSignedUrl('POST', file.objectKey, this.ossUploadUrlExpiresSeconds, 'application/xml', {
+      uploadId: normalizedUploadId,
+    });
+    const response = await this.requestMultipartOss('POST', signed.url, {
+      body: xmlBody,
+      headers: {
+        'Content-Type': 'application/xml',
+        'Content-Length': String(Buffer.byteLength(xmlBody)),
+      },
+    });
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new BadRequestException(`Failed to complete OSS multipart upload: ${response.statusCode}`);
+    }
+    const etag = this.normalizeMultipartEtag(this.readMultipartOssXmlTag(response.body.toString('utf8'), 'ETag'));
+    return this.finalizeRequirementOssUpload(file, etag);
+  }
+
+  async abortRequirementOssMultipartUpload(
+    userId: bigint,
+    requirementId: bigint,
+    fileId: bigint,
+    role: UserRole,
+    uploadId: string,
+  ) {
+    const file = await this.getRequirementOssFileForMultipart(userId, requirementId, fileId, role);
+    const normalizedUploadId = this.normalizeText(uploadId);
+    if (!normalizedUploadId) {
+      throw new BadRequestException('uploadId is required');
+    }
+    const signed = this.buildMultipartOssSignedUrl('DELETE', file.objectKey, this.ossUploadUrlExpiresSeconds, '', {
+      uploadId: normalizedUploadId,
+    });
+    const response = await this.requestMultipartOss('DELETE', signed.url);
+    if (response.statusCode !== 404 && (response.statusCode < 200 || response.statusCode >= 300)) {
+      throw new BadRequestException(`Failed to abort OSS multipart upload: ${response.statusCode}`);
+    }
+    return {
+      success: true,
+      fileId: file.id.toString(),
+      uploadId: normalizedUploadId,
+    };
+  }
+
   async listRequirementOssFiles(userId: bigint, requirementId: bigint, role: UserRole) {
     await this.ensureRequirementAccess(userId, requirementId, role);
     const items = await this.prisma.requirementOssFile.findMany({

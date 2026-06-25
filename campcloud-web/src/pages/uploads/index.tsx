@@ -29,7 +29,7 @@ import {
   Typography,
 } from 'antd';
 import type { RcFile, UploadFile } from 'antd/es/upload/interface';
-import type { AxiosProgressEvent } from 'axios';
+import type { AxiosProgressEvent, AxiosResponse } from 'axios';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -47,6 +47,8 @@ import { findAndParseDicomInFiles } from '../../utils/dicom-parser';
 
 const LARGE_ZIP_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024;
 const MAX_SINGLE_DICOM_FILE_BYTES = 10 * 1024 * 1024 * 1024;
+const DEFAULT_MULTIPART_PART_SIZE_BYTES = 16 * 1024 * 1024;
+const MULTIPART_PART_UPLOAD_MAX_RETRIES = 3;
 
 const batchStatusColorMap: Record<DatasetBatchStatus, string> = {
   uploaded: 'blue',
@@ -76,16 +78,36 @@ function normalizeEtag(value: string | null | undefined) {
   return normalized ? normalized.replace(/^"+|"+$/g, '') : undefined;
 }
 
+function mergeMultipartParts(parts: Array<{ partNumber: number; etag: string; size: number }> | undefined) {
+  return Array.from(
+    new Map(
+      (parts ?? [])
+        .filter((part) => part.partNumber > 0 && Boolean(part.etag))
+        .map((part) => [part.partNumber, part]),
+    ).values(),
+  ).sort((left, right) => left.partNumber - right.partNumber);
+}
+
+function sumMultipartUploadedBytes(parts: Array<{ partNumber: number; etag: string; size: number }> | undefined) {
+  return mergeMultipartParts(parts).reduce((sum, part) => sum + Math.max(part.size || 0, 0), 0);
+}
+
 type UploadSessionCacheItem = {
-  sessionId: string;
+  fileId?: string;
+  uploadId?: string;
   fileKey: string;
   relativePath: string;
   fileSize: number;
   uploadedSize: number;
+  partSize?: number;
+  parts?: Array<{
+    partNumber: number;
+    etag: string;
+    size: number;
+  }>;
   status: 'pending' | 'uploading' | 'uploaded' | 'consumed' | 'failed';
   updatedAt: number;
 };
-
 function getRelativePathFromFile(file: File) {
   return 'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
     ? file.webkitRelativePath
@@ -234,6 +256,7 @@ export function UploadCenterPage() {
   const [bodyPartCustom, setBodyPartCustom] = useState('');
   const [enableAutoParseMetadata, setEnableAutoParseMetadata] = useState(true);
   const uploadSessionCacheRef = useRef<Record<string, UploadSessionCacheItem>>({});
+  const resumedUploadNoticeRef = useRef<Set<string>>(new Set());
 
   const resetSelectedFiles = () => {
     setFileList([]);
@@ -249,6 +272,7 @@ export function UploadCenterPage() {
 
   useEffect(() => {
     uploadSessionCacheRef.current = readUploadSessionCache(requirementId);
+    resumedUploadNoticeRef.current = new Set();
   }, [requirementId]);
 
   useEffect(() => {
@@ -272,6 +296,197 @@ export function UploadCenterPage() {
     writeUploadSessionCache(requirementId, {});
   };
 
+  const removeUploadSessionCacheItem = (fileKey: string) => {
+    const nextCache = { ...uploadSessionCacheRef.current };
+    delete nextCache[fileKey];
+    uploadSessionCacheRef.current = nextCache;
+    writeUploadSessionCache(requirementId, nextCache);
+  };
+
+  const uploadFileToOssInParts = async (file: RcFile, aggregateBaseLoaded: number, aggregateTotalBytes: number) => {
+    const fileKey = buildFileKey(file);
+    const relativePath = getRelativePathFromFile(file);
+    let cacheItem = uploadSessionCacheRef.current[fileKey];
+
+    if (cacheItem?.status === 'uploaded' && cacheItem.fileId) {
+      setUploadProgress({
+        loaded: Math.min(aggregateBaseLoaded + file.size, aggregateTotalBytes),
+        total: aggregateTotalBytes,
+        percent: aggregateTotalBytes > 0
+          ? Math.min(100, Math.round(((aggregateBaseLoaded + file.size) / aggregateTotalBytes) * 100))
+          : 0,
+      });
+      return cacheItem.fileId;
+    }
+
+    let fileId = cacheItem?.fileId;
+    let uploadId = cacheItem?.uploadId;
+    let partSize = cacheItem?.partSize || DEFAULT_MULTIPART_PART_SIZE_BYTES;
+    let completedParts = mergeMultipartParts(cacheItem?.parts);
+
+    const persistCache = (status: UploadSessionCacheItem['status']) => {
+      const uploadedSize = Math.min(sumMultipartUploadedBytes(completedParts), file.size);
+      const nextItem: UploadSessionCacheItem = {
+        fileId,
+        uploadId,
+        fileKey,
+        relativePath,
+        fileSize: file.size,
+        uploadedSize,
+        partSize,
+        parts: completedParts,
+        status,
+        updatedAt: Date.now(),
+      };
+      upsertUploadSessionCacheItem(fileKey, nextItem);
+      cacheItem = nextItem;
+      return nextItem;
+    };
+
+    const startNewMultipartUpload = async () => {
+      if (fileId && uploadId) {
+        try {
+          await requirementsApi.abortRequirementOssMultipartUpload(requirementId, fileId, { uploadId });
+        } catch {
+        }
+      }
+
+      const uploadTicket = await requirementsApi.createRequirementOssFile(requirementId, {
+        kind: 'dicom',
+        fileName: relativePath,
+        fileSize: file.size,
+        mimeType: file.type,
+      });
+      const multipart = await requirementsApi.initiateRequirementOssMultipartUpload(requirementId, uploadTicket.fileId);
+      fileId = uploadTicket.fileId;
+      uploadId = multipart.uploadId;
+      partSize = multipart.partSize || DEFAULT_MULTIPART_PART_SIZE_BYTES;
+      completedParts = [];
+      persistCache('pending');
+    };
+
+    if (!fileId || !uploadId) {
+      await startNewMultipartUpload();
+    } else {
+      try {
+        const serverParts = await requirementsApi.listRequirementOssMultipartParts(requirementId, fileId, uploadId);
+        completedParts = mergeMultipartParts(serverParts.parts);
+        persistCache(completedParts.length > 0 ? 'uploading' : 'pending');
+      } catch {
+        await startNewMultipartUpload();
+      }
+    }
+
+    try {
+      partSize = Math.max(partSize || DEFAULT_MULTIPART_PART_SIZE_BYTES, 1024 * 1024);
+      let durableFileLoaded = Math.min(sumMultipartUploadedBytes(completedParts), file.size);
+      setUploadProgress({
+        loaded: Math.min(aggregateBaseLoaded + durableFileLoaded, aggregateTotalBytes),
+        total: aggregateTotalBytes,
+        percent: aggregateTotalBytes > 0
+          ? Math.min(100, Math.round(((aggregateBaseLoaded + durableFileLoaded) / aggregateTotalBytes) * 100))
+          : 0,
+      });
+      persistCache(durableFileLoaded >= file.size ? 'uploaded' : durableFileLoaded > 0 ? 'uploading' : 'pending');
+
+      if (durableFileLoaded > 0 && !resumedUploadNoticeRef.current.has(fileKey)) {
+        resumedUploadNoticeRef.current.add(fileKey);
+        message.info(`检测到文件“${relativePath}”存在未完成上传，已自动从上次进度继续。`);
+      }
+
+      const totalParts = Math.max(1, Math.ceil(file.size / partSize));
+      for (let partNumber = 1; partNumber <= totalParts; partNumber += 1) {
+        if (completedParts.some((part) => part.partNumber === partNumber)) {
+          continue;
+        }
+
+        const partStart = (partNumber - 1) * partSize;
+        const partEnd = Math.min(partStart + partSize, file.size);
+        let uploadResponse: AxiosResponse | null = null;
+        let lastUploadError: unknown = null;
+
+        for (let attempt = 1; attempt <= MULTIPART_PART_UPLOAD_MAX_RETRIES; attempt += 1) {
+          try {
+            const signedPart = await requirementsApi.signRequirementOssMultipartPart(requirementId, fileId!, {
+              uploadId: uploadId!,
+              partNumber,
+            });
+
+            uploadResponse = await axios.put(signedPart.upload.url, file.slice(partStart, partEnd), {
+              headers: signedPart.upload.headers,
+              onUploadProgress: (event: AxiosProgressEvent) => {
+                const loaded = aggregateBaseLoaded + durableFileLoaded + Math.min(event.loaded, partEnd - partStart);
+                const percent = aggregateTotalBytes > 0 ? Math.min(100, Math.round((loaded / aggregateTotalBytes) * 100)) : 0;
+                setUploadProgress({ loaded, total: aggregateTotalBytes, percent });
+              },
+            });
+
+            if (attempt > 1) {
+              message.success(`文件“${relativePath}”第 ${partNumber} 个分片重试成功。`);
+            }
+            lastUploadError = null;
+            break;
+          } catch (error) {
+            lastUploadError = error;
+            if (attempt < MULTIPART_PART_UPLOAD_MAX_RETRIES) {
+              message.warning(`文件“${relativePath}”第 ${partNumber} 个分片上传失败，正在重试（${attempt}/${MULTIPART_PART_UPLOAD_MAX_RETRIES - 1}）。`);
+            }
+          }
+        }
+
+        if (!uploadResponse) {
+          const errorMessage = axios.isAxiosError(lastUploadError)
+            ? (lastUploadError.response?.data as { message?: string } | undefined)?.message || lastUploadError.message
+            : lastUploadError instanceof Error
+              ? lastUploadError.message
+              : '网络连接异常';
+          throw new Error(`文件“${relativePath}”第 ${partNumber} 个分片上传失败，已重试 ${MULTIPART_PART_UPLOAD_MAX_RETRIES} 次：${errorMessage}`);
+        }
+
+        const etag = normalizeEtag(uploadResponse.headers.etag as string | undefined);
+        if (!etag) {
+          throw new Error(`Missing ETag for multipart part ${partNumber}`);
+        }
+
+        completedParts = mergeMultipartParts([
+          ...completedParts,
+          {
+            partNumber,
+            etag,
+            size: partEnd - partStart,
+          },
+        ]);
+        durableFileLoaded = Math.min(sumMultipartUploadedBytes(completedParts), file.size);
+        persistCache(durableFileLoaded >= file.size ? 'uploaded' : 'uploading');
+        setUploadProgress({
+          loaded: Math.min(aggregateBaseLoaded + durableFileLoaded, aggregateTotalBytes),
+          total: aggregateTotalBytes,
+          percent: aggregateTotalBytes > 0
+            ? Math.min(100, Math.round(((aggregateBaseLoaded + durableFileLoaded) / aggregateTotalBytes) * 100))
+            : 0,
+        });
+      }
+
+      const completedFile = await requirementsApi.completeRequirementOssMultipartUpload(requirementId, fileId!, {
+        uploadId: uploadId!,
+        fileSize: file.size,
+        parts: mergeMultipartParts(completedParts).map((part) => ({
+          partNumber: part.partNumber,
+          etag: part.etag,
+        })),
+      });
+      fileId = completedFile.id;
+      persistCache('uploaded');
+      return completedFile.id;
+    } catch (error) {
+      if (fileId || uploadId) {
+        persistCache('failed');
+      } else {
+        removeUploadSessionCacheItem(fileKey);
+      }
+      throw error;
+    }
+  };
   const buildFileKey = (file: File) => {
     const relativePath = getRelativePathFromFile(file);
     return `${relativePath}::${file.size}::${file.lastModified}`;
@@ -452,36 +667,14 @@ export function UploadCenterPage() {
 
       const uploadedFileIds: string[] = [];
       for (const file of files) {
-        const relativePath = getRelativePathFromFile(file);
-        const uploadTicket = await requirementsApi.createRequirementOssFile(requirementId, {
-          kind: 'dicom',
-          fileName: relativePath,
-          fileSize: file.size,
-          mimeType: file.type,
-        });
-
-        const baseLoaded = durableLoaded;
-        const uploadResponse = await axios.put(uploadTicket.upload.url, file, {
-          headers: uploadTicket.upload.headers,
-          onUploadProgress: (event: AxiosProgressEvent) => {
-            const loaded = baseLoaded + event.loaded;
-            const percent = totalBytes > 0 ? Math.min(100, Math.round((loaded / totalBytes) * 100)) : 0;
-            setUploadProgress({ loaded, total: totalBytes, percent });
-          },
-        });
-
-        durableLoaded = baseLoaded + file.size;
+        const uploadedFileId = await uploadFileToOssInParts(file, durableLoaded, totalBytes);
+        uploadedFileIds.push(uploadedFileId);
+        durableLoaded += file.size;
         setUploadProgress({
-          loaded: durableLoaded,
+          loaded: Math.min(durableLoaded, totalBytes),
           total: totalBytes,
           percent: totalBytes > 0 ? Math.min(100, Math.round((durableLoaded / totalBytes) * 100)) : 0,
         });
-
-        const completedFile = await requirementsApi.completeRequirementOssFileUpload(requirementId, uploadTicket.fileId, {
-          etag: normalizeEtag(uploadResponse.headers.etag as string | undefined),
-          fileSize: file.size,
-        });
-        uploadedFileIds.push(completedFile.id);
       }
 
       const result = await requirementsApi.createDatasetBatchFromOssFiles(requirementId, {

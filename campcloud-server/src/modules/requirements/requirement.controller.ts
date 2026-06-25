@@ -20,11 +20,14 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { CreateRequirementOssFileDto } from './dto/create-requirement-oss-file.dto';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto';
+import { AbortRequirementOssMultipartUploadDto } from './dto/abort-requirement-oss-multipart-upload.dto';
+import { CompleteRequirementOssMultipartUploadDto } from './dto/complete-requirement-oss-multipart-upload.dto';
 import { ConfirmRequirementOssFileDto } from './dto/confirm-requirement-oss-file.dto';
 import { ListDatasetBatchesDto } from './dto/list-dataset-batches.dto';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 import { ListRequirementDataTreeDto } from './dto/list-requirement-data-tree.dto';
 import { ListRequirementsDto } from './dto/list-requirements.dto';
+import { SignRequirementOssMultipartPartDto } from './dto/sign-requirement-oss-multipart-part.dto';
 import { UpdateRequirementStatusDto } from './dto/update-requirement-status.dto';
 import { RequirementsService } from './requirement.service';
 
@@ -532,6 +535,84 @@ export class RequirementsController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.requirementsService.listRequirementOssFiles(BigInt(user.id), BigInt(id), user.role);
+  }
+
+  @Post(':id/object-storage-files/:fileId/multipart/init')
+  initiateRequirementOssMultipartUpload(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+  ) {
+    return this.requirementsService.initiateRequirementOssMultipartUpload(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
+    );
+  }
+
+  @Get(':id/object-storage-files/:fileId/multipart/parts')
+  listRequirementOssMultipartParts(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+    @Query('uploadId') uploadId: string,
+  ) {
+    return this.requirementsService.listRequirementOssMultipartParts(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
+      uploadId,
+    );
+  }
+
+  @Post(':id/object-storage-files/:fileId/multipart/sign-part')
+  signRequirementOssMultipartPart(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+    @Body() dto: SignRequirementOssMultipartPartDto,
+  ) {
+    return this.requirementsService.signRequirementOssMultipartPart(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
+      dto,
+    );
+  }
+
+  @Post(':id/object-storage-files/:fileId/multipart/complete')
+  completeRequirementOssMultipartUpload(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+    @Body() dto: CompleteRequirementOssMultipartUploadDto,
+  ) {
+    return this.requirementsService.completeRequirementOssMultipartUpload(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
+      dto,
+    );
+  }
+
+  @Post(':id/object-storage-files/:fileId/multipart/abort')
+  abortRequirementOssMultipartUpload(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('fileId', ParseIntPipe) fileId: number,
+    @Body() dto: AbortRequirementOssMultipartUploadDto,
+  ) {
+    return this.requirementsService.abortRequirementOssMultipartUpload(
+      BigInt(user.id),
+      BigInt(id),
+      BigInt(fileId),
+      user.role,
+      dto.uploadId,
+    );
   }
 
   @Post(':id/object-storage-files/:fileId/complete')

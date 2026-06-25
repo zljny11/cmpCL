@@ -355,6 +355,57 @@ export interface RequirementOssFileUploadTicket {
   };
 }
 
+﻿export interface RequirementOssMultipartInitResult {
+  fileId: string;
+  uploadId: string;
+  objectKey: string;
+  bucketName: string;
+  partSize: number;
+  expiresAt: string;
+}
+
+export interface RequirementOssMultipartPartItem {
+  partNumber: number;
+  etag: string;
+  size: number;
+}
+
+export interface RequirementOssMultipartPartsResult {
+  fileId: string;
+  uploadId: string;
+  parts: RequirementOssMultipartPartItem[];
+}
+
+export interface SignRequirementOssMultipartPartPayload {
+  uploadId: string;
+  partNumber: number;
+}
+
+export interface RequirementOssMultipartSignedPart {
+  fileId: string;
+  uploadId: string;
+  partNumber: number;
+  upload: {
+    method: 'PUT';
+    url: string;
+    headers: Record<string, string>;
+    expiresAt: string;
+  };
+}
+
+export interface CompleteRequirementOssMultipartUploadPayload {
+  uploadId: string;
+  fileSize?: number;
+  parts: Array<{
+    partNumber: number;
+    etag: string;
+  }>;
+}
+
+export interface AbortRequirementOssMultipartUploadPayload {
+  uploadId: string;
+}
+
 export interface ConfirmRequirementOssFileUploadPayload {
   etag?: string;
   fileSize?: number;

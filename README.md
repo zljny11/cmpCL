@@ -171,3 +171,50 @@ print(checkpoint.keys())
 - `model_loader.py` 是唯一维护版本，位于 [license/model_loader.py](license/model_loader.py)
 - 若未安装 `cryptography`，loader 会回退使用系统里的 `openssl`
 - 如果提示 `decrypt failed`，通常表示 `.model` 与 `license.txt` 不是同一次交付的配套文件
+
+
+## DICOM 直传 OSS 分片上传说明
+
+当前仓库里的 DICOM 上传已经改为浏览器直传 OSS 的分片上传方案。
+
+为什么这样设计：
+
+- 公网服务器配置较小，不适合承担大体积 DICOM 文件的中转上传。
+- 文件由浏览器直接传到 OSS，服务端只负责签名、查询已上传分片和最终确认入库。
+- 当前目标是务实可用，不追求特别重的工程化方案：5 GB 以下文件优先保证能稳定上传，速度可以适当慢一些。
+
+当前行为：
+
+- 前端会把 DICOM 文件按分片切开后上传到 OSS。
+- 浏览器会把上传进度检查点保存在 `localStorage` 中，按需求 ID 和文件指纹区分。
+- 如果页面刷新或网络中断，客户端会先查询 OSS 上已经存在的分片，再从最后一个已确认分片继续上传。
+- 检测到可续传文件时，页面会提示一次“已从上次进度继续上传”。
+- 每个分片默认最多重试 3 次，超过后才会判定该文件上传失败。
+- 所有分片上传完成后，前端会调用后端完成 multipart upload，再基于这些 OSS 文件创建数据批次。
+
+需求原始文件相关的后端接口：
+
+- `POST /requirements/:id/object-storage-files/:fileId/multipart/init`
+- `GET /requirements/:id/object-storage-files/:fileId/multipart/parts`
+- `POST /requirements/:id/object-storage-files/:fileId/multipart/sign-part`
+- `POST /requirements/:id/object-storage-files/:fileId/multipart/complete`
+- `POST /requirements/:id/object-storage-files/:fileId/multipart/abort`
+
+前端落点：
+
+- `campcloud-web/src/pages/uploads/index.tsx`：分片上传主流程、续传提示、单分片重试、本地检查点缓存
+- `campcloud-web/src/services/api/requirements.ts`：multipart 上传接口封装
+- `campcloud-web/src/types/requirements.ts`：multipart 上传请求和返回类型
+
+后端落点：
+
+- `campcloud-server/src/modules/requirements/requirement.controller.ts`：multipart 上传接口入口
+- `campcloud-server/src/modules/requirements/requirement.service.ts`：OSS 分片签名、分片列表查询、完成上传、取消上传
+- `campcloud-server/src/modules/requirements/dto/`：multipart 相关 DTO
+
+使用和运维注意事项：
+
+- 这是浏览器直传 OSS 的链路，所以 OSS CORS 必须放行对应的上传方法和请求头。
+- 当前实现主要面向 5 GB 以下的单文件上传，没有专门针对超大文件和高并发场景做进一步优化。
+- 续传状态只保存在当前浏览器本地。清空浏览器存储，或者文件指纹变化后，会重新开始一次新上传。
+- 如果某个 multipart 上传状态已经不可用，前端可以中止旧上传并重新发起一轮新的上传。
