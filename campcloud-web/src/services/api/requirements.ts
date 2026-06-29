@@ -21,6 +21,7 @@ import {
   RequirementListQuery,
   RequirementPreviewPayload,
   RequirementDetailDataPullResult,
+  RequirementDetailPullProgress,
   RequirementOssFileDownloadAuthorization,
   RequirementOssFileItem,
   RequirementOssFileUploadTicket,
@@ -344,6 +345,11 @@ export const requirementsApi = {
 
   async pullRequirementDetailData(id: string) {
     const response = (await http.post(`/requirements/${id}/pull-detail-data`)) as ApiResponse<RequirementDetailDataPullResult>;
+    return response.data;
+  },
+
+  async getRequirementDetailPullProgress(id: string) {
+    const response = (await http.get(`/requirements/${id}/pull-detail-data/progress`)) as ApiResponse<RequirementDetailPullProgress>;
     return response.data;
   },
 

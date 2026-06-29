@@ -355,7 +355,7 @@ export interface RequirementOssFileUploadTicket {
   };
 }
 
-﻿export interface RequirementOssMultipartInitResult {
+锘縠xport interface RequirementOssMultipartInitResult {
   fileId: string;
   uploadId: string;
   objectKey: string;
@@ -448,6 +448,55 @@ export interface RequirementDetailDataPullResult {
   skippedBatchIds: string[];
   totalBytes: number;
   fileCount: number;
+}
+
+export type RequirementDetailPullProgressStatus = 'idle' | 'running' | 'completed' | 'failed';
+
+export type RequirementDetailPullBatchStage =
+  | 'queued'
+  | 'downloading'
+  | 'persisting'
+  | 'cleaning'
+  | 'completed'
+  | 'failed';
+
+export interface RequirementDetailPullBatchProgressItem {
+  batchId: string;
+  batchNo: number;
+  status: RequirementDetailPullProgressStatus;
+  stage: RequirementDetailPullBatchStage;
+  totalFiles: number;
+  completedFiles: number;
+  failedFiles: number;
+  totalBytes: number;
+  completedBytes: number;
+  currentFileName: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface RequirementDetailPullProgress {
+  requirementId: string;
+  status: RequirementDetailPullProgressStatus;
+  stage: RequirementDetailPullBatchStage | 'idle';
+  totalBatches: number;
+  completedBatches: number;
+  failedBatches: number;
+  totalFiles: number;
+  completedFiles: number;
+  failedFiles: number;
+  totalBytes: number;
+  completedBytes: number;
+  startedAt: string | null;
+  updatedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  currentBatchId: string | null;
+  currentBatchNo: number | null;
+  currentFileName: string | null;
+  batches: RequirementDetailPullBatchProgressItem[];
 }
 
 export interface RequirementDeliveryItem {

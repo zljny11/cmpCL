@@ -110,6 +110,48 @@ type RequirementOssFileSummary = {
   updatedAt: Date;
 };
 
+type RequirementDetailPullProgressStatus = 'idle' | 'running' | 'completed' | 'failed';
+type RequirementDetailPullBatchStage = 'queued' | 'downloading' | 'persisting' | 'cleaning' | 'completed' | 'failed';
+
+type RequirementDetailPullBatchProgressState = {
+  batchId: string;
+  batchNo: number;
+  status: RequirementDetailPullProgressStatus;
+  stage: RequirementDetailPullBatchStage;
+  totalFiles: number;
+  completedFiles: number;
+  failedFiles: number;
+  totalBytes: number;
+  completedBytes: number;
+  currentFileName: string | null;
+  errorMessage: string | null;
+  startedAt: Date | null;
+  updatedAt: Date;
+  completedAt: Date | null;
+};
+
+type RequirementDetailPullProgressState = {
+  requirementId: string;
+  status: RequirementDetailPullProgressStatus;
+  stage: RequirementDetailPullBatchStage | 'idle';
+  totalBatches: number;
+  completedBatches: number;
+  failedBatches: number;
+  totalFiles: number;
+  completedFiles: number;
+  failedFiles: number;
+  totalBytes: number;
+  completedBytes: number;
+  startedAt: Date | null;
+  updatedAt: Date;
+  completedAt: Date | null;
+  errorMessage: string | null;
+  currentBatchId: string | null;
+  currentBatchNo: number | null;
+  currentFileName: string | null;
+  batches: RequirementDetailPullBatchProgressState[];
+};
+
 const DELIVERY_DOWNLOAD_COOLDOWN_MS = 1 * 60 * 1000;
 const DELIVERY_DOWNLOAD_FAILURE_LOCK_THRESHOLD = 3;
 
@@ -127,6 +169,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   private static readonly DEFAULT_UNPULLED_BATCH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
   private static readonly DEFAULT_OSS_PULL_MAX_RETRIES = 3;
   private static readonly DEFAULT_OSS_PULL_RETRY_DELAY_MS = 30 * 1000;
+  private static readonly DETAIL_PULL_PROGRESS_RETENTION_MS = 6 * 60 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -211,6 +254,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   private lastUploadSessionCleanupAt = 0;
   private ossCleanupTimer: NodeJS.Timeout | null = null;
   private ossCleanupRunning = false;
+  private readonly requirementDetailPullProgress = new Map<string, RequirementDetailPullProgressState>();
 
   onModuleInit() {
     this.startRequirementOssCleanupLoop();
@@ -882,12 +926,12 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async downloadUrlToFile(url: string, filePath: string) {
+  private async downloadUrlToFile(url: string, filePath: string, onProgress?: (chunkBytes: number) => void) {
     await mkdir(dirname(filePath), { recursive: true });
     return new Promise<void>((resolvePromise, reject) => {
       const request = httpsRequest(url, { method: 'GET' }, (response) => {
         if (!response.statusCode || response.statusCode >= 400) {
-          reject(new Error(`OSS GET 失败，状态码 ${response.statusCode ?? 'unknown'}`));
+          reject(new Error('OSS GET failed with status ' + (response.statusCode ?? 'unknown')));
           response.resume();
           return;
         }
@@ -895,6 +939,9 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         const writer = createWriteStream(filePath, { flags: 'w' });
         writer.on('error', reject);
         response.on('error', reject);
+        response.on('data', (chunk: Buffer) => {
+          onProgress?.(chunk.length);
+        });
         writer.on('finish', () => resolvePromise());
         response.pipe(writer);
       });
@@ -2239,17 +2286,39 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     files: Array<{
       objectKey: string;
       originalFileName: string;
+      fileSize?: number | bigint;
     }>,
+    options?: {
+      onFileStart?: (fileName: string) => void;
+      onFileBytes?: (fileName: string, bytes: number) => void;
+      onFileDownloaded?: (fileName: string) => void;
+    },
   ) {
     return this.mapWithConcurrency(files, 3, async (file, index) => {
       const tempDir = await mkdtemp(join(tmpdir(), 'campcloud-oss-batch-'));
       const fileName = this.sanitizeFilename(file.originalFileName, index);
       const filePath = join(tempDir, fileName);
       const download = this.buildOssSignedUrl('GET', file.objectKey, this.ossDownloadUrlExpiresSeconds);
-      await this.downloadUrlToFile(download.url, filePath);
+      let bufferedBytes = 0;
+      let lastReportedAt = Date.now();
+      options?.onFileStart?.(file.originalFileName);
+      await this.downloadUrlToFile(download.url, filePath, (chunkBytes) => {
+        bufferedBytes += chunkBytes;
+        const now = Date.now();
+        if (bufferedBytes >= 2 * 1024 * 1024 || now - lastReportedAt >= 500) {
+          options?.onFileBytes?.(file.originalFileName, bufferedBytes);
+          bufferedBytes = 0;
+          lastReportedAt = now;
+        }
+      });
+      if (bufferedBytes > 0) {
+        options?.onFileBytes?.(file.originalFileName, bufferedBytes);
+      }
+      options?.onFileDownloaded?.(file.originalFileName);
       return {
         originalname: file.originalFileName,
         path: filePath,
+        size: typeof file.fileSize === 'bigint' ? Number(file.fileSize) : file.fileSize,
       };
     });
   }
@@ -2505,21 +2574,38 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     parsedRecords: ParsedDicomRecord[],
     failedCount: number,
   ) {
+    const trimmedRemark = remark?.trim() || null;
 
     if (parsedRecords.length === 0) {
       await this.prisma.datasetBatch.update({
         where: { id: batch.id },
         data: {
           status: 'failed',
-          remark: remark?.trim() ? `${remark.trim()}；全部文件解析失败` : '全部文件解析失败',
+          remark: trimmedRemark ? [trimmedRemark, 'All files failed to parse'].join('; ') : 'All files failed to parse',
         },
       });
       return;
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const record of parsedRecords) {
-        const patient = await tx.patient.upsert({
+    const patientCache = new Map<string, bigint>();
+    const studyCache = new Map<string, bigint>();
+    const affectedStudyIds = new Set<bigint>();
+
+    for (const record of parsedRecords) {
+      let patientId = patientCache.get(record.patientUid);
+      if (patientId) {
+        await this.prisma.patient.update({
+          where: { id: patientId },
+          data: {
+            patientId: record.patientId ?? undefined,
+            patientName: record.patientName ?? undefined,
+            sex: record.sex ?? undefined,
+            birthday: record.birthday ?? undefined,
+            imageCount: { increment: 1 },
+          },
+        });
+      } else {
+        const patient = await this.prisma.patient.upsert({
           where: {
             requirementId_patientUid: {
               requirementId,
@@ -2542,12 +2628,29 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             birthday: record.birthday,
             imageCount: 1,
           },
+          select: { id: true },
         });
+        patientId = patient.id;
+        patientCache.set(record.patientUid, patientId);
+      }
 
-        const study = await tx.study.upsert({
+      const studyKey = patientId.toString() + ':' + record.studyUid;
+      let studyId = studyCache.get(studyKey);
+      if (studyId) {
+        await this.prisma.study.update({
+          where: { id: studyId },
+          data: {
+            studyId: record.studyId ?? undefined,
+            modality: record.modality ?? undefined,
+            studyDate: record.studyDate ?? undefined,
+            studyDescription: record.studyDescription ?? undefined,
+          },
+        });
+      } else {
+        const study = await this.prisma.study.upsert({
           where: {
             patientId_studyUid: {
-              patientId: patient.id,
+              patientId,
               studyUid: record.studyUid,
             },
           },
@@ -2558,81 +2661,67 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             studyDescription: record.studyDescription ?? undefined,
           },
           create: {
-            patientId: patient.id,
+            patientId,
             studyUid: record.studyUid,
             studyId: record.studyId,
             modality: record.modality,
             studyDate: record.studyDate,
             studyDescription: record.studyDescription,
           },
+          select: { id: true },
         });
+        studyId = study.id;
+        studyCache.set(studyKey, studyId);
+      }
 
-        await tx.series.upsert({
-          where: {
-            studyId_seriesUid_datasetBatchId: {
-              studyId: study.id,
-              seriesUid: record.seriesUid,
-              datasetBatchId: batch.id,
-            },
-          },
-          update: {
-            seriesDescription: record.seriesDescription ?? undefined,
-            hospitalName: record.hospitalName ?? undefined,
-            remark: remark?.trim() || null,
-            imageCount: { increment: 1 },
-            storagePath: record.storagePath,
-          },
-          create: {
-            studyId: study.id,
-            datasetBatchId: batch.id,
+      affectedStudyIds.add(studyId);
+
+      await this.prisma.series.upsert({
+        where: {
+          studyId_seriesUid_datasetBatchId: {
+            studyId,
             seriesUid: record.seriesUid,
-            seriesDescription: record.seriesDescription,
-            hospitalName: record.hospitalName,
-            remark: remark?.trim() || null,
-            imageCount: 1,
-            storagePath: record.storagePath,
+            datasetBatchId: batch.id,
           },
-        });
-      }
-
-      const patientIds = [...new Set(parsedRecords.map((record) => record.patientUid))];
-      for (const patientUid of patientIds) {
-        const patient = await tx.patient.findUnique({
-          where: {
-            requirementId_patientUid: {
-              requirementId,
-              patientUid,
-            },
-          },
-          select: { id: true },
-        });
-
-        if (!patient) {
-          continue;
-        }
-
-        const studies = await tx.study.findMany({
-          where: { patientId: patient.id },
-          select: { id: true },
-        });
-
-        for (const study of studies) {
-          const seriesCount = await tx.series.count({ where: { studyId: study.id } });
-          await tx.study.update({
-            where: { id: study.id },
-            data: { seriesCount },
-          });
-        }
-      }
-
-      await tx.datasetBatch.update({
-        where: { id: batch.id },
-        data: {
-          status: 'parsed',
-          remark:
-            failedCount > 0 ? [remark?.trim(), `${failedCount} 个文件解析失败`].filter(Boolean).join('；') : remark?.trim() || null,
+        },
+        update: {
+          seriesDescription: record.seriesDescription ?? undefined,
+          hospitalName: record.hospitalName ?? undefined,
+          remark: trimmedRemark,
+          imageCount: { increment: 1 },
+          storagePath: record.storagePath,
+          uploadedAt: record.uploadedAt ?? batch.uploadedAt,
+        },
+        create: {
+          studyId,
+          datasetBatchId: batch.id,
+          seriesUid: record.seriesUid,
+          seriesDescription: record.seriesDescription,
+          hospitalName: record.hospitalName,
+          remark: trimmedRemark,
+          imageCount: 1,
+          storagePath: record.storagePath,
+          uploadedAt: record.uploadedAt ?? batch.uploadedAt,
         },
       });
+    }
+
+    for (const studyId of affectedStudyIds) {
+      const seriesCount = await this.prisma.series.count({ where: { studyId } });
+      await this.prisma.study.update({
+        where: { id: studyId },
+        data: { seriesCount },
+      });
+    }
+
+    await this.prisma.datasetBatch.update({
+      where: { id: batch.id },
+      data: {
+        status: 'parsed',
+        remark: failedCount > 0
+          ? [trimmedRemark, String(failedCount) + ' files failed to parse'].filter(Boolean).join('; ')
+          : trimmedRemark,
+      },
     });
   }
 
@@ -2645,6 +2734,9 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     requirementId: bigint,
     remark: string | null | undefined,
     files: StagedUploadFile[],
+    options?: {
+      onFileProcessed?: (result: { fileName: string; success: boolean; size: number; reason?: string }) => Promise<void> | void;
+    },
   ) {
     const { batchRoot } = await this.persistBatchFiles(requirementId, batch.batchNo);
     const parsedRecords: ParsedDicomRecord[] = [];
@@ -2654,6 +2746,11 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       if (this.shouldIgnoreUploadedFile(file.originalname)) {
+        await options?.onFileProcessed?.({
+          fileName: file.originalname,
+          success: true,
+          size: file.size ?? 0,
+        });
         continue;
       }
 
@@ -2667,11 +2764,23 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         await this.moveFileToStorage(file.path, storagePath);
         movedToFinalStorage = true;
         parsedRecords.push({ ...tempRecord, storagePath });
+        await options?.onFileProcessed?.({
+          fileName: file.originalname,
+          success: true,
+          size: file.size ?? 0,
+        });
       } catch (error) {
         failedCount += 1;
+        const reason = error instanceof Error ? error.message : 'DICOM parse failed';
         failedFiles.push({
           originalName: file.originalname,
-          reason: error instanceof Error ? error.message : 'DICOM解析失败',
+          reason,
+        });
+        await options?.onFileProcessed?.({
+          fileName: file.originalname,
+          success: false,
+          size: file.size ?? 0,
+          reason,
         });
       } finally {
         if (!movedToFinalStorage) {
@@ -2694,8 +2803,12 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     files: Array<{
       relativePath: string;
       storagePath: string;
+      size?: number;
       onPersisted?: (targetPath: string) => Promise<void>;
     }>,
+    options?: {
+      onFilePersisted?: (result: { fileName: string; size: number }) => Promise<void> | void;
+    },
   ) {
     const batchRoot = this.getDatasetBatchRoot(requirementId, batch.batchNo);
     await mkdir(batchRoot, { recursive: true });
@@ -2705,6 +2818,10 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       const targetPath = join(batchRoot, relativeStoragePath);
       await this.moveFileToStorage(file.storagePath, targetPath);
       await file.onPersisted?.(targetPath);
+      await options?.onFilePersisted?.({
+        fileName: file.relativePath,
+        size: file.size ?? 0,
+      });
     }
 
     await this.writeFailedDatasetFilesManifest(requirementId, batch.batchNo, []);
@@ -5137,6 +5254,205 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async getRequirementDetailPullProgress(userId: bigint, requirementId: bigint, role: UserRole) {
+    if (role !== UserRole.admin) {
+      throw new ForbiddenException('Only admins can view detail data pull progress');
+    }
+    await this.ensureRequirementAccess(userId, requirementId, role);
+    this.pruneRequirementDetailPullProgress();
+    const progress = this.requirementDetailPullProgress.get(this.getRequirementDetailPullProgressKey(requirementId));
+    return progress ? this.mapRequirementDetailPullProgress(progress) : this.buildIdleRequirementDetailPullProgress(requirementId);
+  }
+
+  private getRequirementDetailPullProgressKey(requirementId: bigint) {
+    return requirementId.toString();
+  }
+
+  private pruneRequirementDetailPullProgress(now = Date.now()) {
+    for (const [key, progress] of this.requirementDetailPullProgress.entries()) {
+      if (progress.status === 'running') {
+        continue;
+      }
+      if (now - progress.updatedAt.getTime() > RequirementsService.DETAIL_PULL_PROGRESS_RETENTION_MS) {
+        this.requirementDetailPullProgress.delete(key);
+      }
+    }
+  }
+
+  private buildIdleRequirementDetailPullProgress(requirementId: bigint) {
+    return {
+      requirementId: requirementId.toString(),
+      status: 'idle',
+      stage: 'idle',
+      totalBatches: 0,
+      completedBatches: 0,
+      failedBatches: 0,
+      totalFiles: 0,
+      completedFiles: 0,
+      failedFiles: 0,
+      totalBytes: 0,
+      completedBytes: 0,
+      startedAt: null,
+      updatedAt: null,
+      completedAt: null,
+      errorMessage: null,
+      currentBatchId: null,
+      currentBatchNo: null,
+      currentFileName: null,
+      batches: [],
+    };
+  }
+
+  private mapRequirementDetailPullProgress(progress: RequirementDetailPullProgressState) {
+    return {
+      requirementId: progress.requirementId,
+      status: progress.status,
+      stage: progress.stage,
+      totalBatches: progress.totalBatches,
+      completedBatches: progress.completedBatches,
+      failedBatches: progress.failedBatches,
+      totalFiles: progress.totalFiles,
+      completedFiles: progress.completedFiles,
+      failedFiles: progress.failedFiles,
+      totalBytes: progress.totalBytes,
+      completedBytes: progress.completedBytes,
+      startedAt: progress.startedAt?.toISOString() ?? null,
+      updatedAt: progress.updatedAt?.toISOString() ?? null,
+      completedAt: progress.completedAt?.toISOString() ?? null,
+      errorMessage: progress.errorMessage,
+      currentBatchId: progress.currentBatchId,
+      currentBatchNo: progress.currentBatchNo,
+      currentFileName: progress.currentFileName,
+      batches: progress.batches.map((batch) => ({
+        batchId: batch.batchId,
+        batchNo: batch.batchNo,
+        status: batch.status,
+        stage: batch.stage,
+        totalFiles: batch.totalFiles,
+        completedFiles: batch.completedFiles,
+        failedFiles: batch.failedFiles,
+        totalBytes: batch.totalBytes,
+        completedBytes: batch.completedBytes,
+        currentFileName: batch.currentFileName,
+        errorMessage: batch.errorMessage,
+        startedAt: batch.startedAt?.toISOString() ?? null,
+        updatedAt: batch.updatedAt.toISOString(),
+        completedAt: batch.completedAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  private startRequirementDetailPullProgress(
+    requirementId: bigint,
+    batches: Array<{
+      id: bigint;
+      batchNo: number;
+      fileCount: number;
+      totalBytes: number;
+    }>,
+  ) {
+    this.pruneRequirementDetailPullProgress();
+    const startedAt = new Date();
+    const progress: RequirementDetailPullProgressState = {
+      requirementId: requirementId.toString(),
+      status: 'running',
+      stage: 'queued',
+      totalBatches: batches.length,
+      completedBatches: 0,
+      failedBatches: 0,
+      totalFiles: batches.reduce((sum, batch) => sum + batch.fileCount, 0),
+      completedFiles: 0,
+      failedFiles: 0,
+      totalBytes: batches.reduce((sum, batch) => sum + batch.totalBytes, 0),
+      completedBytes: 0,
+      startedAt,
+      updatedAt: startedAt,
+      completedAt: null,
+      errorMessage: null,
+      currentBatchId: null,
+      currentBatchNo: null,
+      currentFileName: null,
+      batches: batches.map((batch) => ({
+        batchId: batch.id.toString(),
+        batchNo: batch.batchNo,
+        status: 'running',
+        stage: 'queued',
+        totalFiles: batch.fileCount,
+        completedFiles: 0,
+        failedFiles: 0,
+        totalBytes: batch.totalBytes,
+        completedBytes: 0,
+        currentFileName: null,
+        errorMessage: null,
+        startedAt: null,
+        updatedAt: startedAt,
+        completedAt: null,
+      })),
+    };
+    this.refreshRequirementDetailPullProgress(progress);
+    this.requirementDetailPullProgress.set(this.getRequirementDetailPullProgressKey(requirementId), progress);
+  }
+
+  private updateRequirementDetailPullProgress(
+    requirementId: bigint,
+    updater: (progress: RequirementDetailPullProgressState) => void,
+  ) {
+    const progress = this.requirementDetailPullProgress.get(this.getRequirementDetailPullProgressKey(requirementId));
+    if (!progress) {
+      return;
+    }
+    updater(progress);
+    progress.updatedAt = new Date();
+    this.refreshRequirementDetailPullProgress(progress);
+  }
+
+  private refreshRequirementDetailPullProgress(progress: RequirementDetailPullProgressState) {
+    progress.totalBatches = progress.batches.length;
+    progress.completedBatches = progress.batches.filter((batch) => batch.status === 'completed').length;
+    progress.failedBatches = progress.batches.filter((batch) => batch.status === 'failed').length;
+    progress.totalFiles = progress.batches.reduce((sum, batch) => sum + batch.totalFiles, 0);
+    progress.completedFiles = progress.batches.reduce((sum, batch) => sum + batch.completedFiles, 0);
+    progress.failedFiles = progress.batches.reduce((sum, batch) => sum + batch.failedFiles, 0);
+    progress.totalBytes = progress.batches.reduce((sum, batch) => sum + batch.totalBytes, 0);
+    progress.completedBytes = progress.batches.reduce((sum, batch) => sum + batch.completedBytes, 0);
+
+    const activeBatch = progress.batches.find((batch) => batch.status === 'running')
+      ?? progress.batches.find((batch) => batch.stage === 'queued')
+      ?? null;
+
+    progress.currentBatchId = activeBatch?.batchId ?? null;
+    progress.currentBatchNo = activeBatch?.batchNo ?? null;
+    progress.currentFileName = activeBatch?.currentFileName ?? null;
+
+    if (progress.batches.some((batch) => batch.status === 'running' || batch.stage === 'queued')) {
+      progress.status = 'running';
+      progress.stage = activeBatch?.stage ?? 'queued';
+      progress.completedAt = null;
+      progress.errorMessage = activeBatch?.errorMessage ?? null;
+      return;
+    }
+
+    if (progress.failedBatches > 0) {
+      progress.status = 'failed';
+      progress.stage = 'failed';
+      progress.completedAt ??= new Date();
+      progress.errorMessage = progress.batches.find((batch) => batch.status === 'failed')?.errorMessage ?? 'Detail data pull failed';
+      return;
+    }
+
+    if (progress.totalBatches > 0 && progress.completedBatches === progress.totalBatches) {
+      progress.status = 'completed';
+      progress.stage = 'completed';
+      progress.completedAt ??= new Date();
+      progress.errorMessage = null;
+      return;
+    }
+
+    progress.status = 'idle';
+    progress.stage = 'idle';
+    progress.errorMessage = null;
+  }
+
   private async processRequirementOssPullBatch(
     batch: {
       id: bigint;
@@ -5152,6 +5468,17 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     },
     requirementId: bigint,
   ) {
+    const batchId = batch.id.toString();
+    const updateBatchProgress = (updater: (batchProgress: RequirementDetailPullBatchProgressState) => void) => {
+      this.updateRequirementDetailPullProgress(requirementId, (progress) => {
+        const batchProgress = progress.batches.find((item) => item.batchId === batchId);
+        if (!batchProgress) {
+          return;
+        }
+        updater(batchProgress);
+      });
+    };
+
     const filesForCleanup = batch.ossFiles.map((file) => ({
       id: file.id,
       objectKey: file.objectKey,
@@ -5163,6 +5490,19 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const attemptAt = new Date();
+      updateBatchProgress((batchProgress) => {
+        batchProgress.status = 'running';
+        batchProgress.stage = 'downloading';
+        batchProgress.completedFiles = 0;
+        batchProgress.failedFiles = 0;
+        batchProgress.completedBytes = 0;
+        batchProgress.currentFileName = null;
+        batchProgress.errorMessage = null;
+        batchProgress.startedAt ??= attemptAt;
+        batchProgress.updatedAt = attemptAt;
+        batchProgress.completedAt = null;
+      });
+
       await this.prisma.requirementOssFile.updateMany({
         where: { id: { in: fileIds } },
         data: {
@@ -5178,8 +5518,32 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           batch.ossFiles.map((file) => ({
             objectKey: file.objectKey,
             originalFileName: file.originalFileName,
+            fileSize: file.fileSize,
           })),
+          {
+            onFileStart: (fileName) => {
+              updateBatchProgress((batchProgress) => {
+                batchProgress.stage = 'downloading';
+                batchProgress.currentFileName = fileName;
+                batchProgress.updatedAt = new Date();
+              });
+            },
+            onFileBytes: (fileName, bytes) => {
+              updateBatchProgress((batchProgress) => {
+                batchProgress.stage = 'downloading';
+                batchProgress.currentFileName = fileName;
+                batchProgress.completedBytes = Math.min(batchProgress.totalBytes, batchProgress.completedBytes + bytes);
+                batchProgress.updatedAt = new Date();
+              });
+            },
+          },
         );
+
+        updateBatchProgress((batchProgress) => {
+          batchProgress.stage = 'persisting';
+          batchProgress.currentFileName = null;
+          batchProgress.updatedAt = new Date();
+        });
 
         if (uploadSummary.requiresManualAnalysis) {
           await this.persistManualAnalysisBatchFiles(
@@ -5192,7 +5556,18 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             stagedFiles.map((file) => ({
               relativePath: file.originalname,
               storagePath: file.path,
+              size: file.size,
             })),
+            {
+              onFilePersisted: async ({ fileName }) => {
+                updateBatchProgress((batchProgress) => {
+                  batchProgress.stage = 'persisting';
+                  batchProgress.currentFileName = fileName;
+                  batchProgress.completedFiles = Math.min(batchProgress.totalFiles, batchProgress.completedFiles + 1);
+                  batchProgress.updatedAt = new Date();
+                });
+              },
+            },
           );
         } else {
           await this.processDatasetBatchFromStagedFiles(
@@ -5204,8 +5579,28 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             requirementId,
             trimmedRemark,
             stagedFiles,
+            {
+              onFileProcessed: async ({ fileName, success }) => {
+                updateBatchProgress((batchProgress) => {
+                  batchProgress.stage = 'persisting';
+                  batchProgress.currentFileName = fileName;
+                  if (success) {
+                    batchProgress.completedFiles = Math.min(batchProgress.totalFiles, batchProgress.completedFiles + 1);
+                  } else {
+                    batchProgress.failedFiles = Math.min(batchProgress.totalFiles, batchProgress.failedFiles + 1);
+                  }
+                  batchProgress.updatedAt = new Date();
+                });
+              },
+            },
           );
         }
+
+        updateBatchProgress((batchProgress) => {
+          batchProgress.stage = 'cleaning';
+          batchProgress.currentFileName = null;
+          batchProgress.updatedAt = new Date();
+        });
 
         await this.prisma.requirementOssFile.updateMany({
           where: { id: { in: fileIds } },
@@ -5215,9 +5610,20 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           },
         });
         await this.cleanupRequirementOssFiles(filesForCleanup);
+
+        updateBatchProgress((batchProgress) => {
+          const completedAt = new Date();
+          batchProgress.status = 'completed';
+          batchProgress.stage = 'completed';
+          batchProgress.currentFileName = null;
+          batchProgress.errorMessage = null;
+          batchProgress.completedBytes = batchProgress.totalBytes;
+          batchProgress.updatedAt = completedAt;
+          batchProgress.completedAt = completedAt;
+        });
         return;
       } catch (error) {
-        const rawMessage = error instanceof Error ? error.message : 'OSS 文件拉取失败';
+        const rawMessage = error instanceof Error ? error.message : 'OSS pull failed';
         const message = rawMessage.slice(0, 255);
         const hasRetry = attempt < maxAttempts;
 
@@ -5226,8 +5632,14 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             where: { id: { in: fileIds } },
             data: {
               status: RequirementOssFileStatus.uploaded,
-              errorMessage: `OSS 文件拉取失败，第 ${attempt + 1} 次重试前等待中：${message}`.slice(0, 255),
+              errorMessage: ('OSS pull failed, retrying: ' + message).slice(0, 255),
             },
+          });
+          updateBatchProgress((batchProgress) => {
+            batchProgress.stage = 'queued';
+            batchProgress.currentFileName = null;
+            batchProgress.errorMessage = ('Retrying after failure: ' + message).slice(0, 255);
+            batchProgress.updatedAt = new Date();
           });
           await this.sleep(this.ossPullRetryDelayMs * attempt);
           continue;
@@ -5235,14 +5647,23 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
         await this.reclaimRequirementOssFiles(
           filesForCleanup,
-          `OSS 文件拉取失败，已达最大重试次数并自动回收：${message}`.slice(0, 255),
+          ('OSS pull failed and cleanup started: ' + message).slice(0, 255),
         );
         await this.prisma.datasetBatch.update({
           where: { id: batch.id },
           data: {
             status: 'failed',
-            remark: trimmedRemark ? `${trimmedRemark}；OSS 文件拉取失败并已自动回收` : 'OSS 文件拉取失败并已自动回收',
+            remark: trimmedRemark ? trimmedRemark + '; OSS pull failed and source files were reclaimed' : 'OSS pull failed and source files were reclaimed',
           },
+        });
+        updateBatchProgress((batchProgress) => {
+          const completedAt = new Date();
+          batchProgress.status = 'failed';
+          batchProgress.stage = 'failed';
+          batchProgress.currentFileName = null;
+          batchProgress.errorMessage = message;
+          batchProgress.updatedAt = completedAt;
+          batchProgress.completedAt = completedAt;
         });
         return;
       }
@@ -5251,9 +5672,15 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
   async pullRequirementDetailData(userId: bigint, requirementId: bigint, role: UserRole) {
     if (role !== UserRole.admin) {
-      throw new ForbiddenException('仅管理员可以拉取需求详情数据');
+      throw new ForbiddenException('Only admins can pull detail data');
     }
     await this.ensureRequirementAccess(userId, requirementId, role);
+    this.pruneRequirementDetailPullProgress();
+
+    const existingProgress = this.requirementDetailPullProgress.get(this.getRequirementDetailPullProgressKey(requirementId));
+    if (existingProgress?.status === 'running') {
+      throw new ConflictException('A detail data pull is already in progress for this requirement');
+    }
 
     const pendingBatches = await this.prisma.datasetBatch.findMany({
       where: {
@@ -5283,7 +5710,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (pendingBatches.length === 0) {
-      throw new BadRequestException('当前没有待拉取的详情数据');
+      throw new BadRequestException('There is no pending detail data to pull');
     }
 
     const totalBytes = pendingBatches.reduce(
@@ -5293,6 +5720,19 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     const fileCount = pendingBatches.reduce((sum, batch) => sum + batch.ossFiles.length, 0);
     const startedBatchIds: string[] = [];
     const skippedBatchIds: string[] = [];
+    const batchesToStart = pendingBatches.filter((batch) => batch.ossFiles.length > 0);
+
+    if (batchesToStart.length > 0) {
+      this.startRequirementDetailPullProgress(
+        requirementId,
+        batchesToStart.map((batch) => ({
+          id: batch.id,
+          batchNo: batch.batchNo,
+          fileCount: batch.ossFiles.length,
+          totalBytes: batch.ossFiles.reduce((sum, file) => sum + Number(file.fileSize), 0),
+        })),
+      );
+    }
 
     for (const batch of pendingBatches) {
       if (batch.ossFiles.length === 0) {
@@ -5326,102 +5766,6 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         },
         requirementId,
       );
-      continue;
-      const uploadSummary = this.summarizeRequirementOssFiles(batch.ossFiles);
-      const trimmedRemark = batch.remark?.trim() || null;
-
-      await this.prisma.requirementOssFile.updateMany({
-        where: {
-          id: { in: batch.ossFiles.map((file) => file.id) },
-        },
-        data: {
-          status: RequirementOssFileStatus.parsing,
-          errorMessage: null,
-        },
-      });
-
-      void this.buildStagedFilesFromRequirementOssFiles(
-        batch.ossFiles.map((file) => ({
-          objectKey: file.objectKey,
-          originalFileName: file.originalFileName,
-        })),
-      )
-        .then(async (stagedFiles) => {
-          if (uploadSummary.requiresManualAnalysis) {
-            await this.persistManualAnalysisBatchFiles(
-              {
-                id: batch.id,
-                batchNo: batch.batchNo,
-              },
-              requirementId,
-              trimmedRemark,
-              stagedFiles.map((file) => ({
-                relativePath: file.originalname,
-                storagePath: file.path,
-                })),
-            );
-            await this.prisma.requirementOssFile.updateMany({
-              where: {
-                id: { in: batch.ossFiles.map((file) => file.id) },
-              },
-              data: {
-                status: RequirementOssFileStatus.parsed,
-                errorMessage: null,
-              },
-            });
-            await this.cleanupRequirementOssFiles(
-              batch.ossFiles.map((file) => ({
-                id: file.id,
-                objectKey: file.objectKey,
-              })),
-            );
-            return;
-          }
-
-          await this.processDatasetBatchFromStagedFiles(
-            {
-              id: batch.id,
-              batchNo: batch.batchNo,
-                uploadedAt: batch.uploadedAt,
-            },
-            requirementId,
-            trimmedRemark,
-            stagedFiles,
-          );
-          await this.prisma.requirementOssFile.updateMany({
-            where: {
-              id: { in: batch.ossFiles.map((file) => file.id) },
-            },
-            data: {
-              status: RequirementOssFileStatus.parsed,
-              errorMessage: null,
-            },
-          });
-          await this.cleanupRequirementOssFiles(
-            batch.ossFiles.map((file) => ({
-              id: file.id,
-              objectKey: file.objectKey,
-            })),
-          );
-        })
-        .catch(async () => {
-          await this.prisma.requirementOssFile.updateMany({
-            where: {
-              id: { in: batch.ossFiles.map((file) => file.id) },
-            },
-            data: {
-              status: RequirementOssFileStatus.failed,
-              errorMessage: 'OSS 文件拉取失败',
-            },
-          });
-          await this.prisma.datasetBatch.update({
-            where: { id: batch.id },
-            data: {
-              status: 'failed',
-              remark: trimmedRemark ? `${trimmedRemark}；OSS 文件拉取失败` : 'OSS 文件拉取失败',
-            },
-          });
-        });
     }
 
     return {

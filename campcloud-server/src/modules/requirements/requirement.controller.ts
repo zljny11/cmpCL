@@ -75,7 +75,7 @@ export class RequirementsController {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.requirement,
-        action: '上传需求',
+        action: 'Create requirement',
         targetType: 'requirement',
         targetId: result.id,
         targetName: result.title,
@@ -114,7 +114,7 @@ export class RequirementsController {
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.requirement,
-      action: '需求留言',
+      action: 'Create requirement message',
       targetType: 'requirement',
       targetId: id.toString(),
       targetName: result.requirementTitle ?? undefined,
@@ -149,7 +149,7 @@ export class RequirementsController {
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.data,
-      action: '交付算法',
+      action: 'Create delivery',
       targetType: 'requirement',
       targetId: id.toString(),
       targetName: result.requirementTitle ?? undefined,
@@ -401,7 +401,7 @@ export class RequirementsController {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.requirement,
-        action: '调整需求状态',
+        action: 'Update requirement status',
         targetType: 'requirement',
         targetId: result.id,
         targetName: result.requirementTitle ?? undefined,
@@ -507,7 +507,7 @@ export class RequirementsController {
     const startByteHeader = request.header('x-start-byte') ?? request.header('X-Start-Byte');
     const startByte = Number(startByteHeader ?? '0');
     if (!Number.isFinite(startByte) || startByte < 0) {
-      throw new BadRequestException('x-start-byte 必须是非负整数');
+      throw new BadRequestException('x-start-byte must be a non-negative number');
     }
 
     return this.requirementsService.uploadUploadSessionContent(
@@ -648,8 +648,8 @@ export class RequirementsController {
   @Post(':id/dataset-batches')
   @ApiOperation({
     deprecated: true,
-    summary: '旧版 multipart 批次上传接口，仅保留给小文件兼容使用',
-    description: '大文件和常规目录上传请改用 upload-sessions + dataset-batches/commit 新链路。',
+    summary: 'Legacy dataset batch upload entry',
+    description: 'Deprecated upload endpoint. Prefer upload-sessions plus dataset-batches/commit.',
   })
   @UseInterceptors(FilesInterceptor('files', LEGACY_DATASET_BATCH_MAX_FILES, {
     storage: stagedUploadStorage,
@@ -666,12 +666,12 @@ export class RequirementsController {
     if (files.length > RequirementsController.LEGACY_DATASET_BATCH_MAX_FILES) {
       await Promise.all(files.map((file) => rm(file.path, { force: true }).catch(() => undefined)));
       throw new BadRequestException(
-        `旧版上传接口最多只支持 ${RequirementsController.LEGACY_DATASET_BATCH_MAX_FILES} 个文件，请改用新上传链路`,
+        `Too many files. The legacy endpoint supports at most ${RequirementsController.LEGACY_DATASET_BATCH_MAX_FILES} files per request.`,
       );
     }
     if (totalBytes > RequirementsController.LEGACY_DATASET_BATCH_MAX_BYTES) {
       await Promise.all(files.map((file) => rm(file.path, { force: true }).catch(() => undefined)));
-      throw new BadRequestException('旧版上传接口仅支持小体积兼容上传，请改用新上传链路');
+      throw new BadRequestException('Legacy dataset batch payload is too large. Please use upload sessions instead.');
     }
 
     const result = await this.requirementsService.createDatasetBatch(BigInt(user.id), BigInt(id), user.role, dto, files);
@@ -679,7 +679,7 @@ export class RequirementsController {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.data,
-        action: '上传数据',
+        action: 'Create dataset batch',
         targetType: 'requirement',
         targetId: id.toString(),
         targetName: result.requirementTitle ?? undefined,
@@ -713,7 +713,7 @@ export class RequirementsController {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.data,
-        action: '提交数据批次',
+        action: 'Commit OSS dataset batch',
         targetType: 'requirement',
         targetId: id.toString(),
         targetName: result.requirementTitle ?? undefined,
@@ -747,7 +747,7 @@ export class RequirementsController {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.data,
-        action: '提交 OSS 数据批次',
+        action: 'Create OSS upload ticket',
         targetType: 'requirement',
         targetId: id.toString(),
         targetName: result.requirementTitle ?? undefined,
@@ -774,7 +774,7 @@ export class RequirementsController {
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.data,
-      action: '拉取需求详情数据',
+      action: 'Pull requirement detail data',
       targetType: 'requirement',
       targetId: id.toString(),
       detail: {
@@ -785,6 +785,14 @@ export class RequirementsController {
       ipAddress: extractRequestIp(request),
     });
     return result;
+  }
+
+  @Get(':id/pull-detail-data/progress')
+  getRequirementDetailPullProgress(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.requirementsService.getRequirementDetailPullProgress(BigInt(user.id), BigInt(id), user.role);
   }
 
   @Get(':id/dataset-batches')
