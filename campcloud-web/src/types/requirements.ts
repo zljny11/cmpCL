@@ -355,7 +355,7 @@ export interface RequirementOssFileUploadTicket {
   };
 }
 
-锘縠xport interface RequirementOssMultipartInitResult {
+export interface RequirementOssMultipartInitResult {
   fileId: string;
   uploadId: string;
   objectKey: string;
@@ -405,7 +405,8 @@ export interface CompleteRequirementOssMultipartUploadPayload {
 export interface AbortRequirementOssMultipartUploadPayload {
   uploadId: string;
 }
-
+
+
 export interface ConfirmRequirementOssFileUploadPayload {
   etag?: string;
   fileSize?: number;
