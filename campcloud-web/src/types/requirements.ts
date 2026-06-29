@@ -17,7 +17,7 @@ export type RequirementStatus =
 
 export type DatasetUploadType = 'initial' | 'supplement';
 
-export type DatasetBatchStatus = 'uploaded' | 'parsed' | 'failed';
+export type DatasetBatchStatus = 'uploaded' | 'parsed' | 'failed' | 'cleaned';
 
 export type RequirementOssFileKind = 'dicom' | 'model';
 

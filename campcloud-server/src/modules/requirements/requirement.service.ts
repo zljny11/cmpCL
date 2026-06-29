@@ -124,6 +124,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   private static readonly DEFAULT_OSS_UNBOUND_FILE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
   private static readonly DEFAULT_OSS_FAILED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
   private static readonly DEFAULT_OSS_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+  private static readonly DEFAULT_UNPULLED_BATCH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
   private static readonly DEFAULT_OSS_PULL_MAX_RETRIES = 3;
   private static readonly DEFAULT_OSS_PULL_RETRY_DELAY_MS = 30 * 1000;
 
@@ -178,6 +179,10 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   private readonly ossCleanupIntervalMs = this.getPositiveNumberConfig(
     'OSS_CLEANUP_INTERVAL_MS',
     RequirementsService.DEFAULT_OSS_CLEANUP_INTERVAL_MS,
+  );
+  private readonly unpulledBatchRetentionMs = this.getPositiveNumberConfig(
+    'UNPULLED_BATCH_RETENTION_MS',
+    RequirementsService.DEFAULT_UNPULLED_BATCH_RETENTION_MS,
   );
   private readonly ossPullMaxRetries = this.getPositiveIntConfig(
     'OSS_PULL_MAX_RETRIES',
@@ -1553,6 +1558,77 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private async cleanupExpiredUnpulledDatasetBatches() {
+    const expiredBefore = new Date(Date.now() - this.unpulledBatchRetentionMs);
+    const staleBatches = await this.prisma.datasetBatch.findMany({
+      where: {
+        status: DatasetBatchStatus.uploaded,
+        createdAt: { lt: expiredBefore },
+        ossFiles: {
+          some: {
+            kind: RequirementOssFileKind.dicom,
+            ossDeletedAt: null,
+          },
+          none: {
+            kind: RequirementOssFileKind.dicom,
+            OR: [
+              { lastPullAttemptAt: { not: null } },
+              { pulledToLocalAt: { not: null } },
+            ],
+          },
+        },
+      },
+      select: {
+        id: true,
+        remark: true,
+        ossFiles: {
+          where: {
+            kind: RequirementOssFileKind.dicom,
+            ossDeletedAt: null,
+          },
+          select: {
+            id: true,
+            objectKey: true,
+          },
+        },
+      },
+      take: 50,
+    });
+    for (const batch of staleBatches) {
+      if (batch.ossFiles.length === 0) {
+        continue;
+      }
+      await this.cleanupRequirementOssFiles(
+        batch.ossFiles.map((file) => ({
+          id: file.id,
+          objectKey: file.objectKey,
+        })),
+      );
+      const remainingFiles = await this.prisma.requirementOssFile.count({
+        where: {
+          id: { in: batch.ossFiles.map((file) => file.id) },
+          ossDeletedAt: null,
+        },
+      });
+      if (remainingFiles > 0) {
+        continue;
+      }
+      const cleanupRemark = 'Auto-cleaned after 30 days without detail pull';
+      const nextRemark = batch.remark?.trim()
+        ? batch.remark.includes(cleanupRemark)
+          ? batch.remark
+          : batch.remark + '; ' + cleanupRemark
+        : cleanupRemark;
+      await this.prisma.datasetBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: DatasetBatchStatus.cleaned,
+          remark: nextRemark.slice(0, 255),
+        },
+      });
+    }
+  }
+
   private async cleanupExpiredRequirementOssFiles() {
     if (this.ossCleanupRunning) {
       return;
@@ -1598,21 +1674,21 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         take: 200,
       });
 
-      if (staleFiles.length === 0) {
-        return;
+      if (staleFiles.length > 0) {
+        await this.mapWithConcurrency(staleFiles, 3, async (file) => {
+          await this.reclaimRequirementOssFile(
+            file.id,
+            file.objectKey,
+            file.status === RequirementOssFileStatus.pending_upload
+              ? 'OSS upload ticket expired; original file was reclaimed automatically'
+              : file.datasetBatchId
+                ? 'OSS pull failure exceeded retention window; original file was reclaimed automatically'
+                : 'OSS original file stayed unsubmitted for too long and was reclaimed automatically',
+          );
+        });
       }
 
-      await this.mapWithConcurrency(staleFiles, 3, async (file) => {
-        await this.reclaimRequirementOssFile(
-          file.id,
-          file.objectKey,
-          file.status === RequirementOssFileStatus.pending_upload
-            ? 'OSS 上传票据已过期，原始文件已自动回收'
-            : file.datasetBatchId
-              ? 'OSS 拉取失败超过保留阈值，原始文件已自动回收'
-              : 'OSS 原始文件长时间未提交，已自动回收',
-        );
-      });
+      await this.cleanupExpiredUnpulledDatasetBatches();
     } catch (error) {
       this.logger.warn(
         `Requirement OSS cleanup failed: ${error instanceof Error ? error.message : String(error)}`,

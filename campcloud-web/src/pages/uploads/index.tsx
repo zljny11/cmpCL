@@ -54,12 +54,14 @@ const batchStatusColorMap: Record<DatasetBatchStatus, string> = {
   uploaded: 'blue',
   parsed: 'green',
   failed: 'red',
+  cleaned: 'default',
 };
 
 const batchStatusLabelMap: Record<DatasetBatchStatus, string> = {
-  uploaded: '正在上传',
-  parsed: '已解析',
-  failed: '解析失败',
+  uploaded: 'Uploaded',
+  parsed: 'Parsed',
+  failed: 'Failed',
+  cleaned: 'Cleaned',
 };
 
 function isZipFileName(fileName: string) {

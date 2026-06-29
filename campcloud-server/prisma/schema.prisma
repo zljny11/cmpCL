@@ -33,6 +33,7 @@ enum DatasetBatchStatus {
   uploaded
   parsed
   failed
+  cleaned
 }
 
 enum UploadSessionStatus {
