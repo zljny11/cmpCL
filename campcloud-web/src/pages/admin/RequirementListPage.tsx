@@ -83,9 +83,9 @@ export function AdminRequirementListPage() {
             onChange={setStatusInput}
             style={{ width: 180 }}
             options={[
-              { label: '待我响应', value: 'pending' },
-              { label: '受理中（需等待）', value: 'processing' },
-              { label: '受理中（需补充数据）', value: 'waiting_user' },
+              { label: '待响应', value: 'pending' },
+              { label: '处理中（等待中）', value: 'processing' },
+              { label: '处理中（待补充数据）', value: 'waiting_user' },
               { label: '已完成', value: 'completed' },
             ]}
           />
@@ -145,12 +145,12 @@ export function AdminRequirementListPage() {
                 key: 'summary',
                 width: 360,
                 render: (_, record) => (
-                    <Space direction="vertical" size={4}>
-                      <Typography.Text strong>{record.title}</Typography.Text>
-                      <Typography.Text type="secondary">{renderRequirementType(record.type)}</Typography.Text>
-                    </Space>
-                  ),
-                },
+                  <Space direction="vertical" size={4}>
+                    <Typography.Text strong>{record.title}</Typography.Text>
+                    <Typography.Text type="secondary">{renderRequirementType(record.type)}</Typography.Text>
+                  </Space>
+                ),
+              },
               {
                 title: '提交方',
                 key: 'creator',

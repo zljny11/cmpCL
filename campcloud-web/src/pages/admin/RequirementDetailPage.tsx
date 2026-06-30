@@ -1,4 +1,4 @@
-﻿import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Descriptions, Empty, Form, Input, List, Progress, Result, Select, Space, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -11,9 +11,9 @@ import { RequirementExpandPanel } from '../requirements/list/components/Requirem
 import { renderRequirementStatus, renderRequirementType } from '../requirements/list/helpers';
 
 const statusOptions: Array<{ label: string; value: RequirementStatus }> = [
-  { label: 'Processing', value: 'processing' },
-  { label: 'Waiting For User', value: 'waiting_user' },
-  { label: 'Completed', value: 'completed' },
+  { label: '处理中（等待中）', value: 'processing' },
+  { label: '处理中（待补充数据）', value: 'waiting_user' },
+  { label: '已完成', value: 'completed' },
 ];
 
 function formatFileSize(size: number) {
@@ -30,17 +30,17 @@ function formatEstimatedOssCost(size: number) {
 function formatPullStage(stage: string) {
   switch (stage) {
     case 'queued':
-      return 'Queued';
+      return '排队中';
     case 'downloading':
-      return 'Downloading from OSS';
+      return '从 OSS 下载中';
     case 'persisting':
-      return 'Persisting to local storage';
+      return '写入本地存储中';
     case 'cleaning':
-      return 'Cleaning OSS source files';
+      return '清理 OSS 源文件中';
     case 'completed':
-      return 'Completed';
+      return '已完成';
     case 'failed':
-      return 'Failed';
+      return '失败';
     default:
       return stage;
   }
@@ -89,7 +89,7 @@ export function AdminRequirementDetailPage() {
   const createMessageMutation = useMutation({
     mutationFn: (payload: { content: string }) => requirementsApi.createMessage(id, payload),
     onSuccess: async () => {
-      message.success('Reply sent.');
+      message.success('回复已发送，用户会在通知栏看到提醒');
       messageForm.resetFields();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin', 'requirements'] }),
@@ -106,7 +106,7 @@ export function AdminRequirementDetailPage() {
   const updateStatusMutation = useMutation({
     mutationFn: (payload: { status: RequirementStatus; reason?: string }) => requirementsApi.updateStatus(id, payload),
     onSuccess: async () => {
-      message.success('Requirement status updated.');
+      message.success('需求状态已更新，用户会收到通知');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin', 'requirements'] }),
         queryClient.invalidateQueries({ queryKey: ['admin', 'requirement-detail', id] }),
@@ -121,7 +121,7 @@ export function AdminRequirementDetailPage() {
     mutationFn: () => requirementsApi.pullRequirementDetailData(id),
     onSuccess: async () => {
       setWatchPullProgress(true);
-      message.success('Detail data pull started. You can track live progress below.');
+      message.success('已开始拉取需求详情数据，可在下方查看实时进度');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin', 'requirement-pull-progress', id] }),
         queryClient.invalidateQueries({ queryKey: ['admin', 'requirement-batches', id] }),
@@ -168,22 +168,22 @@ export function AdminRequirementDetailPage() {
 
     void refresh();
     if (pullProgress.status === 'completed') {
-      message.success('Detail data pull completed.');
+      message.success('需求详情数据拉取完成');
     } else {
-      message.error(pullProgress.errorMessage || 'Detail data pull failed.');
+      message.error(pullProgress.errorMessage || '需求详情数据拉取失败');
     }
     setWatchPullProgress(false);
   }, [watchPullProgress, pullProgress, id, message]);
 
   if (detailQuery.isError) {
-    return <Result status="error" title="Failed to load requirement detail" />;
+    return <Result status="error" title="需求详情加载失败" />;
   }
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
-          Requirement Detail
+          管理侧需求详情
         </Typography.Title>
       </div>
 
@@ -194,7 +194,7 @@ export function AdminRequirementDetailPage() {
               <Space wrap>
                 {renderRequirementStatus(data.status)}
                 <Tag color="blue">{renderRequirementType(data.type, data.typeCustom)}</Tag>
-                <Tag>Created {dayjs(data.createdAt).format('YYYY-MM-DD HH:mm')}</Tag>
+                <Tag>创建于 {dayjs(data.createdAt).format('YYYY-MM-DD HH:mm')}</Tag>
               </Space>
               <Typography.Title level={4} style={{ margin: 0 }}>
                 {data.title}
@@ -204,29 +204,29 @@ export function AdminRequirementDetailPage() {
           </Card>
 
           <Descriptions bordered column={2}>
-            <Descriptions.Item label="Submitted By">{data.creator?.username || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Hospital">{data.creator?.hospitalName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Contact">{data.creator?.profile?.realName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Phone">{data.creator?.profile?.phone || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Status">{renderRequirementStatus(data.status)}</Descriptions.Item>
-            <Descriptions.Item label="Type">{renderRequirementType(data.type, data.typeCustom)}</Descriptions.Item>
-            <Descriptions.Item label="Expected Goal" span={2}>
+            <Descriptions.Item label="提交账号">{data.creator?.username || '-'}</Descriptions.Item>
+            <Descriptions.Item label="医院">{data.creator?.hospitalName || '-'}</Descriptions.Item>
+            <Descriptions.Item label="联系人">{data.creator?.profile?.realName || '-'}</Descriptions.Item>
+            <Descriptions.Item label="电话">{data.creator?.profile?.phone || '-'}</Descriptions.Item>
+            <Descriptions.Item label="状态">{renderRequirementStatus(data.status)}</Descriptions.Item>
+            <Descriptions.Item label="需求类型">{renderRequirementType(data.type, data.typeCustom)}</Descriptions.Item>
+            <Descriptions.Item label="期望目标" span={2}>
               {data.expectedGoal || '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="Remark" span={2}>
+            <Descriptions.Item label="补充备注" span={2}>
               {data.remark || '-'}
             </Descriptions.Item>
           </Descriptions>
 
           {showPullCard ? (
-            <Card title="Detail Data Pull">
+            <Card title="需求详情数据拉取">
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 {pendingBatches.length > 0 ? (
                   <Alert
                     type="warning"
                     showIcon
-                    message="Pending OSS detail data is waiting to be pulled"
-                    description={`Batches: ${pendingBatches.length}, files: ${pendingFileCount}, estimated size: ${formatFileSize(pendingBytes)}.`}
+                    message="当前存在待拉取的需求详情数据"
+                    description={`共 ${pendingBatches.length} 个批次，${pendingFileCount} 个文件，预计大小 ${formatFileSize(pendingBytes)}。`}
                   />
                 ) : null}
 
@@ -235,10 +235,10 @@ export function AdminRequirementDetailPage() {
                     <Alert
                       type={pullProgress.status === 'failed' ? 'error' : pullProgress.status === 'completed' ? 'success' : 'info'}
                       showIcon
-                      message={`Status: ${pullProgress.status}`}
+                      message={`当前状态：${formatPullStage(pullProgress.status)}`}
                       description={
                         pullProgress.errorMessage
-                          || `Current stage: ${formatPullStage(pullProgress.stage)}${pullProgress.currentFileName ? `, file: ${pullProgress.currentFileName}` : ''}`
+                          || `当前阶段：${formatPullStage(pullProgress.stage)}${pullProgress.currentFileName ? `，文件：${pullProgress.currentFileName}` : ''}`
                       }
                     />
                     <Progress
@@ -246,7 +246,7 @@ export function AdminRequirementDetailPage() {
                       status={pullProgress.status === 'failed' ? 'exception' : pullProgress.status === 'completed' ? 'success' : 'active'}
                     />
                     <Typography.Text type="secondary">
-                      {`Finished files: ${pullFinishedFiles}/${pullProgress.totalFiles}, bytes: ${formatFileSize(pullProgress.completedBytes)} / ${formatFileSize(pullProgress.totalBytes)}`}
+                      {`已完成文件：${pullFinishedFiles}/${pullProgress.totalFiles}，已传输：${formatFileSize(pullProgress.completedBytes)} / ${formatFileSize(pullProgress.totalBytes)}`}
                     </Typography.Text>
                     <List
                       size="small"
@@ -259,8 +259,10 @@ export function AdminRequirementDetailPage() {
                           <List.Item>
                             <Space direction="vertical" size={4} style={{ width: '100%' }}>
                               <Space wrap>
-                                <Typography.Text strong>{`Batch #${item.batchNo}`}</Typography.Text>
-                                <Tag color={item.status === 'failed' ? 'red' : item.status === 'completed' ? 'green' : 'blue'}>{item.status}</Tag>
+                                <Typography.Text strong>{`批次 #${item.batchNo}`}</Typography.Text>
+                                <Tag color={item.status === 'failed' ? 'red' : item.status === 'completed' ? 'green' : 'blue'}>
+                                  {formatPullStage(item.status)}
+                                </Tag>
                                 <Typography.Text type="secondary">{formatPullStage(item.stage)}</Typography.Text>
                               </Space>
                               <Progress
@@ -269,9 +271,9 @@ export function AdminRequirementDetailPage() {
                                 status={item.status === 'failed' ? 'exception' : item.status === 'completed' ? 'success' : 'active'}
                               />
                               <Typography.Text type="secondary">
-                                {`Files ${batchFinishedFiles}/${item.totalFiles}, bytes ${formatFileSize(item.completedBytes)} / ${formatFileSize(item.totalBytes)}`}
+                                {`文件 ${batchFinishedFiles}/${item.totalFiles}，传输 ${formatFileSize(item.completedBytes)} / ${formatFileSize(item.totalBytes)}`}
                               </Typography.Text>
-                              {item.currentFileName ? <Typography.Text type="secondary">{`Current file: ${item.currentFileName}`}</Typography.Text> : null}
+                              {item.currentFileName ? <Typography.Text type="secondary">{`当前文件：${item.currentFileName}`}</Typography.Text> : null}
                               {item.errorMessage ? <Typography.Text type="danger">{item.errorMessage}</Typography.Text> : null}
                             </Space>
                           </List.Item>
@@ -289,18 +291,18 @@ export function AdminRequirementDetailPage() {
                       disabled={pullProgress?.status === 'running'}
                       onClick={() =>
                         modal.confirm({
-                          title: 'Pull requirement detail data',
-                          content: `This will pull the pending DICOM files from OSS to the intranet server. Estimated egress: ${formatFileSize(pendingBytes)}. Estimated OSS cost: ${formatEstimatedOssCost(pendingBytes)}.`,
-                          okText: 'Start pull',
-                          cancelText: 'Cancel',
+                          title: '拉取需求详情数据',
+                          content: `该操作会将待处理的 DICOM 文件从 OSS 拉取到内网服务器。预计流量 ${formatFileSize(pendingBytes)}，预计 OSS 成本 ${formatEstimatedOssCost(pendingBytes)}。`,
+                          okText: '确认拉取',
+                          cancelText: '取消',
                           onOk: () => pullDetailDataMutation.mutateAsync(),
                         })
                       }
                     >
-                      Pull detail data
+                      拉取需求详情数据
                     </Button>
                     <Typography.Text type="secondary">
-                      Before this step, uploaded files only stay in OSS and do not appear in the local data tree.
+                      在执行这一步之前，已上传文件仅保存在 OSS 中，不会出现在本地数据树里。
                     </Typography.Text>
                   </Space>
                 ) : null}
@@ -311,9 +313,9 @@ export function AdminRequirementDetailPage() {
           <Card
             title={
               <Space size={12} wrap>
-                <span>Requirement Data</span>
+                <span>需求数据详情</span>
                 <Button type="primary" onClick={() => navigate(`/admin/requirements/${id}/data`)}>
-                  Open full data page
+                  完整数据页
                 </Button>
               </Space>
             }
@@ -321,11 +323,11 @@ export function AdminRequirementDetailPage() {
             {(data.stats?.seriesCount ?? 0) > 0 ? (
               <RequirementExpandPanel requirementId={id} expanded readOnly allowPreview allowDownload />
             ) : (
-              <Empty description="No local detail data is available yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description="当前还没有已拉取到内网服务器的详情数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </Card>
 
-          <Card title="Messages" loading={messagesQuery.isLoading}>
+          <Card title="留言沟通" loading={messagesQuery.isLoading}>
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               {messagesQuery.data && messagesQuery.data.length > 0 ? (
                 <List
@@ -336,7 +338,7 @@ export function AdminRequirementDetailPage() {
                         <Space wrap>
                           <Typography.Text strong>{item.sender.username}</Typography.Text>
                           <Tag color={item.sender.role === 'admin' ? 'blue' : 'default'}>
-                            {item.sender.role === 'admin' ? 'Admin' : 'User'}
+                            {item.sender.role === 'admin' ? '管理侧' : '用户'}
                           </Tag>
                           <Typography.Text type="secondary">{dayjs(item.createdAt).format('YYYY-MM-DD HH:mm')}</Typography.Text>
                         </Space>
@@ -346,7 +348,7 @@ export function AdminRequirementDetailPage() {
                   )}
                 />
               ) : (
-                <Empty description="No messages yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <Empty description="当前暂无留言" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               )}
 
               <Form
@@ -358,26 +360,26 @@ export function AdminRequirementDetailPage() {
                   })
                 }
               >
-                <Form.Item label="Reply to user" name="content" rules={[{ required: true, message: 'Please enter a reply' }]}>
-                  <Input.TextArea rows={4} placeholder="Write a message to the user" />
+                <Form.Item label="回复用户" name="content" rules={[{ required: true, message: '请输入回复内容' }]}>
+                  <Input.TextArea rows={4} placeholder="例如：需求已受理，当前正在处理中；或请用户补充某部分说明/数据" />
                 </Form.Item>
                 <Button type="primary" htmlType="submit" loading={createMessageMutation.isPending}>
-                  Send reply
+                  发送回复
                 </Button>
               </Form>
             </Space>
           </Card>
 
-          <Card title="Update Status">
+          <Card title="更新状态">
             <Form form={statusForm} layout="vertical" onFinish={(values) => updateStatusMutation.mutate(values)}>
-              <Form.Item label="Target status" name="status" rules={[{ required: true, message: 'Please choose a status' }]}>
-                <Select options={statusOptions} placeholder="Choose a new status" />
+              <Form.Item label="目标状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
+                <Select options={statusOptions} placeholder="请选择要更新到的状态" />
               </Form.Item>
-              <Form.Item label="Notification message" name="reason">
-                <Input.TextArea rows={3} placeholder="Optional note sent to the user" />
+              <Form.Item label="通知说明" name="reason">
+                <Input.TextArea rows={3} placeholder="例如：需求已受理，正在安排处理；需要用户补充某类扫描数据等" />
               </Form.Item>
               <Button type="primary" htmlType="submit" loading={updateStatusMutation.isPending}>
-                Update status and notify user
+                更新状态并通知用户
               </Button>
             </Form>
           </Card>

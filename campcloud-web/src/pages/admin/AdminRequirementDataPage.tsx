@@ -35,7 +35,7 @@ export function AdminRequirementDataPage() {
         visibleTags.studyManufacturer ? '厂家' : null,
         visibleTags.studyProtocolName ? '协议' : null,
         visibleTags.studyManufacturerModelName ? '设备型号' : null,
-        visibleTags.seriesUid ? '序列UID' : null,
+        visibleTags.seriesUid ? '序列 UID' : null,
         visibleTags.seriesBodyPart ? '身体部位' : null,
         visibleTags.seriesDiagnosis ? '疾病诊断' : null,
         visibleTags.seriesClinicalTags ? '临床金标准' : null,
@@ -54,7 +54,7 @@ export function AdminRequirementDataPage() {
             <div style={{ padding: 12, background: '#fff', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.12)' }}>
               <Space direction="vertical" size={10}>
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 12, color: '#667784' }}>检查</div>
+                  <div style={{ marginBottom: 6, fontSize: 12, color: '#667784' }}>检查级</div>
                   <Checkbox
                     checked={visibleTags.studyManufacturer}
                     onChange={(event) => setVisibleTags((current) => ({ ...current, studyManufacturer: event.target.checked }))}
@@ -77,12 +77,12 @@ export function AdminRequirementDataPage() {
                   </Checkbox>
                 </div>
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 12, color: '#667784' }}>序列</div>
+                  <div style={{ marginBottom: 6, fontSize: 12, color: '#667784' }}>序列级</div>
                   <Checkbox
                     checked={visibleTags.seriesUid}
                     onChange={(event) => setVisibleTags((current) => ({ ...current, seriesUid: event.target.checked }))}
                   >
-                    序列UID
+                    序列 UID
                   </Checkbox>
                   <Checkbox
                     checked={visibleTags.seriesBodyPart}
@@ -115,7 +115,7 @@ export function AdminRequirementDataPage() {
             </div>
           )}
         >
-          <Button>已选 Tag</Button>
+          <Button>选择标签</Button>
         </Dropdown>
         <Space size={[6, 6]} wrap>
           {selectedTagLabels.map((label) => (
