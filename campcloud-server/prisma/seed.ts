@@ -9,27 +9,27 @@ async function main() {
   const users = [
     {
       username: 'admin1',
-      role: UserRole.admin,
+      role: UserRole.super_admin,
       hospitalName: 'AICampCloud',
-      profile: { realName: 'ç®¡ç†å‘˜1', department: 'å¹³å°è¿è¥', title: 'ç³»ç»Ÿç®¡ç†å‘˜' },
+      profile: { realName: '³¬¼¶¹ÜÀíÔ±', department: 'Æ½Ì¨ÔËÓª', title: 'ÏµÍ³³¬¼¶¹ÜÀíÔ±' },
     },
     {
       username: 'admin2',
       role: UserRole.admin,
       hospitalName: 'AICampCloud',
-      profile: { realName: 'ç®¡ç†å‘˜2', department: 'å¹³å°è¿è¥', title: 'ç³»ç»Ÿç®¡ç†å‘˜' },
+      profile: { realName: '¹ÜÀíÔ±2', department: 'Æ½Ì¨ÔËÓª', title: 'ÏµÍ³¹ÜÀíÔ±' },
     },
     {
       username: 'demo',
       role: UserRole.user,
       hospitalName: 'admin',
-      profile: { realName: 'ç¤ºä¾‹ç”¨æˆ·', department: 'æ”¾å°„ç§‘', title: 'ä¸»æ²»åŒ»å¸ˆ' },
+      profile: { realName: 'Ê¾ÀıÓÃ»§', department: '·ÅÉä¿Æ', title: 'Ö÷ÖÎÒ½Ê¦' },
     },
     {
       username: 'demo2',
       role: UserRole.user,
-      hospitalName: 'åå’ŒåŒ»é™¢',
-      profile: { realName: 'ç¬¬äºŒæµ‹è¯•ç”¨æˆ·', department: 'å½±åƒç§‘', title: 'ä½é™¢åŒ»å¸ˆ' },
+      hospitalName: 'Ğ­ºÍÒ½Ôº',
+      profile: { realName: 'µÚ¶ş²âÊÔÓÃ»§', department: 'Ó°Ïñ¿Æ', title: '×¡ÔºÒ½Ê¦' },
     },
   ];
 

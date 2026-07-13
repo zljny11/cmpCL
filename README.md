@@ -17,6 +17,14 @@ DEPLOY_INTRANET.md  内网 Docker 部署说明
 DEPLOY_PUBLIC.md    公网入口、frp、Nginx、OSS 部署说明
 ```
 
+## 服务器项目位置
+
+Linux 服务器上的 CampCloud 正式项目目录：
+
+```bash
+cd /home/test/campcloud
+```
+
 ## 标准发布链路
 
 1. 本地开发并验证

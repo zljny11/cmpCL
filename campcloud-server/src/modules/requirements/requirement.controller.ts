@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { diskStorage } from 'multer';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { isManagementRole } from '../../common/utils/roles';
 import { extractRequestIp } from '../../common/utils/request';
 import { AuthUser } from '../../types/auth-user';
 import { AdminLogsService } from '../admin-logs/admin-logs.service';
@@ -397,7 +398,7 @@ export class RequirementsController {
     @Body() dto: UpdateRequirementStatusDto,
   ) {
     const result = await this.requirementsService.updateStatus(BigInt(user.id), BigInt(id), user.role, dto);
-    if (user.role === UserRole.admin) {
+    if (isManagementRole(user.role)) {
       await this.adminLogsService.createLog({
         actor: user,
         category: AdminOperationLogCategory.requirement,

@@ -6,35 +6,39 @@ import { profileApi } from '../../../services/api/profile';
 import { requirementsApi } from '../../../services/api/requirements';
 import { queryClient } from '../../../services/query-client';
 import { isProfileComplete } from '../../../utils/profileCompletion';
+import { isManagementRole } from '../../../types/roles';
 
 const requirementTypeOptions = [
-  { label: 'CTè¶…é«˜åˆ†è¾¨ç‡', value: 'CT_SUPER_RESOLUTION' },
-  { label: 'CTé™å™ª', value: 'CT_DENOISE' },
-  { label: 'MRè¶…åˆ†è¾¨ç‡', value: 'MR_SUPER_RESOLUTION' },
-  { label: 'MRé™å™ª', value: 'MR_DENOISE' },
-  { label: 'PETé™å™ª', value: 'PET_DENOISE' },
-  { label: 'PETè¶…åˆ†è¾¨ç‡', value: 'PET_SUPER_RESOLUTION' },
-  { label: 'SPECTæ–­å±‚æ˜¾åƒé™å™ª', value: 'SPECT_TOMOGRAPHIC_DENOISE' },
-  { label: 'SPECTå¹³é¢æ˜¾åƒé™å™ª', value: 'SPECT_PLANAR_DENOISE' },
-  { label: 'å…¶ä»– / è‡ªå®šä¹‰', value: 'OTHER' },
+  { label: 'CT³¬¸ß·Ö±æÂÊ', value: 'CT_SUPER_RESOLUTION' },
+  { label: 'CT½µÔë', value: 'CT_DENOISE' },
+  { label: 'MR³¬·Ö±æÂÊ', value: 'MR_SUPER_RESOLUTION' },
+  { label: 'MR½µÔë', value: 'MR_DENOISE' },
+  { label: 'PET½µÔë', value: 'PET_DENOISE' },
+  { label: 'PET³¬·Ö±æÂÊ', value: 'PET_SUPER_RESOLUTION' },
+  { label: 'SPECT¶Ï²ãÏÔÏñ½µÔë', value: 'SPECT_TOMOGRAPHIC_DENOISE' },
+  { label: 'SPECTÆ½ÃæÏÔÏñ½µÔë', value: 'SPECT_PLANAR_DENOISE' },
+  { label: 'ÆäËû / ×Ô¶¨Òå', value: 'OTHER' },
 ];
 
 export function RequirementCreatePage() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const selectedType = Form.useWatch('type', form);
+
   const profileQuery = useQuery({
     queryKey: ['profile'],
     queryFn: profileApi.getProfile,
     enabled: user?.role === 'user',
   });
-  const profileCompleted =
-    user?.role === 'admin'
-      ? true
-      : isProfileComplete({
-          ...profileQuery.data,
-          hospitalName: user?.hospitalName ?? null,
-        });
+
+  const profileCompleted = isManagementRole(user?.role)
+    ? true
+    : isProfileComplete({
+        ...profileQuery.data,
+        hospitalName: user?.hospitalName ?? null,
+      });
+
   const mutation = useMutation({
     mutationFn: requirementsApi.create,
     onSuccess: async (data) => {
@@ -43,7 +47,7 @@ export function RequirementCreatePage() {
         queryClient.invalidateQueries({ queryKey: ['dashboard', 'requirements'] }),
         queryClient.invalidateQueries({ queryKey: ['user-journey', 'latest-requirement'] }),
       ]);
-      message.success('éœ€æ±‚å•å·²åˆ›å»º');
+      message.success('ĞèÇóµ¥ÒÑ´´½¨');
       navigate(`/requirements/${data.id}`);
     },
   });
@@ -52,30 +56,30 @@ export function RequirementCreatePage() {
     <Card bordered={false}>
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
         <div>
-          <Typography.Title level={3}>æ–°å»ºç§‘ç ”éœ€æ±‚</Typography.Title>
+          <Typography.Title level={3}>ĞÂ½¨¿ÆÑĞĞèÇó</Typography.Title>
         </div>
 
         {!profileCompleted ? (
           <Alert
             type="warning"
             showIcon
-            message="è¯·å…ˆå®Œå–„èµ„æ–™"
-            description="æäº¤éœ€æ±‚å‰éœ€è¦å…ˆè¡¥é½è”ç³»äººã€é‚®ç®±ã€ç”µè¯ã€å¾®ä¿¡å·ã€åŒ»é™¢ã€ç§‘å®¤å’ŒèŒç§°ã€‚"
+            message="ÇëÏÈÍêÉÆ×ÊÁÏ"
+            description="Ìá½»ĞèÇóÇ°ĞèÒªÏÈ²¹ÆëÁªÏµÈË¡¢ÓÊÏä¡¢µç»°¡¢Î¢ĞÅºÅ¡¢Ò½Ôº¡¢¿ÆÊÒºÍÖ°³Æ¡£"
             action={
               <Button size="small" type="primary" onClick={() => navigate('/profile')}>
-                å»å®Œå–„èµ„æ–™
+                È¥ÍêÉÆ×ÊÁÏ
               </Button>
             }
           />
         ) : null}
 
-        <Card title="éœ€æ±‚è¡¨å•" size="small">
+        <Card title="ĞèÇó±íµ¥" size="small">
           <Form
             form={form}
             layout="vertical"
             onFinish={(values) => {
               if (!profileCompleted) {
-                message.warning('è¯·å…ˆå®Œå–„èµ„æ–™åå†åˆ›å»ºéœ€æ±‚');
+                message.warning('ÇëÏÈÍêÉÆ×ÊÁÏºóÔÙ´´½¨ĞèÇó');
                 navigate('/profile');
                 return;
               }
@@ -86,53 +90,55 @@ export function RequirementCreatePage() {
               });
             }}
           >
-            <Form.Item label="éœ€æ±‚ç±»å‹" name="type" rules={[{ required: true, message: 'è¯·é€‰æ‹©éœ€æ±‚ç±»å‹' }]}>
-              <Select options={requirementTypeOptions} placeholder="è¯·é€‰æ‹©æœ€è´´è¿‘å½“å‰å›¾åƒè´¨é‡é—®é¢˜çš„éœ€æ±‚ç±»å‹" />
+            <Form.Item label="ĞèÇóÀàĞÍ" name="type" rules={[{ required: true, message: 'ÇëÑ¡ÔñĞèÇóÀàĞÍ' }]}>
+              <Select options={requirementTypeOptions} placeholder="ÇëÑ¡Ôñ×îÌù½üµ±Ç°Í¼ÏñÖÊÁ¿ÎÊÌâµÄĞèÇóÀàĞÍ" />
             </Form.Item>
-            <Form.Item noStyle shouldUpdate>
-              {({ getFieldValue }) =>
-                getFieldValue('type') === 'OTHER' ? (
-                  <Form.Item
-                    label="è‡ªå®šä¹‰ç±»å‹"
-                    name="typeCustom"
-                    rules={[
-                      { required: true, message: 'è¯·è¾“å…¥è‡ªå®šä¹‰ç±»å‹' },
-                      { max: 30, message: 'è‡ªå®šä¹‰ç±»å‹æœ€å¤š 30 ä¸ªå­—' },
-                    ]}
-                  >
-                    <Input placeholder="è¯·è¾“å…¥è‡ªå®šä¹‰éœ€æ±‚ç±»å‹ï¼Œæœ€å¤š 30 ä¸ªå­—" maxLength={30} showCount />
-                  </Form.Item>
-                ) : null
-              }
+
+            {selectedType === 'OTHER' ? (
+              <Form.Item
+                label="×Ô¶¨ÒåÀàĞÍ"
+                name="typeCustom"
+                rules={[
+                  { required: true, message: 'ÇëÊäÈë×Ô¶¨ÒåÀàĞÍ' },
+                  { max: 30, message: '×Ô¶¨ÒåÀàĞÍ×î¶à 30 ¸ö×Ö' },
+                ]}
+              >
+                <Input placeholder="ÇëÊäÈë×Ô¶¨ÒåĞèÇóÀàĞÍ£¬×î¶à 30 ¸ö×Ö" maxLength={30} showCount />
+              </Form.Item>
+            ) : null}
+
+            <Form.Item label="ĞèÇó±êÌâ" name="title" rules={[{ required: true, message: 'ÇëÊäÈëĞèÇó±êÌâ' }]}>
+              <Input placeholder="ÇëÓÃÒ»¾ä»°¸ÅÀ¨³¡¾°¡¢Ä£Ì¬ºÍÄ¿±ê£¬ÀıÈç£ºĞØ²¿ CT ³¬¸ß·Ö±æÂÊÖØ½¨Ä£ĞÍÓÅ»¯" />
             </Form.Item>
-            <Form.Item label="éœ€æ±‚æ ‡é¢˜" name="title" rules={[{ required: true, message: 'è¯·è¾“å…¥éœ€æ±‚æ ‡é¢˜' }]}>
-              <Input placeholder="è¯·ç”¨ä¸€å¥è¯æ¦‚æ‹¬åœºæ™¯ã€æ¨¡æ€å’Œç›®æ ‡ï¼Œä¾‹å¦‚ï¼šèƒ¸éƒ¨ CT è¶…é«˜åˆ†è¾¨ç‡é‡å»ºæ¨¡å‹ä¼˜åŒ–" />
-            </Form.Item>
+
             <Form.Item
-              label="éœ€æ±‚æè¿°"
+              label="ĞèÇóÃèÊö"
               name="description"
-              rules={[{ required: true, message: 'è¯·è¾“å…¥éœ€æ±‚æè¿°' }]}
+              rules={[{ required: true, message: 'ÇëÊäÈëĞèÇóÃèÊö' }]}
             >
               <Input.TextArea
                 rows={6}
-                placeholder="è¯·å†™æ¸…å½“å‰æ•°æ®æ¥æºã€ç°æœ‰é—®é¢˜ã€æœŸæœ›åˆä½œæ–¹å¼ï¼Œä»¥åŠä¸ºä»€ä¹ˆéœ€è¦è¿™ä¸ªæ–¹å‘çš„æ¨¡å‹èƒ½åŠ›ã€‚"
+                placeholder="ÇëĞ´Çåµ±Ç°Êı¾İÀ´Ô´¡¢ÏÖÓĞÎÊÌâ¡¢ÆÚÍûºÏ×÷·½Ê½£¬ÒÔ¼°ÎªÊ²Ã´ĞèÒªÕâ¸ö·½ÏòµÄÄ£ĞÍÄÜÁ¦¡£"
               />
             </Form.Item>
+
             <Form.Item
-              label="æœŸæœ›ç›®æ ‡"
+              label="ÆÚÍûÄ¿±ê"
               name="expectedGoal"
-              rules={[{ required: true, message: 'è¯·è¾“å…¥æœŸæœ›ç›®æ ‡' }]}
+              rules={[{ required: true, message: 'ÇëÊäÈëÆÚÍûÄ¿±ê' }]}
             >
               <Input.TextArea
                 rows={4}
-                placeholder="è¯·é‡ç‚¹æè¿°ä½ å¸Œæœ›çœ‹åˆ°çš„æœ€ç»ˆç»“æœï¼Œä¾‹å¦‚æå‡å›¾åƒè´¨é‡ã€æ”¯æŒåç»­ç§‘ç ”åˆ†ææˆ–åŒ»ç”Ÿé˜…ç‰‡ã€‚"
+                placeholder="ÇëÖØµãÃèÊöÄãÏ£Íû¿´µ½µÄ×îÖÕ½á¹û£¬ÀıÈçÌáÉıÍ¼ÏñÖÊÁ¿¡¢Ö§³ÖºóĞø¿ÆÑĞ·ÖÎö»òÒ½ÉúÔÄÆ¬¡£"
               />
             </Form.Item>
-            <Form.Item label="è¡¥å……å¤‡æ³¨" name="remark">
-              <Input.TextArea rows={3} placeholder="å¯è¡¥å……æ—¶é—´èŠ‚ç‚¹ã€æ ‡æ³¨æƒ…å†µã€åˆè§„è¦æ±‚ã€äº¤ä»˜åå¥½æˆ–å†å²é¡¹ç›®èƒŒæ™¯ã€‚" />
+
+            <Form.Item label="²¹³ä±¸×¢" name="remark">
+              <Input.TextArea rows={3} placeholder="¿É²¹³äÊ±¼ä½Úµã¡¢±ê×¢Çé¿ö¡¢ºÏ¹æÒªÇó¡¢½»¸¶Æ«ºÃ»òÀúÊ·ÏîÄ¿±³¾°¡£" />
             </Form.Item>
+
             <Button type="primary" htmlType="submit" loading={mutation.isPending}>
-              åˆ›å»ºéœ€æ±‚å•
+              ´´½¨ĞèÇóµ¥
             </Button>
           </Form>
         </Card>

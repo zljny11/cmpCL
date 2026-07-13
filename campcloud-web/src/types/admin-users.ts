@@ -1,3 +1,5 @@
+import type { AppRole } from './roles';
+
 export interface AdminUserRequirementItem {
   id: string;
   title: string;
@@ -18,7 +20,7 @@ export interface AdminUserProfile {
 export interface AdminUserItem {
   id: string;
   username: string;
-  role: 'user' | 'admin';
+  role: AppRole;
   hospitalName: string;
   status: 'active' | 'disabled';
   createdAt: string;
@@ -32,13 +34,14 @@ export interface AdminUserListQuery {
   page: number;
   pageSize: number;
   keyword?: string;
+  role?: AppRole;
 }
 
 export interface AdminUserUpsertPayload {
   username: string;
   password?: string;
   hospitalName: string;
-  role: 'user' | 'admin';
+  role: AppRole;
   status: 'active' | 'disabled';
   realName?: string;
   email?: string;

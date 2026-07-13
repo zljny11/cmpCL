@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { UserRole } from '@prisma/client';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class ListUsersDto {
   @IsOptional()
@@ -18,4 +19,8 @@ export class ListUsersDto {
   @IsString()
   @MaxLength(64)
   keyword?: string;
+
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
 }

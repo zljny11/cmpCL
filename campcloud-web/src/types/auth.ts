@@ -1,3 +1,5 @@
+import type { AppRole } from './roles';
+
 export interface UserProfileSummary {
   realName?: string | null;
   email?: string | null;
@@ -11,7 +13,7 @@ export interface UserProfileSummary {
 export interface AuthUser {
   id: string;
   username: string;
-  role: 'user' | 'admin';
+  role: AppRole;
   hospitalName: string;
   status?: string;
   profile?: UserProfileSummary | null;

@@ -1,3 +1,5 @@
+import type { AppRole } from './roles';
+
 export type RequirementType =
   | 'CT_SUPER_RESOLUTION'
   | 'CT_DENOISE'
@@ -115,7 +117,7 @@ export interface RequirementMessageItem {
   sender: {
     id: string;
     username: string;
-    role: 'user' | 'admin';
+    role: AppRole;
     hospitalName: string | null;
   };
 }
@@ -517,7 +519,7 @@ export interface RequirementDeliveryItem {
   uploader: {
     id: string;
     username: string;
-    role: 'user' | 'admin';
+    role: AppRole;
   };
 }
 

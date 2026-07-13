@@ -3,16 +3,20 @@ import { App, Button, Card, Descriptions, Empty, Form, Input, Modal, Popconfirm,
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../app/providers/auth-provider';
 import { adminUsersApi } from '../../services/api/admin-users';
 import { queryClient } from '../../services/query-client';
 import { AdminUserItem, AdminUserUpsertPayload } from '../../types/admin-users';
+import { AppRole, isSuperAdmin } from '../../types/roles';
 import { renderRequirementStatus } from '../requirements/list/helpers';
+
+type ManageableRole = Exclude<AppRole, 'super_admin'>;
 
 type UserFormValues = {
   username: string;
   password?: string;
   hospitalName: string;
-  role: 'user' | 'admin';
+  role: ManageableRole;
   status: 'active' | 'disabled';
   realName?: string;
   email?: string;
@@ -23,8 +27,15 @@ type UserFormValues = {
   remark?: string;
 };
 
+const adminUserRoleOptions: Array<{ label: string; value: ManageableRole }> = [
+  { label: '∆’Õ®”√ªß', value: 'user' },
+  { label: '∆’Õ®π‹¿Ì‘±', value: 'admin' },
+];
+
 export function UserManagementPage() {
   const { message } = App.useApp();
+  const { user } = useAuth();
+  const canManageAdmins = isSuperAdmin(user?.role);
   const [form] = Form.useForm<UserFormValues>();
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState('');
@@ -40,15 +51,13 @@ export function UserManagementPage() {
   });
 
   const refreshUsers = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
-    ]);
+    await queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
   };
 
   const createMutation = useMutation({
     mutationFn: (payload: AdminUserUpsertPayload) => adminUsersApi.create(payload),
     onSuccess: async () => {
-      message.success('Áî®Êà∑Â∑≤ÂàõÂª∫');
+      message.success('”√ªß“—¥¥Ω®');
       setModalOpen(false);
       form.resetFields();
       await refreshUsers();
@@ -58,7 +67,7 @@ export function UserManagementPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: AdminUserUpsertPayload }) => adminUsersApi.update(id, payload),
     onSuccess: async () => {
-      message.success('Áî®Êà∑Â∑≤Êõ¥Êñ∞');
+      message.success('”√ªß“—∏¸–¬');
       setModalOpen(false);
       setEditingUser(null);
       form.resetFields();
@@ -69,12 +78,13 @@ export function UserManagementPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => adminUsersApi.remove(id),
     onSuccess: async () => {
-      message.success('Áî®Êà∑Â∑≤Âà†Èô§');
+      message.success('”√ªß“—…æ≥˝');
       await refreshUsers();
     },
   });
 
   const items = usersQuery.data?.list ?? [];
+  const roleOptions = canManageAdmins ? adminUserRoleOptions : adminUserRoleOptions.filter((item) => item.value === 'user');
 
   const openCreateModal = () => {
     setEditingUser(null);
@@ -83,21 +93,21 @@ export function UserManagementPage() {
     setModalOpen(true);
   };
 
-  const openEditModal = (user: AdminUserItem) => {
-    setEditingUser(user);
+  const openEditModal = (targetUser: AdminUserItem) => {
+    setEditingUser(targetUser);
     form.setFieldsValue({
-      username: user.username,
+      username: targetUser.username,
       password: '',
-      hospitalName: user.hospitalName,
-      role: user.role,
-      status: user.status,
-      realName: user.profile?.realName || '',
-      email: user.profile?.email || '',
-      phone: user.profile?.phone || '',
-      wechat: user.profile?.wechat || '',
-      department: user.profile?.department || '',
-      title: user.profile?.title || '',
-      remark: user.profile?.remark || '',
+      hospitalName: targetUser.hospitalName,
+      role: targetUser.role === 'super_admin' ? 'admin' : targetUser.role,
+      status: targetUser.status,
+      realName: targetUser.profile?.realName || '',
+      email: targetUser.profile?.email || '',
+      phone: targetUser.profile?.phone || '',
+      wechat: targetUser.profile?.wechat || '',
+      department: targetUser.profile?.department || '',
+      title: targetUser.profile?.title || '',
+      remark: targetUser.profile?.remark || '',
     });
     setModalOpen(true);
   };
@@ -106,9 +116,15 @@ export function UserManagementPage() {
     const payload: AdminUserUpsertPayload = {
       username: values.username.trim(),
       hospitalName: values.hospitalName.trim(),
-      role: values.role,
+      role: canManageAdmins ? values.role : 'user',
       status: values.status,
       email: values.email?.trim() || undefined,
+      realName: values.realName?.trim() || undefined,
+      phone: values.phone?.trim() || undefined,
+      wechat: values.wechat?.trim() || undefined,
+      department: values.department?.trim() || undefined,
+      title: values.title?.trim() || undefined,
+      remark: values.remark?.trim() || undefined,
     };
 
     if (values.password?.trim()) {
@@ -116,7 +132,7 @@ export function UserManagementPage() {
     }
 
     if (!editingUser && !payload.password) {
-      form.setFields([{ name: 'password', errors: ['ÂàõÂª∫Áî®Êà∑Êó∂ÂøÖÈ°ªÂ°´ÂÜôÂØÜÁ†Å'] }]);
+      form.setFields([{ name: 'password', errors: ['¥¥Ω®”√ªß ±±ÿ–ÎÃÓ–¥√‹¬Î'] }]);
       return;
     }
 
@@ -131,20 +147,20 @@ export function UserManagementPage() {
   const expandedRowRender = (record: AdminUserItem) => (
     <div style={{ padding: '8px 0' }}>
       <Descriptions size="small" bordered column={3} style={{ marginBottom: 12 }}>
-        <Descriptions.Item label="ÁúüÂÆûÂßìÂêç">{record.profile?.realName || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ÈÇÆÁÆ±">{record.profile?.email || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ÁîµËØù">{record.profile?.phone || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ÂæÆ‰ø°">{record.profile?.wechat || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ÁßëÂÆ§">{record.profile?.department || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ËÅåÁß∞">{record.profile?.title || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ËµÑÊñôÂ§áÊ≥®" span={3}>
+        <Descriptions.Item label="’Ê µ–’√˚">{record.profile?.realName || '-'}</Descriptions.Item>
+        <Descriptions.Item label="” œ‰">{record.profile?.email || '-'}</Descriptions.Item>
+        <Descriptions.Item label="µÁª∞">{record.profile?.phone || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Œ¢–≈">{record.profile?.wechat || '-'}</Descriptions.Item>
+        <Descriptions.Item label="ø∆ “">{record.profile?.department || '-'}</Descriptions.Item>
+        <Descriptions.Item label="÷∞≥∆">{record.profile?.title || '-'}</Descriptions.Item>
+        <Descriptions.Item label="±∏◊¢" span={3}>
           {record.profile?.remark || '-'}
         </Descriptions.Item>
       </Descriptions>
 
-      <Typography.Text strong>ÂÖ≥ËÅîÈúÄÊ±Ç</Typography.Text>
+      <Typography.Text strong>πÿ¡™–Ë«Û</Typography.Text>
       {record.requirements.length === 0 ? (
-        <Empty description="ËØ•Áî®Êà∑ÊöÇÊó†ÈúÄÊ±Ç" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description="∏√”√ªß‘›Œﬁ–Ë«Û" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Table
           size="small"
@@ -152,14 +168,14 @@ export function UserManagementPage() {
           pagination={false}
           dataSource={record.requirements}
           columns={[
-            { title: 'ÈúÄÊ±ÇÊ†áÈ¢ò', dataIndex: 'title' },
-            { title: 'Áä∂ÊÄÅ', render: (_, item) => renderRequirementStatus(item.status as never) },
-            { title: 'ÂàõÂª∫Êó∂Èó¥', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
+            { title: '–Ë«Û±ÍÃ‚', dataIndex: 'title' },
+            { title: '◊¥Ã¨', render: (_, item) => renderRequirementStatus(item.status as never) },
+            { title: '¥¥Ω® ±º‰', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
             {
-              title: 'Êìç‰Ωú',
+              title: '≤Ÿ◊˜',
               render: (_, item) => (
                 <Link to={`/admin/requirements/${item.id}`}>
-                  <Button type="link" size="small">Êü•ÁúãÈúÄÊ±Ç</Button>
+                  <Button type="link" size="small">≤Èø¥–Ë«Û</Button>
                 </Link>
               ),
             },
@@ -173,7 +189,7 @@ export function UserManagementPage() {
     () => (
       <Space>
         <Input
-          placeholder="ÊêúÁ¥¢Ë¥¶Âè∑„ÄÅÂåªÈô¢„ÄÅÁúüÂÆûÂßìÂêç"
+          placeholder="À—À˜’À∫≈°¢“Ω‘∫°¢’Ê µ–’√˚"
           value={keywordInput}
           onChange={(event) => setKeywordInput(event.target.value)}
           allowClear
@@ -186,7 +202,7 @@ export function UserManagementPage() {
             setKeyword(keywordInput.trim());
           }}
         >
-          Êü•ËØ¢
+          ≤È—Ø
         </Button>
         <Button
           onClick={() => {
@@ -196,10 +212,10 @@ export function UserManagementPage() {
             setPageSize(10);
           }}
         >
-          ÈáçÁΩÆ
+          ÷ÿ÷√
         </Button>
         <Button type="primary" onClick={openCreateModal}>
-          Êñ∞Âª∫Áî®Êà∑
+          –¬Ω®”√ªß
         </Button>
       </Space>
     ),
@@ -211,111 +227,112 @@ export function UserManagementPage() {
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <div>
           <Typography.Title level={3} style={{ marginBottom: 0 }}>
-            Áî®Êà∑ÁÆ°ÁêÜ
+            ”√ªßπ‹¿Ì
           </Typography.Title>
+          <Typography.Text type="secondary">
+            {canManageAdmins ? '≥¨º∂π‹¿Ì‘±ø…π‹¿Ì∆’Õ®”√ªß∫Õ∆’Õ®π‹¿Ì‘±’À∫≈' : '∆’Õ®π‹¿Ì‘±Ωˆø…π‹¿Ì∆’Õ®”√ªß’À∫≈'}
+          </Typography.Text>
         </div>
 
-      <Card>
-        <div style={{ marginBottom: 16 }}>
-          {titleExtra}
-        </div>
-        <Table<AdminUserItem>
-          rowKey="id"
-          loading={usersQuery.isLoading}
-          dataSource={items}
-          expandable={{ expandedRowRender }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: usersQuery.data?.total ?? 0,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            pageSizeOptions: ['10', '20', '50'],
-            showTotal: (total) => `ÂÖ± ${total} Êù°`,
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-            },
-          }}
-          columns={[
-            { title: 'Ë¥¶Âè∑', dataIndex: 'username', width: 160 },
-            {
-              title: 'ÂåªÈô¢',
-              dataIndex: 'hospitalName',
-              width: 180,
-            },
-            {
-              title: 'ËßíËâ≤',
-              width: 100,
-              render: (_, record) => <Tag color={record.role === 'admin' ? 'purple' : 'blue'}>{record.role}</Tag>,
-            },
-            {
-              title: 'Áä∂ÊÄÅ',
-              width: 100,
-              render: (_, record) => <Tag color={record.status === 'active' ? 'green' : 'red'}>{record.status}</Tag>,
-            },
-            {
-              title: 'ÈÇÆÁÆ±',
-              width: 220,
-              render: (_, record) => record.profile?.email || '-',
-            },
-            {
-              title: 'Áî®Êà∑ËµÑÊñô',
-              width: 140,
-              render: (_, record) => (
-                <Space direction="vertical" size={2}>
-                  <Typography.Text>{record.profile?.realName || '-'}</Typography.Text>
-                  <Typography.Text type="secondary">{record.profile?.department || '-'}</Typography.Text>
-                </Space>
-              ),
-            },
-            {
-              title: 'ÂÖ≥ËÅîÈúÄÊ±Ç',
-              width: 150,
-              render: (_, record) => (
-                <Space size={6}>
-                  <Typography.Text>{record.requirements.length}</Typography.Text>
-                  <Button type="link" size="small" onClick={() => setRequirementDetailUser(record)}>
-                    ËØ¶ÊÉÖ
-                  </Button>
-                </Space>
-              ),
-            },
-            {
-              title: 'ÊúÄËøëÁôªÂΩï',
-              width: 160,
-              render: (_, record) => (record.lastLoginAt ? dayjs(record.lastLoginAt).format('YYYY-MM-DD HH:mm') : '-'),
-            },
-            {
-              title: 'Êìç‰Ωú',
-              width: 160,
-              render: (_, record) => (
-                <Space size={4}>
-                  <Button type="link" size="small" onClick={() => openEditModal(record)}>
-                    ÁºñËæë
-                  </Button>
-                  <Popconfirm
-                    title="Âà†Èô§Áî®Êà∑"
-                    description="Âà†Èô§Âêé‰ºöËøûÂ∏¶Âà†Èô§ËØ•Áî®Êà∑ÂÖ≥ËÅîÁöÑÈúÄÊ±ÇÂíåËµÑÊñô„ÄÇ"
-                    okText="Á°ÆÂÆö"
-                    cancelText="ÂèñÊ∂à"
-                    onConfirm={() => deleteMutation.mutate(record.id)}
-                  >
-                    <Button type="link" size="small" danger loading={deleteMutation.isPending && deleteMutation.variables === record.id}>
-                      Âà†Èô§
+        <Card>
+          <div style={{ marginBottom: 16 }}>{titleExtra}</div>
+          <Table<AdminUserItem>
+            rowKey="id"
+            loading={usersQuery.isLoading}
+            dataSource={items}
+            expandable={{ expandedRowRender }}
+            pagination={{
+              current: page,
+              pageSize,
+              total: usersQuery.data?.total ?? 0,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              pageSizeOptions: ['10', '20', '50'],
+              showTotal: (total) => `π≤ ${total} Ãı`,
+              onChange: (nextPage, nextPageSize) => {
+                setPage(nextPage);
+                setPageSize(nextPageSize);
+              },
+            }}
+            columns={[
+              { title: '’À∫≈', dataIndex: 'username', width: 160 },
+              { title: '“Ω‘∫', dataIndex: 'hospitalName', width: 180 },
+              {
+                title: 'Ω«…´',
+                width: 120,
+                render: (_, record) => {
+                  const color = record.role === 'admin' ? 'purple' : 'blue';
+                  const label = record.role === 'admin' ? '∆’Õ®π‹¿Ì‘±' : '∆’Õ®”√ªß';
+                  return <Tag color={color}>{label}</Tag>;
+                },
+              },
+              {
+                title: '◊¥Ã¨',
+                width: 100,
+                render: (_, record) => <Tag color={record.status === 'active' ? 'green' : 'red'}>{record.status}</Tag>,
+              },
+              {
+                title: '” œ‰',
+                width: 220,
+                render: (_, record) => record.profile?.email || '-',
+              },
+              {
+                title: '”√ªß◊ ¡œ',
+                width: 140,
+                render: (_, record) => (
+                  <Space direction="vertical" size={2}>
+                    <Typography.Text>{record.profile?.realName || '-'}</Typography.Text>
+                    <Typography.Text type="secondary">{record.profile?.department || '-'}</Typography.Text>
+                  </Space>
+                ),
+              },
+              {
+                title: 'πÿ¡™–Ë«Û',
+                width: 150,
+                render: (_, record) => (
+                  <Space size={6}>
+                    <Typography.Text>{record.requirements.length}</Typography.Text>
+                    <Button type="link" size="small" onClick={() => setRequirementDetailUser(record)}>
+                      œÍ«È
                     </Button>
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
+                  </Space>
+                ),
+              },
+              {
+                title: '◊ÓΩ¸µ«¬º',
+                width: 160,
+                render: (_, record) => (record.lastLoginAt ? dayjs(record.lastLoginAt).format('YYYY-MM-DD HH:mm') : '-'),
+              },
+              {
+                title: '≤Ÿ◊˜',
+                width: 160,
+                render: (_, record) => (
+                  <Space size={4}>
+                    <Button type="link" size="small" onClick={() => openEditModal(record)}>
+                      ±‡º≠
+                    </Button>
+                    <Popconfirm
+                      title="…æ≥˝”√ªß"
+                      description="…æ≥˝∫Ûª·“ª≤¢…æ≥˝∏√”√ªßπÿ¡™µƒ–Ë«Û∫Õ◊ ¡œ°£"
+                      okText="»∑∂®"
+                      cancelText="»°œ˚"
+                      onConfirm={() => deleteMutation.mutate(record.id)}
+                    >
+                      <Button type="link" size="small" danger loading={deleteMutation.isPending && deleteMutation.variables === record.id}>
+                        …æ≥˝
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                ),
+              },
+            ]}
           />
         </Card>
       </Space>
 
       <Modal
         open={Boolean(requirementDetailUser)}
-        title={requirementDetailUser ? `${requirementDetailUser.username} ÁöÑÂÖ≥ËÅîÈúÄÊ±Ç` : 'ÂÖ≥ËÅîÈúÄÊ±Ç'}
+        title={requirementDetailUser ? `${requirementDetailUser.username} µƒπÿ¡™–Ë«Û` : 'πÿ¡™–Ë«Û'}
         footer={null}
         onCancel={() => setRequirementDetailUser(null)}
         width={760}
@@ -328,29 +345,29 @@ export function UserManagementPage() {
             pagination={false}
             dataSource={requirementDetailUser.requirements}
             columns={[
-              { title: 'ÈúÄÊ±ÇÊ†áÈ¢ò', dataIndex: 'title' },
-              { title: 'Áä∂ÊÄÅ', render: (_, item) => renderRequirementStatus(item.status as never) },
-              { title: 'ÂàõÂª∫Êó∂Èó¥', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
+              { title: '–Ë«Û±ÍÃ‚', dataIndex: 'title' },
+              { title: '◊¥Ã¨', render: (_, item) => renderRequirementStatus(item.status as never) },
+              { title: '¥¥Ω® ±º‰', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
               {
-                title: 'Êìç‰Ωú',
+                title: '≤Ÿ◊˜',
                 render: (_, item) => (
                   <Link to={`/admin/requirements/${item.id}`}>
-                    <Button type="link" size="small">Êü•ÁúãÈúÄÊ±Ç</Button>
+                    <Button type="link" size="small">≤Èø¥–Ë«Û</Button>
                   </Link>
                 ),
               },
             ]}
           />
         ) : (
-          <Empty description="ËØ•Áî®Êà∑ÊöÇÊó†ÈúÄÊ±Ç" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="∏√”√ªß‘›Œﬁ–Ë«Û" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         )}
       </Modal>
 
       <Modal
         open={modalOpen}
-        title={editingUser ? 'ÁºñËæëÁî®Êà∑' : 'Êñ∞Âª∫Áî®Êà∑'}
-        okText={editingUser ? '‰øùÂ≠ò' : 'ÂàõÂª∫'}
-        cancelText="ÂèñÊ∂à"
+        title={editingUser ? '±‡º≠”√ªß' : '–¬Ω®”√ªß'}
+        okText={editingUser ? '±£¥Ê' : '¥¥Ω®'}
+        cancelText="»°œ˚"
         onCancel={() => {
           setModalOpen(false);
           setEditingUser(null);
@@ -363,57 +380,57 @@ export function UserManagementPage() {
       >
         <Form form={form} layout="vertical" onFinish={(values) => void handleSubmit(values)}>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="Ë¥¶Âè∑" name="username" rules={[{ required: true, message: 'ËØ∑ËæìÂÖ•Ë¥¶Âè∑' }]}>
+            <Form.Item label="’À∫≈" name="username" rules={[{ required: true, message: '«Î ‰»Î’À∫≈' }]}>
               <Input />
             </Form.Item>
             <Form.Item
-              label={editingUser ? 'ÈáçÁΩÆÂØÜÁ†Å' : 'ÂØÜÁ†Å'}
+              label={editingUser ? '÷ÿ÷√√‹¬Î' : '√‹¬Î'}
               name="password"
-              rules={editingUser ? [{ min: 6, message: 'ÂØÜÁ†ÅËá≥Â∞ë 6 ‰Ωç' }] : [{ required: true, message: 'ËØ∑ËæìÂÖ•ÂØÜÁ†Å' }, { min: 6, message: 'ÂØÜÁ†ÅËá≥Â∞ë 6 ‰Ωç' }]}
+              rules={editingUser ? [{ min: 6, message: '√‹¬Î÷¡…Ÿ 6 Œª' }] : [{ required: true, message: '«Î ‰»Î√‹¬Î' }, { min: 6, message: '√‹¬Î÷¡…Ÿ 6 Œª' }]}
             >
-              <Input.Password placeholder={editingUser ? 'ÁïôÁ©∫Âàô‰∏ç‰øÆÊîπ' : ''} />
+              <Input.Password placeholder={editingUser ? '¡Ùø’‘Ú≤ª–ﬁ∏ƒ' : ''} />
             </Form.Item>
-            <Form.Item label="ÂåªÈô¢" name="hospitalName" rules={[{ required: true, message: 'ËØ∑ËæìÂÖ•ÂåªÈô¢' }]}>
+            <Form.Item label="“Ω‘∫" name="hospitalName" rules={[{ required: true, message: '«Î ‰»Î“Ω‘∫' }]}>
               <Input />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="ËßíËâ≤" name="role" rules={[{ required: true, message: 'ËØ∑ÈÄâÊã©ËßíËâ≤' }]}>
-              <Select style={{ width: 160 }} options={[{ label: 'Áî®Êà∑', value: 'user' }, { label: 'ÁÆ°ÁêÜÂëò', value: 'admin' }]} />
+            <Form.Item label="Ω«…´" name="role" rules={[{ required: true, message: '«Î—°‘ÒΩ«…´' }]}>
+              <Select style={{ width: 180 }} options={roleOptions} disabled={!canManageAdmins} />
             </Form.Item>
-            <Form.Item label="Áä∂ÊÄÅ" name="status" rules={[{ required: true, message: 'ËØ∑ÈÄâÊã©Áä∂ÊÄÅ' }]}>
-              <Select style={{ width: 160 }} options={[{ label: 'ÂêØÁî®', value: 'active' }, { label: 'Á¶ÅÁî®', value: 'disabled' }]} />
+            <Form.Item label="◊¥Ã¨" name="status" rules={[{ required: true, message: '«Î—°‘Ò◊¥Ã¨' }]}>
+              <Select style={{ width: 160 }} options={[{ label: '∆Ù”√', value: 'active' }, { label: 'Ω˚”√', value: 'disabled' }]} />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="ÁúüÂÆûÂßìÂêç" name="realName">
-              <Input readOnly />
+            <Form.Item label="’Ê µ–’√˚" name="realName">
+              <Input />
             </Form.Item>
             <Form.Item
-              label="ÈÇÆÁÆ±"
+              label="” œ‰"
               name="email"
-              rules={[{ type: 'email', message: 'ËØ∑ËæìÂÖ•Ê≠£Á°ÆÁöÑÈÇÆÁÆ±Ê†ºÂºè' }]}
-              extra="ÁÆ°ÁêÜÂëòÈÄöÁü•ÈÇÆ‰ª∂‰ºöÂèëÈÄÅÂà∞Ëøô‰∏™ÈÇÆÁÆ±"
+              rules={[{ type: 'email', message: '«Î ‰»Î’˝»∑µƒ” œ‰∏Ò Ω' }]}
+              extra="π‹¿Ì‘±Õ®÷™” º˛ª·∑¢ÀÕµΩ’‚∏ˆ” œ‰"
             >
-              <Input placeholder="ËØ∑ËæìÂÖ•ÈÇÆÁÆ±Âú∞ÂùÄ" />
+              <Input placeholder="«Î ‰»Î” œ‰µÿ÷∑" />
             </Form.Item>
-            <Form.Item label="ÁîµËØù" name="phone">
-              <Input readOnly />
+            <Form.Item label="µÁª∞" name="phone">
+              <Input />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="ÂæÆ‰ø°" name="wechat">
-              <Input readOnly />
+            <Form.Item label="Œ¢–≈" name="wechat">
+              <Input />
             </Form.Item>
-            <Form.Item label="ÁßëÂÆ§" name="department">
-              <Input readOnly />
+            <Form.Item label="ø∆ “" name="department">
+              <Input />
             </Form.Item>
-            <Form.Item label="ËÅåÁß∞" name="title">
-              <Input readOnly />
+            <Form.Item label="÷∞≥∆" name="title">
+              <Input />
             </Form.Item>
           </Space>
-          <Form.Item label="ËµÑÊñôÂ§áÊ≥®" name="remark">
-            <Input.TextArea rows={3} readOnly />
+          <Form.Item label="±∏◊¢" name="remark">
+            <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
       </Modal>

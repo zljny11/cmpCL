@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { UserRole, UserStatus } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { isSuperAdmin } from '../../common/utils/roles';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
@@ -42,7 +43,7 @@ export class UserService {
       status: user.status,
       createdAt: user.createdAt,
       lastLoginAt: user.lastLoginAt,
-      passwordDisplay: '不可查看明文，可重置',
+      passwordDisplay: 'Password is never returned in plaintext.',
       profile: user.profile
         ? {
             realName: user.profile.realName,
@@ -64,6 +65,34 @@ export class UserService {
     };
   }
 
+  private getVisibleRoles(actorRole: UserRole) {
+    return actorRole === UserRole.super_admin ? [UserRole.user, UserRole.admin] : [UserRole.user];
+  }
+
+  private assertRequestedRoleAllowed(actorRole: UserRole, requestedRole: UserRole | undefined) {
+    if (!requestedRole) {
+      return;
+    }
+
+    if (requestedRole === UserRole.super_admin) {
+      throw new ForbiddenException('Super admin accounts cannot be created or assigned from this endpoint.');
+    }
+
+    if (actorRole === UserRole.admin && requestedRole !== UserRole.user) {
+      throw new ForbiddenException('Admins can only manage regular user accounts.');
+    }
+  }
+
+  private assertCanManageExistingUser(actorRole: UserRole, targetRole: UserRole) {
+    if (targetRole === UserRole.super_admin) {
+      throw new ForbiddenException('Super admin accounts are not manageable from this endpoint.');
+    }
+
+    if (actorRole === UserRole.admin && targetRole !== UserRole.user) {
+      throw new ForbiddenException('Admins can only manage regular user accounts.');
+    }
+  }
+
   findByUsername(username: string) {
     return this.prisma.user.findUnique({
       where: { username },
@@ -78,20 +107,27 @@ export class UserService {
     });
   }
 
-  async listUsers(query: ListUsersDto) {
+  async listUsers(currentUserId: bigint, actorRole: UserRole, query: ListUsersDto) {
+    this.assertRequestedRoleAllowed(actorRole, query.role);
+
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 10;
     const keyword = query.keyword?.trim();
+    const visibleRoles = query.role ? [query.role] : this.getVisibleRoles(actorRole);
 
-    const where = keyword
-      ? {
-          OR: [
-            { username: { contains: keyword } },
-            { hospitalName: { contains: keyword } },
-            { profile: { realName: { contains: keyword } } },
-          ],
-        }
-      : {};
+    const where = {
+      role: { in: visibleRoles },
+      ...(actorRole === UserRole.super_admin ? { NOT: { id: currentUserId } } : {}),
+      ...(keyword
+        ? {
+            OR: [
+              { username: { contains: keyword } },
+              { hospitalName: { contains: keyword } },
+              { profile: { realName: { contains: keyword } } },
+            ],
+          }
+        : {}),
+    };
 
     const [total, list] = await this.prisma.$transaction([
       this.prisma.user.count({ where }),
@@ -123,7 +159,10 @@ export class UserService {
     };
   }
 
-  async createUser(dto: CreateAdminUserDto) {
+  async createUser(actorRole: UserRole, dto: CreateAdminUserDto) {
+    const targetRole = dto.role ?? UserRole.user;
+    this.assertRequestedRoleAllowed(actorRole, targetRole);
+
     const username = dto.username.trim();
     const hospitalName = dto.hospitalName.trim();
     const passwordHash = await hash(dto.password, 10);
@@ -132,7 +171,7 @@ export class UserService {
       data: {
         username,
         passwordHash,
-        role: dto.role ?? UserRole.user,
+        role: targetRole,
         status: dto.status ?? UserStatus.active,
         hospitalName,
         profile:
@@ -172,14 +211,29 @@ export class UserService {
     return this.serializeUser(created);
   }
 
-  async updateUser(id: bigint, dto: UpdateAdminUserDto) {
+  async updateUser(id: bigint, currentUserId: bigint, actorRole: UserRole, dto: UpdateAdminUserDto) {
     const existing = await this.prisma.user.findUnique({
       where: { id },
       include: { profile: true },
     });
 
     if (!existing) {
-      throw new NotFoundException('用户不存在');
+      throw new NotFoundException('User not found.');
+    }
+
+    this.assertCanManageExistingUser(actorRole, existing.role);
+
+    if (id === currentUserId) {
+      if (isSuperAdmin(actorRole) && dto.role && dto.role !== UserRole.super_admin) {
+        throw new BadRequestException('The only super admin cannot be downgraded.');
+      }
+      if (isSuperAdmin(actorRole) && dto.status === UserStatus.disabled) {
+        throw new BadRequestException('The only super admin cannot be disabled.');
+      }
+    }
+
+    if (dto.role) {
+      this.assertRequestedRoleAllowed(actorRole, dto.role);
     }
 
     const updated = await this.prisma.user.update({
@@ -239,24 +293,27 @@ export class UserService {
     return this.serializeUser(updated);
   }
 
-  async deleteUser(id: bigint, currentUserId: bigint) {
+  async deleteUser(id: bigint, currentUserId: bigint, actorRole: UserRole) {
     if (id === currentUserId) {
-      throw new BadRequestException('不能删除当前登录管理员');
+      throw new BadRequestException('You cannot delete the currently logged-in administrator.');
     }
 
     const existing = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, username: true, hospitalName: true },
+      select: { id: true, username: true, hospitalName: true, role: true },
     });
     if (!existing) {
-      throw new NotFoundException('用户不存在');
+      throw new NotFoundException('User not found.');
     }
+
+    this.assertCanManageExistingUser(actorRole, existing.role);
 
     await this.prisma.user.delete({ where: { id } });
     return {
       id: existing.id.toString(),
       username: existing.username,
       hospitalName: existing.hospitalName,
+      role: existing.role,
     };
   }
 }

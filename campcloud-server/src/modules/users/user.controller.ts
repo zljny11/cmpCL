@@ -1,9 +1,10 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req } from '@nestjs/common';
-import { AdminOperationLogCategory, UserRole } from '@prisma/client';
+import { AdminOperationLogCategory } from '@prisma/client';
 import type { Request } from 'express';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { extractRequestIp } from '../../common/utils/request';
+import { getManagementRoles } from '../../common/utils/roles';
 import { AuthUser } from '../../types/auth-user';
 import { AdminLogsService } from '../admin-logs/admin-logs.service';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
@@ -11,7 +12,7 @@ import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
 import { UserService } from './user.service';
 
-@Roles(UserRole.admin)
+@Roles(...getManagementRoles())
 @Controller('admin/users')
 export class UserController {
   constructor(
@@ -20,17 +21,17 @@ export class UserController {
   ) {}
 
   @Get()
-  listUsers(@Query() query: ListUsersDto) {
-    return this.userService.listUsers(query);
+  listUsers(@CurrentUser() user: AuthUser, @Query() query: ListUsersDto) {
+    return this.userService.listUsers(BigInt(user.id), user.role, query);
   }
 
   @Post()
   async createUser(@CurrentUser() user: AuthUser, @Req() request: Request, @Body() dto: CreateAdminUserDto) {
-    const created = await this.userService.createUser(dto);
+    const created = await this.userService.createUser(user.role, dto);
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.user,
-      action: '新增用户',
+      action: 'create_user',
       targetType: 'user_data',
       targetId: created.id,
       targetName: created.username,
@@ -51,11 +52,11 @@ export class UserController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAdminUserDto,
   ) {
-    const updated = await this.userService.updateUser(BigInt(id), dto);
+    const updated = await this.userService.updateUser(BigInt(id), BigInt(user.id), user.role, dto);
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.user,
-      action: '修改用户',
+      action: 'update_user',
       targetType: 'user_data',
       targetId: updated.id,
       targetName: updated.username,
@@ -72,16 +73,17 @@ export class UserController {
 
   @Delete(':id')
   async deleteUser(@CurrentUser() user: AuthUser, @Req() request: Request, @Param('id', ParseIntPipe) id: number) {
-    const deleted = await this.userService.deleteUser(BigInt(id), BigInt(user.id));
+    const deleted = await this.userService.deleteUser(BigInt(id), BigInt(user.id), user.role);
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.user,
-      action: '删除用户',
+      action: 'delete_user',
       targetType: 'user_data',
       targetId: deleted.id,
       targetName: deleted.username,
       detail: {
         hospitalName: deleted.hospitalName,
+        role: deleted.role,
       },
       ipAddress: extractRequestIp(request),
     });
