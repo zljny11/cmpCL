@@ -170,23 +170,23 @@ function FailedFilesPanel({
       <Alert
         type="error"
         showIcon
-        message="Ê§°ÜÎÄ¼şÃ÷Ï¸¼ÓÔØÊ§°Ü"
-        action={<Button size="small" onClick={() => void refetch()}>ÖØÊÔ</Button>}
+        message="å¤±è´¥æ–‡ä»¶æ˜ç»†åŠ è½½å¤±è´¥"
+        action={<Button size="small" onClick={() => void refetch()}>é‡è¯•</Button>}
       />
     );
   }
 
   const failedFiles = data?.files ?? [];
-  const hasLegacyFailure = batch.failedFileCount === 0 && (batch.status === 'failed' || batch.remark?.includes('½âÎöÊ§°Ü'));
+  const hasLegacyFailure = batch.failedFileCount === 0 && (batch.status === 'failed' || batch.remark?.includes('è§£æå¤±è´¥'));
 
   return (
     <Card
       size="small"
-      title={hasLegacyFailure ? 'Ê§°ÜÎÄ¼şÃ÷Ï¸²»¿ÉÓÃ' : `Ê§°ÜÎÄ¼ş ${failedFiles.length} ¸ö`}
+      title={hasLegacyFailure ? 'å¤±è´¥æ–‡ä»¶æ˜ç»†ä¸å¯ç”¨' : `å¤±è´¥æ–‡ä»¶ ${failedFiles.length} ä¸ª`}
       extra={
         failedFiles.length ? (
           <Button size="small" type="primary" onClick={() => onRetry(failedFiles)}>
-            ÖØ´«Ê§°ÜÎÄ¼ş
+            é‡ä¼ å¤±è´¥æ–‡ä»¶
           </Button>
         ) : hasLegacyFailure ? (
           <Button
@@ -195,7 +195,7 @@ function FailedFilesPanel({
               onRetry([]);
             }}
           >
-            ÖØĞÂÉÏ´«±¾Åú´Î
+            é‡æ–°ä¸Šä¼ æœ¬æ‰¹æ¬¡
           </Button>
         ) : null
       }
@@ -205,14 +205,14 @@ function FailedFilesPanel({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="ÕâÊÇ¾ÉÅú´ÎÀúÊ·Êı¾İ"
-          description="µ±Ê±ÏµÍ³Ö»¼ÇÂ¼ÁËÊ§°ÜÊıÁ¿£¬Ã»ÓĞ±£´æÊ§°ÜÎÄ¼şÃûºÍÔ­Òò£¬ËùÒÔÏÖÔÚÎŞ·¨×¼È·Ö¸³öÊÇÄÄÒ»¸öÎÄ¼şÊ§°Ü¡£¿ÉÒÔÖØĞÂÉÏ´«Ô­Ê¼ÎÄ¼ş¼Ğ£¬»ò°´ÄãµÄ±¾µØ¼ÇÂ¼ÊÖ¶¯²¹´«¡£"
+          message="è¿™æ˜¯æ—§æ‰¹æ¬¡å†å²æ•°æ®"
+          description="å½“æ—¶ç³»ç»Ÿåªè®°å½•äº†å¤±è´¥æ•°é‡ï¼Œæ²¡æœ‰ä¿å­˜å¤±è´¥æ–‡ä»¶åå’ŒåŸå› ï¼Œæ‰€ä»¥ç°åœ¨æ— æ³•å‡†ç¡®æŒ‡å‡ºæ˜¯å“ªä¸€ä¸ªæ–‡ä»¶å¤±è´¥ã€‚å¯ä»¥é‡æ–°ä¸Šä¼ åŸå§‹æ–‡ä»¶å¤¹ï¼Œæˆ–æŒ‰ä½ çš„æœ¬åœ°è®°å½•æ‰‹åŠ¨è¡¥ä¼ ã€‚"
         />
       ) : null}
       <List
         size="small"
         dataSource={failedFiles}
-        locale={{ emptyText: hasLegacyFailure ? 'ÀúÊ·Åú´ÎÃ»ÓĞÊ§°ÜÃ÷Ï¸¼ÇÂ¼' : 'Ã»ÓĞÊ§°ÜÎÄ¼şÃ÷Ï¸' }}
+        locale={{ emptyText: hasLegacyFailure ? 'å†å²æ‰¹æ¬¡æ²¡æœ‰å¤±è´¥æ˜ç»†è®°å½•' : 'æ²¡æœ‰å¤±è´¥æ–‡ä»¶æ˜ç»†' }}
         renderItem={(item, index) => (
           <List.Item>
             <Space direction="vertical" size={2} style={{ width: '100%' }}>
@@ -394,7 +394,7 @@ export function UploadCenterPage() {
 
       if (durableFileLoaded > 0 && !resumedUploadNoticeRef.current.has(fileKey)) {
         resumedUploadNoticeRef.current.add(fileKey);
-        message.info(`¼ì²âµ½ÎÄ¼ş¡°${relativePath}¡±´æÔÚÎ´Íê³ÉÉÏ´«£¬ÒÑ×Ô¶¯´ÓÉÏ´Î½ø¶È¼ÌĞø¡£`);
+        message.info(`æ£€æµ‹åˆ°æ–‡ä»¶â€œ${relativePath}â€å­˜åœ¨æœªå®Œæˆä¸Šä¼ ï¼Œå·²è‡ªåŠ¨ä»ä¸Šæ¬¡è¿›åº¦ç»§ç»­ã€‚`);
       }
 
       const totalParts = Math.max(1, Math.ceil(file.size / partSize));
@@ -425,14 +425,14 @@ export function UploadCenterPage() {
             });
 
             if (attempt > 1) {
-              message.success(`ÎÄ¼ş¡°${relativePath}¡±µÚ ${partNumber} ¸ö·ÖÆ¬ÖØÊÔ³É¹¦¡£`);
+              message.success(`æ–‡ä»¶â€œ${relativePath}â€ç¬¬ ${partNumber} ä¸ªåˆ†ç‰‡é‡è¯•æˆåŠŸã€‚`);
             }
             lastUploadError = null;
             break;
           } catch (error) {
             lastUploadError = error;
             if (attempt < MULTIPART_PART_UPLOAD_MAX_RETRIES) {
-              message.warning(`ÎÄ¼ş¡°${relativePath}¡±µÚ ${partNumber} ¸ö·ÖÆ¬ÉÏ´«Ê§°Ü£¬ÕıÔÚÖØÊÔ£¨${attempt}/${MULTIPART_PART_UPLOAD_MAX_RETRIES - 1}£©¡£`);
+              message.warning(`æ–‡ä»¶â€œ${relativePath}â€ç¬¬ ${partNumber} ä¸ªåˆ†ç‰‡ä¸Šä¼ å¤±è´¥ï¼Œæ­£åœ¨é‡è¯•ï¼ˆ${attempt}/${MULTIPART_PART_UPLOAD_MAX_RETRIES - 1}ï¼‰ã€‚`);
             }
           }
         }
@@ -442,8 +442,8 @@ export function UploadCenterPage() {
             ? (lastUploadError.response?.data as { message?: string } | undefined)?.message || lastUploadError.message
             : lastUploadError instanceof Error
               ? lastUploadError.message
-              : 'ÍøÂçÁ¬½ÓÒì³£';
-          throw new Error(`ÎÄ¼ş¡°${relativePath}¡±µÚ ${partNumber} ¸ö·ÖÆ¬ÉÏ´«Ê§°Ü£¬ÒÑÖØÊÔ ${MULTIPART_PART_UPLOAD_MAX_RETRIES} ´Î£º${errorMessage}`);
+              : 'ç½‘ç»œè¿æ¥å¼‚å¸¸';
+          throw new Error(`æ–‡ä»¶â€œ${relativePath}â€ç¬¬ ${partNumber} ä¸ªåˆ†ç‰‡ä¸Šä¼ å¤±è´¥ï¼Œå·²é‡è¯• ${MULTIPART_PART_UPLOAD_MAX_RETRIES} æ¬¡ï¼š${errorMessage}`);
         }
 
         const etag = normalizeEtag(uploadResponse.headers.etag as string | undefined);
@@ -520,13 +520,13 @@ export function UploadCenterPage() {
       const zipFiles = visibleFiles.filter((file) => isZipFileName(file.name));
       if (zipFiles.length !== 1) {
         setShowFileSelectionError(true);
-        message.warning('ZIP ÉÏ´«Ö»Ö§³ÖÑ¡Ôñµ¥¸ö .zip ÎÄ¼ş');
+        message.warning('ZIP ä¸Šä¼ åªæ”¯æŒé€‰æ‹©å•ä¸ª .zip æ–‡ä»¶');
         return;
       }
       const zipFile = zipFiles[0];
       if (zipFile.size <= LARGE_ZIP_UPLOAD_THRESHOLD_BYTES) {
         setShowFileSelectionError(true);
-        message.warning('ZIP ÉÏ´«½öÓÃÓÚ³¬¹ı 10GB µÄÅú´Î£¬ÇëÖ±½ÓÑ¡ÔñÎÄ¼ş¼ĞÉÏ´«');
+        message.warning('ZIP ä¸Šä¼ ä»…ç”¨äºè¶…è¿‡ 10GB çš„æ‰¹æ¬¡ï¼Œè¯·ç›´æ¥é€‰æ‹©æ–‡ä»¶å¤¹ä¸Šä¼ ');
         return;
       }
 
@@ -556,14 +556,14 @@ export function UploadCenterPage() {
     const oversizeFile = uniqueFiles.find((file) => file.size > MAX_SINGLE_DICOM_FILE_BYTES);
     if (oversizeFile) {
       setShowFileSelectionError(true);
-      message.warning(`µ¥¸ö DICOM ÎÄ¼ş²»ÄÜ³¬¹ı 10GB£º${oversizeFile.name}`);
+      message.warning(`å•ä¸ª DICOM æ–‡ä»¶ä¸èƒ½è¶…è¿‡ 10GBï¼š${oversizeFile.name}`);
       return;
     }
     const totalBytes = uniqueFiles.reduce((sum, file) => sum + file.size, 0);
 
     if (totalBytes > LARGE_ZIP_UPLOAD_THRESHOLD_BYTES) {
       setShowFileSelectionError(true);
-      message.warning('³¬¹ı 10GB µÄÊı¾İÖ»Ö§³ÖÉÏ´«µ¥¸ö ZIP Ñ¹Ëõ°ü£¬ÉÏ´«ºóĞèÓÉ¹ÜÀí²àÈ·ÈÏÀ­È¡ÏêÇéÊı¾İ');
+      message.warning('è¶…è¿‡ 10GB çš„æ•°æ®åªæ”¯æŒä¸Šä¼ å•ä¸ª ZIP å‹ç¼©åŒ…ï¼Œä¸Šä¼ åéœ€ç”±ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–è¯¦æƒ…æ•°æ®');
       return;
     }
 
@@ -579,7 +579,7 @@ export function UploadCenterPage() {
     setShowAllSelectedFiles(false);
     setShowFileSelectionError(false);
 
-    // ½öÔÚä¯ÀÀÆ÷±¾µØ¶ÁÈ¡ÉÙÁ¿ DICOM Í·ĞÅÏ¢£¬°ïÖúÌî³ä±íµ¥£¬²»´¥·¢·şÎñ¶Ë½âÎö
+    // ä»…åœ¨æµè§ˆå™¨æœ¬åœ°è¯»å–å°‘é‡ DICOM å¤´ä¿¡æ¯ï¼Œå¸®åŠ©å¡«å……è¡¨å•ï¼Œä¸è§¦å‘æœåŠ¡ç«¯è§£æ
     if (!append && visibleFiles.length > 0 && enableAutoParseMetadata) {
       console.log('[Upload] Starting DICOM parse for', visibleFiles.length, 'files');
       const metadata = await findAndParseDicomInFiles(visibleFiles);
@@ -661,7 +661,7 @@ export function UploadCenterPage() {
         uploadedAt: new Date().toISOString(),
         uploader: {
           id: 'pending',
-          username: 'µ±Ç°ÓÃ»§',
+          username: 'å½“å‰ç”¨æˆ·',
         },
       });
       setIsUploadingFiles(true);
@@ -703,10 +703,10 @@ export function UploadCenterPage() {
       setUploadProgress(null);
       message.success(
         result.requiresManualAnalysis
-          ? `ÒÑÉÏ´« #${result.batchNo}£¬Ô­Ê¼ ZIP ÒÑÔİ´æ£¬µÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡`
+          ? `å·²ä¸Šä¼  #${result.batchNo}ï¼ŒåŸå§‹ ZIP å·²æš‚å­˜ï¼Œç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–`
           : retryContext
-            ? `ÒÑÏòÅú´Î #${result.batchNo} ×·¼ÓÖØ´«ÎÄ¼ş£¬µÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡ÏêÇéÊı¾İ`
-            : `ÒÑÉÏ´« #${result.batchNo}£¬µÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡ÏêÇéÊı¾İ`,
+            ? `å·²å‘æ‰¹æ¬¡ #${result.batchNo} è¿½åŠ é‡ä¼ æ–‡ä»¶ï¼Œç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–è¯¦æƒ…æ•°æ®`
+            : `å·²ä¸Šä¼  #${result.batchNo}ï¼Œç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–è¯¦æƒ…æ•°æ®`,
       );
       form.resetFields();
       setModalityCustom('');
@@ -726,9 +726,9 @@ export function UploadCenterPage() {
       void refetchOssFiles();
       if (shouldShowInitialUploadNotice && !result.requiresManualAnalysis) {
         modal.info({
-          title: 'ÉÏ´«Íê³É',
-          content: 'ÄúÒÑÍê³ÉÉÏ´«£¬¹ÜÀí²à²é¿´ĞèÇóÊ±¿É°´ĞèÀ­È¡ÏêÇéÊı¾İ£¬ºóĞøÈçÓĞĞÂÄÚÈİÒ²¿É¼ÌĞø²¹³äÉÏ´«¡£',
-          okText: 'ÎÒÖªµÀÁË',
+          title: 'ä¸Šä¼ å®Œæˆ',
+          content: 'æ‚¨å·²å®Œæˆä¸Šä¼ ï¼Œç®¡ç†ä¾§æŸ¥çœ‹éœ€æ±‚æ—¶å¯æŒ‰éœ€æ‹‰å–è¯¦æƒ…æ•°æ®ï¼Œåç»­å¦‚æœ‰æ–°å†…å®¹ä¹Ÿå¯ç»§ç»­è¡¥å……ä¸Šä¼ ã€‚',
+          okText: 'æˆ‘çŸ¥é“äº†',
           centered: true,
         });
       }
@@ -740,7 +740,7 @@ export function UploadCenterPage() {
       const errorMessage = axios.isAxiosError(error)
         ? (error.response?.data as { message?: string } | undefined)?.message
         : undefined;
-      message.error(errorMessage || 'ÉÏ´«Ê§°Ü');
+      message.error(errorMessage || 'ä¸Šä¼ å¤±è´¥');
     },
   });
 
@@ -789,7 +789,7 @@ export function UploadCenterPage() {
 
   if (!requirementId) {
     return (
-      <Card title="Ñ¡ÔñĞèÇóµ¥" loading={isRequirementListLoading}>
+      <Card title="é€‰æ‹©éœ€æ±‚å•" loading={isRequirementListLoading}>
         <List<RequirementListItem>
           dataSource={requirementListData?.list ?? []}
           pagination={{
@@ -799,13 +799,13 @@ export function UploadCenterPage() {
             showSizeChanger: true,
             showQuickJumper: true,
             pageSizeOptions: ['10', '20', '50'],
-            showTotal: (total) => `¹² ${total} Ìõ`,
+            showTotal: (total) => `å…± ${total} æ¡`,
             onChange: (page, pageSize) => {
               setRequirementPickerPage(page);
               setRequirementPickerPageSize(pageSize);
             },
           }}
-          locale={{ emptyText: <Empty description="ÔİÎŞĞèÇóµ¥" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          locale={{ emptyText: <Empty description="æš‚æ— éœ€æ±‚å•" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
           renderItem={(item) => (
             <List.Item
               actions={[
@@ -814,7 +814,7 @@ export function UploadCenterPage() {
                   size="small"
                   onClick={() => navigate(`/uploads?requirementId=${item.id}`)}
                 >
-                  ½øÈëÉÏ´«
+                  è¿›å…¥ä¸Šä¼ 
                 </Button>,
               ]}
             >
@@ -836,7 +836,7 @@ export function UploadCenterPage() {
   }
 
   if (isRequirementError) {
-    return <Alert type="error" showIcon message="ĞèÇóĞÅÏ¢¼ÓÔØÊ§°Ü" />;
+    return <Alert type="error" showIcon message="éœ€æ±‚ä¿¡æ¯åŠ è½½å¤±è´¥" />;
   }
 
   return (
@@ -844,12 +844,12 @@ export function UploadCenterPage() {
       <Modal open={isUploadingFiles} footer={null} closable={false} maskClosable={false} centered width={480}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {selectedRequiresManualAnalysis ? 'ÕıÔÚÉÏ´« ZIP' : 'ÕıÔÚÉÏ´«ÎÄ¼ş¼Ğ'}
+            {selectedRequiresManualAnalysis ? 'æ­£åœ¨ä¸Šä¼  ZIP' : 'æ­£åœ¨ä¸Šä¼ æ–‡ä»¶å¤¹'}
           </Typography.Title>
           <Typography.Text type="secondary">
             {selectedRequiresManualAnalysis
-              ? 'ZIP ÎÄ¼şÕıÔÚÉÏ´«µ½·şÎñÆ÷£¬Çë²»Òª¹Ø±ÕÒ³Ãæ¡£¸ÃÎÄ¼ş³¬¹ı 10GB£¬ÉÏ´«Íê³Éºó½ö±£´æÔ­Ê¼ÎÄ¼ş£¬µÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡¡£'
-              : 'ÎÄ¼şÕıÔÚÉÏ´«µ½·şÎñÆ÷£¬Çë²»Òª¹Ø±ÕÒ³Ãæ¡£Ö§³Ö½«¶à¸öÎÄ¼ş¼ĞÀÛ¼Æµ½Í¬Ò»Åú´ÎºóÍ³Ò»ÉÏ´«£¬ÉÏ´«Íê³ÉºóµÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡ÏêÇéÊı¾İ¡£'}
+              ? 'ZIP æ–‡ä»¶æ­£åœ¨ä¸Šä¼ åˆ°æœåŠ¡å™¨ï¼Œè¯·ä¸è¦å…³é—­é¡µé¢ã€‚è¯¥æ–‡ä»¶è¶…è¿‡ 10GBï¼Œä¸Šä¼ å®Œæˆåä»…ä¿å­˜åŸå§‹æ–‡ä»¶ï¼Œç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–ã€‚'
+              : 'æ–‡ä»¶æ­£åœ¨ä¸Šä¼ åˆ°æœåŠ¡å™¨ï¼Œè¯·ä¸è¦å…³é—­é¡µé¢ã€‚æ”¯æŒå°†å¤šä¸ªæ–‡ä»¶å¤¹ç´¯è®¡åˆ°åŒä¸€æ‰¹æ¬¡åç»Ÿä¸€ä¸Šä¼ ï¼Œä¸Šä¼ å®Œæˆåç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–è¯¦æƒ…æ•°æ®ã€‚'}
           </Typography.Text>
           <Progress percent={uploadProgress?.percent ?? 0} status="active" />
           <Typography.Text>
@@ -857,7 +857,7 @@ export function UploadCenterPage() {
               ? `${(uploadProgress.loaded / 1024 / 1024).toFixed(2)} MB${
                   uploadProgress.total ? ` / ${(uploadProgress.total / 1024 / 1024).toFixed(2)} MB` : ''
                 }`
-              : 'ÕıÔÚ×¼±¸ÉÏ´«'}
+              : 'æ­£åœ¨å‡†å¤‡ä¸Šä¼ '}
           </Typography.Text>
         </Space>
       </Modal>
@@ -874,14 +874,14 @@ export function UploadCenterPage() {
           <Col xs={24} lg={14}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Typography.Title level={3} style={{ margin: 0 }}>
-                Êı¾İÉÏ´«ÖĞĞÄ
+                æ•°æ®ä¸Šä¼ ä¸­å¿ƒ
               </Typography.Title>
               <Space wrap>
                 <Link to={`/requirements/${requirementId}`}>
-                  <Button icon={<FileSearchOutlined />}>·µ»ØĞèÇóÏêÇé</Button>
+                  <Button icon={<FileSearchOutlined />}>è¿”å›éœ€æ±‚è¯¦æƒ…</Button>
                 </Link>
                 <Link to="/requirements">
-                  <Button icon={<LinkOutlined />}>·µ»ØĞèÇóÁĞ±í</Button>
+                  <Button icon={<LinkOutlined />}>è¿”å›éœ€æ±‚åˆ—è¡¨</Button>
                 </Link>
               </Space>
             </Space>
@@ -889,13 +889,13 @@ export function UploadCenterPage() {
           <Col xs={24} lg={10}>
             <Card size="small" style={{ borderRadius: 16 }}>
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                <Typography.Text type="secondary">µ±Ç°ĞèÇóµ¥</Typography.Text>
+                <Typography.Text type="secondary">å½“å‰éœ€æ±‚å•</Typography.Text>
                 <Typography.Title level={5} style={{ margin: 0 }}>
-                  {requirement?.title || `ĞèÇóµ¥ ${requirementId}`}
+                  {requirement?.title || `éœ€æ±‚å• ${requirementId}`}
                 </Typography.Title>
                 <Space wrap>
-                  <Tag color="blue">{requirement?.type || 'Î´¶¨ÒåÀàĞÍ'}</Tag>
-                  <Tag>{requirement?.status || 'Î´Öª×´Ì¬'}</Tag>
+                  <Tag color="blue">{requirement?.type || 'æœªå®šä¹‰ç±»å‹'}</Tag>
+                  <Tag>{requirement?.status || 'æœªçŸ¥çŠ¶æ€'}</Tag>
                 </Space>
               </Space>
             </Card>
@@ -906,39 +906,39 @@ export function UploadCenterPage() {
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={6}>
           <Card>
-            <Statistic title="Åú´ÎÊı" value={batchSummary.total} prefix={<FolderOpenOutlined />} />
+            <Statistic title="æ‰¹æ¬¡æ•°" value={batchSummary.total} prefix={<FolderOpenOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
           <Card>
-            <Statistic title="µ±Ç°Ò³ÎÄ¼şÊı" value={batchSummary.files} prefix={<InboxOutlined />} />
+            <Statistic title="å½“å‰é¡µæ–‡ä»¶æ•°" value={batchSummary.files} prefix={<InboxOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
           <Card>
-            <Statistic title="´ı½âÎöÅú´Î" value={batchSummary.uploaded} prefix={<InboxOutlined />} />
+            <Statistic title="å¾…è§£ææ‰¹æ¬¡" value={batchSummary.uploaded} prefix={<InboxOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
           <Card>
-            <Statistic title="ÒÑ½âÎöÅú´Î" value={batchSummary.parsed} prefix={<CloudUploadOutlined />} />
+            <Statistic title="å·²è§£ææ‰¹æ¬¡" value={batchSummary.parsed} prefix={<CloudUploadOutlined />} />
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <Card title="ÉÏ´«">
+          <Card title="ä¸Šä¼ ">
             {!profileCompleted ? (
               <Alert
                 type="warning"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message="ÇëÏÈÍêÉÆ×ÊÁÏ"
-                description="ÉÏ´«Êı¾İÇ°ĞèÒªÏÈ²¹ÆëÁªÏµÈË¡¢ÓÊÏä¡¢µç»°¡¢Î¢ĞÅºÅ¡¢Ò½Ôº¡¢¿ÆÊÒºÍÖ°³Æ¡£"
+                message="è¯·å…ˆå®Œå–„èµ„æ–™"
+                description="ä¸Šä¼ æ•°æ®å‰éœ€è¦å…ˆè¡¥é½è”ç³»äººã€é‚®ç®±ã€ç”µè¯ã€å¾®ä¿¡å·ã€åŒ»é™¢ã€ç§‘å®¤å’ŒèŒç§°ã€‚"
                 action={
                   <Button size="small" type="primary" onClick={() => navigate('/profile')}>
-                    È¥ÍêÉÆ×ÊÁÏ
+                    å»å®Œå–„èµ„æ–™
                   </Button>
                 }
               />
@@ -948,11 +948,11 @@ export function UploadCenterPage() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={`ÕıÔÚÉÏ´«ÎÄ¼ş${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`}
+                message={`æ­£åœ¨ä¸Šä¼ æ–‡ä»¶${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`}
                 description={
                   selectedRequiresManualAnalysis
-                    ? `ÎÄ¼şÕıÔÚÒì²½ÉÏ´«£¬Çë²»Òª¹Ø±ÕÒ³Ãæ¡£${uploadProgressText ? ` µ±Ç°½ø¶È£º${uploadProgressText}` : ''} ÉÏ´«Íê³Éºó½ö±£´æÔ­Ê¼ ZIP£¬¹ÜÀí²à¿ÉÏÂÔØµ½±¾µØ·ÖÎö¡£`
-                    : `ÎÄ¼şÕıÔÚÒì²½ÉÏ´«£¬Çë²»Òª¹Ø±ÕÒ³Ãæ¡£${uploadProgressText ? ` µ±Ç°½ø¶È£º${uploadProgressText}` : ''} ÉÏ´«Íê³Éºó»á×Ô¶¯½øÈëºóÌ¨Òì²½½âÎö¡£`
+                    ? `æ–‡ä»¶æ­£åœ¨å¼‚æ­¥ä¸Šä¼ ï¼Œè¯·ä¸è¦å…³é—­é¡µé¢ã€‚${uploadProgressText ? ` å½“å‰è¿›åº¦ï¼š${uploadProgressText}` : ''} ä¸Šä¼ å®Œæˆåä»…ä¿å­˜åŸå§‹ ZIPï¼Œç®¡ç†ä¾§å¯ä¸‹è½½åˆ°æœ¬åœ°åˆ†æã€‚`
+                    : `æ–‡ä»¶æ­£åœ¨å¼‚æ­¥ä¸Šä¼ ï¼Œè¯·ä¸è¦å…³é—­é¡µé¢ã€‚${uploadProgressText ? ` å½“å‰è¿›åº¦ï¼š${uploadProgressText}` : ''} ä¸Šä¼ å®Œæˆåä¼šè‡ªåŠ¨è¿›å…¥åå°å¼‚æ­¥è§£æã€‚`
                 }
               />
             ) : null}
@@ -961,49 +961,49 @@ export function UploadCenterPage() {
               layout="vertical"
               onFinish={(values) => {
                 if (!profileCompleted) {
-                  message.warning('ÇëÏÈÍêÉÆ×ÊÁÏºóÔÙÉÏ´«Êı¾İ');
+                  message.warning('è¯·å…ˆå®Œå–„èµ„æ–™åå†ä¸Šä¼ æ•°æ®');
                   navigate('/profile');
                   return;
                 }
                 if (fileList.length === 0) {
                   setShowFileSelectionError(true);
-                  message.warning(uploadMode === 'zip' ? 'ÇëÏÈÑ¡Ôñµ¥¸ö ZIP ÎÄ¼ş' : 'ÇëÏÈÑ¡ÔñÖÁÉÙÒ»¸öÎÄ¼ş¼Ğ');
+                  message.warning(uploadMode === 'zip' ? 'è¯·å…ˆé€‰æ‹©å•ä¸ª ZIP æ–‡ä»¶' : 'è¯·å…ˆé€‰æ‹©è‡³å°‘ä¸€ä¸ªæ–‡ä»¶å¤¹');
                   return;
                 }
-                // ¼ì²é×Ô¶¨ÒåÖµ
+                // æ£€æŸ¥è‡ªå®šä¹‰å€¼
                 if (values.modality === 'Other' && !modalityCustom) {
-                  message.warning('ÇëÊäÈë×Ô¶¨ÒåÓ°ÏñÄ£Ì¬');
+                  message.warning('è¯·è¾“å…¥è‡ªå®šä¹‰å½±åƒæ¨¡æ€');
                   return;
                 }
-                if (values.bodyPart === 'ÆäËû' && !bodyPartCustom) {
-                  message.warning('ÇëÊäÈë×Ô¶¨Òå¼ì²é²¿Î»');
+                if (values.bodyPart === 'å…¶ä»–' && !bodyPartCustom) {
+                  message.warning('è¯·è¾“å…¥è‡ªå®šä¹‰æ£€æŸ¥éƒ¨ä½');
                   return;
                 }
                 setShowFileSelectionError(false);
-                // ½«×Ô¶¨ÒåÖµºÏ²¢µ½±íµ¥ÖµÖĞ
+                // å°†è‡ªå®šä¹‰å€¼åˆå¹¶åˆ°è¡¨å•å€¼ä¸­
                 const submitValues = {
                   ...values,
                   modality: values.modality === 'Other' ? modalityCustom : values.modality,
-                  bodyPart: values.bodyPart === 'ÆäËû' ? bodyPartCustom : values.bodyPart,
+                  bodyPart: values.bodyPart === 'å…¶ä»–' ? bodyPartCustom : values.bodyPart,
                 };
                 createBatchMutation.mutate(submitValues);
               }}
             >
-              <Form.Item label="ÉÏ´«ÀàĞÍ">
+              <Form.Item label="ä¸Šä¼ ç±»å‹">
                 <Input
-                  value={(batchData?.total ?? 0) > 0 ? '²¹³äÉÏ´«' : 'Ê×´ÎÉÏ´«'}
+                  value={(batchData?.total ?? 0) > 0 ? 'è¡¥å……ä¸Šä¼ ' : 'é¦–æ¬¡ä¸Šä¼ '}
                   disabled
                 />
               </Form.Item>
-              <Form.Item label="ÉÏ´«·½Ê½" style={{ marginBottom: 12 }}>
+              <Form.Item label="ä¸Šä¼ æ–¹å¼" style={{ marginBottom: 12 }}>
                 <Radio.Group
                   value={uploadMode}
                   onChange={(event) => setUploadMode(event.target.value)}
                   optionType="button"
                   buttonStyle="solid"
                   options={[
-                    { label: 'ÎÄ¼ş¼ĞÉÏ´«', value: 'folder' },
-                    { label: 'ZIP ÉÏ´«', value: 'zip' },
+                    { label: 'æ–‡ä»¶å¤¹ä¸Šä¼ ', value: 'folder' },
+                    { label: 'ZIP ä¸Šä¼ ', value: 'zip' },
                   ]}
                 />
               </Form.Item>
@@ -1011,11 +1011,11 @@ export function UploadCenterPage() {
                 type={uploadMode === 'zip' ? 'warning' : 'info'}
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={uploadMode === 'zip' ? 'ZIP ÉÏ´«ºóµÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡' : 'ÎÄ¼ş¼ĞÉÏ´«ºóµÈ´ı¹ÜÀí²àÈ·ÈÏÀ­È¡ÏêÇéÊı¾İ'}
+                message={uploadMode === 'zip' ? 'ZIP ä¸Šä¼ åç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–' : 'æ–‡ä»¶å¤¹ä¸Šä¼ åç­‰å¾…ç®¡ç†ä¾§ç¡®è®¤æ‹‰å–è¯¦æƒ…æ•°æ®'}
                 description={
                   uploadMode === 'zip'
-                    ? '½öµ±Ô­Ê¼Êı¾İ³¬¹ı 10GB Ê±Ê¹ÓÃ ZIP ÉÏ´«£¬ÏµÍ³»áÏÈ±£´æÔ­Ê¼Ñ¹Ëõ°ü£¬²»»áÖ±½ÓÕ¹¿ª½âÎö¡£'
-                    : 'µ¥´ÎÀÛ¼ÆÑ¡ÔñµÄÎÄ¼ş×Ü´óĞ¡²»ÄÜ³¬¹ı 10GB£»Èç¹û³¬¹ı£¬ÇëÏÈÑ¹Ëõ³Éµ¥¸ö ZIP ºóÇĞ»»µ½ ZIP ÉÏ´«¡£'
+                    ? 'ä»…å½“åŸå§‹æ•°æ®è¶…è¿‡ 10GB æ—¶ä½¿ç”¨ ZIP ä¸Šä¼ ï¼Œç³»ç»Ÿä¼šå…ˆä¿å­˜åŸå§‹å‹ç¼©åŒ…ï¼Œä¸ä¼šç›´æ¥å±•å¼€è§£æã€‚'
+                    : 'å•æ¬¡ç´¯è®¡é€‰æ‹©çš„æ–‡ä»¶æ€»å¤§å°ä¸èƒ½è¶…è¿‡ 10GBï¼›å¦‚æœè¶…è¿‡ï¼Œè¯·å…ˆå‹ç¼©æˆå•ä¸ª ZIP ååˆ‡æ¢åˆ° ZIP ä¸Šä¼ ã€‚'
                 }
               />
               <Form.Item label=" " style={{ marginBottom: 16 }}>
@@ -1024,19 +1024,19 @@ export function UploadCenterPage() {
                   disabled={uploadMode === 'zip'}
                   onChange={(e) => setEnableAutoParseMetadata(e.target.checked)}
                 >
-                  ×Ô¶¯Ê¶±ğÔªÊı¾İ£¨½öÔÚä¯ÀÀÆ÷±¾µØ¶ÁÈ¡ÉÙÁ¿ DICOM Í·ĞÅÏ¢£¬ÓÃÓÚ¸¨ÖúÌî³äÓ°ÏñÄ£Ì¬ºÍ¼ì²é²¿Î»£©
+                  è‡ªåŠ¨è¯†åˆ«å…ƒæ•°æ®ï¼ˆä»…åœ¨æµè§ˆå™¨æœ¬åœ°è¯»å–å°‘é‡ DICOM å¤´ä¿¡æ¯ï¼Œç”¨äºè¾…åŠ©å¡«å……å½±åƒæ¨¡æ€å’Œæ£€æŸ¥éƒ¨ä½ï¼‰
                 </Checkbox>
               </Form.Item>
               <Form.Item
-                label="ÉÏ´«ÎÄ¼ş"
+                label="ä¸Šä¼ æ–‡ä»¶"
                 required
                 validateStatus={showFileSelectionError && fileList.length === 0 ? 'error' : undefined}
                 help={
                   showFileSelectionError && fileList.length === 0
                     ? uploadMode === 'zip'
-                      ? 'ÇëÏÈÑ¡Ôñµ¥¸ö ZIP ÎÄ¼ş'
-                      : 'ÇëÏÈÑ¡ÔñÖÁÉÙÒ»¸öÎÄ¼ş¼Ğ'
-                    : `µ±Ç°ÒÑÑ¡Ôñ ${fileList.length} ¸ö${uploadMode === 'zip' ? 'ÎÄ¼ş' : 'ÎÄ¼ş'}£¬×Ü´óĞ¡ ${formatFileSize(selectedTotalBytes)}`
+                      ? 'è¯·å…ˆé€‰æ‹©å•ä¸ª ZIP æ–‡ä»¶'
+                      : 'è¯·å…ˆé€‰æ‹©è‡³å°‘ä¸€ä¸ªæ–‡ä»¶å¤¹'
+                    : `å½“å‰å·²é€‰æ‹© ${fileList.length} ä¸ª${uploadMode === 'zip' ? 'æ–‡ä»¶' : 'æ–‡ä»¶'}ï¼Œæ€»å¤§å° ${formatFileSize(selectedTotalBytes)}`
                 }
               >
                 <div>
@@ -1045,13 +1045,13 @@ export function UploadCenterPage() {
                       type="warning"
                       showIcon
                       style={{ marginBottom: 12 }}
-                      message={`ÕıÔÚÎªÅú´Î #${retryContext.batchNo} ×·¼ÓÖØ´«ÎÄ¼ş`}
+                      message={`æ­£åœ¨ä¸ºæ‰¹æ¬¡ #${retryContext.batchNo} è¿½åŠ é‡ä¼ æ–‡ä»¶`}
                       description={(
                         <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                          <Typography.Text>Õâ´ÎÉÏ´«»á°´Í¬Ò»Åú´ÎÎÊÌâ´¦Àí£¬²»ÒªÇóÎÄ¼şÃûºÍÉÏ´ÎÊ§°Ü¼ÇÂ¼Ò»ÖÂ¡£</Typography.Text>
+                          <Typography.Text>è¿™æ¬¡ä¸Šä¼ ä¼šæŒ‰åŒä¸€æ‰¹æ¬¡é—®é¢˜å¤„ç†ï¼Œä¸è¦æ±‚æ–‡ä»¶åå’Œä¸Šæ¬¡å¤±è´¥è®°å½•ä¸€è‡´ã€‚</Typography.Text>
                           {retryContext.failedFiles.length ? (
                             <Typography.Text type="secondary">
-                              ÀúÊ·Ê§°Ü¼ÇÂ¼£º{retryContext.failedFiles.map((item) => item.originalName).join('¡¢')}
+                              å†å²å¤±è´¥è®°å½•ï¼š{retryContext.failedFiles.map((item) => item.originalName).join('ã€')}
                             </Typography.Text>
                           ) : null}
                           <Space>
@@ -1065,7 +1065,7 @@ export function UploadCenterPage() {
                                 form.setFieldsValue({ modality: '', bodyPart: '', diagnosis: undefined, clinicalTags: undefined, annotationStatus: undefined, remark: '' });
                               }}
                             >
-                              ÍË³öÖØ´«Ä£Ê½
+                              é€€å‡ºé‡ä¼ æ¨¡å¼
                             </Button>
                           </Space>
                         </Space>
@@ -1103,18 +1103,18 @@ export function UploadCenterPage() {
                     <Button onClick={() => (uploadMode === 'zip' ? zipInputRef.current?.click() : folderInputRef.current?.click())}>
                       {uploadMode === 'zip'
                         ? fileList.length > 0
-                          ? 'ÖØĞÂÑ¡Ôñ ZIP'
-                          : 'Ñ¡Ôñ ZIP'
+                          ? 'é‡æ–°é€‰æ‹© ZIP'
+                          : 'é€‰æ‹© ZIP'
                         : fileList.length > 0
-                          ? '¼ÌĞøÌí¼ÓÎÄ¼ş¼Ğ'
-                          : 'Ñ¡ÔñÎÄ¼ş¼Ğ'}
+                          ? 'ç»§ç»­æ·»åŠ æ–‡ä»¶å¤¹'
+                          : 'é€‰æ‹©æ–‡ä»¶å¤¹'}
                     </Button>
                     <Button
                       onClick={() => {
                         resetSelectedFiles();
                       }}
                     >
-                      Çå¿ÕÒÑÑ¡ÎÄ¼ş
+                      æ¸…ç©ºå·²é€‰æ–‡ä»¶
                     </Button>
                   </Space>
                   {fileList.length > 0 ? (
@@ -1122,18 +1122,18 @@ export function UploadCenterPage() {
                       <Space direction="vertical" size={12} style={{ width: '100%' }}>
                         <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                           <Typography.Text strong>
-                            ÒÑÑ¡Ôñ {fileList.length} ¸öÎÄ¼ş£¬×Ü´óĞ¡ {formatFileSize(selectedTotalBytes)}
+                            å·²é€‰æ‹© {fileList.length} ä¸ªæ–‡ä»¶ï¼Œæ€»å¤§å° {formatFileSize(selectedTotalBytes)}
                           </Typography.Text>
                           {uploadMode === 'folder' ? (
                             <Button type="link" onClick={() => setShowAllSelectedFiles((value) => !value)}>
-                              {showAllSelectedFiles ? 'ÊÕÆğÎÄ¼şÁĞ±í' : `Õ¹¿ªÈ«²¿ÎÄ¼ş (${fileList.length})`}
+                              {showAllSelectedFiles ? 'æ”¶èµ·æ–‡ä»¶åˆ—è¡¨' : `å±•å¼€å…¨éƒ¨æ–‡ä»¶ (${fileList.length})`}
                             </Button>
                           ) : null}
                         </Space>
                         <Typography.Text type="secondary">
                           {uploadMode === 'zip'
-                            ? 'ZIP ÉÏ´«Ö»±£ÁôÒ»¸öÑ¹Ëõ°ü£¬ÇÒ½öÖ§³Ö³¬¹ı 10GB µÄµ¥ÎÄ¼ş¡£'
-                            : `¿É¶à´Îµã»÷¡°${fileList.length > 0 ? '¼ÌĞøÌí¼ÓÎÄ¼ş¼Ğ' : 'Ñ¡ÔñÎÄ¼ş¼Ğ'}¡±ÀÛ¼ÆÑ¡Ôñ¶à¸öÎÄ¼ş¼Ğ£»ÖØ¸´ÎÄ¼ş»á×Ô¶¯È¥ÖØ¡£`}
+                            ? 'ZIP ä¸Šä¼ åªä¿ç•™ä¸€ä¸ªå‹ç¼©åŒ…ï¼Œä¸”ä»…æ”¯æŒè¶…è¿‡ 10GB çš„å•æ–‡ä»¶ã€‚'
+                            : `å¯å¤šæ¬¡ç‚¹å‡»â€œ${fileList.length > 0 ? 'ç»§ç»­æ·»åŠ æ–‡ä»¶å¤¹' : 'é€‰æ‹©æ–‡ä»¶å¤¹'}â€ç´¯è®¡é€‰æ‹©å¤šä¸ªæ–‡ä»¶å¤¹ï¼›é‡å¤æ–‡ä»¶ä¼šè‡ªåŠ¨å»é‡ã€‚`}
                         </Typography.Text>
                         <List
                           size="small"
@@ -1164,8 +1164,8 @@ export function UploadCenterPage() {
                         />
                         {!showAllSelectedFiles && uploadMode === 'folder' && fileList.length > visibleSelectedFiles.length ? (
                           <Typography.Text type="secondary">
-                            µ±Ç°½öÔ¤ÀÀÇ° {visibleSelectedFiles.length} ¸öÎÄ¼ş£¬ÆäÓà {fileList.length - visibleSelectedFiles.length}{' '}
-                            ¸öÎÄ¼şÒÑÒş²Ø¡£
+                            å½“å‰ä»…é¢„è§ˆå‰ {visibleSelectedFiles.length} ä¸ªæ–‡ä»¶ï¼Œå…¶ä½™ {fileList.length - visibleSelectedFiles.length}{' '}
+                            ä¸ªæ–‡ä»¶å·²éšè—ã€‚
                           </Typography.Text>
                         ) : null}
                       </Space>
@@ -1173,14 +1173,14 @@ export function UploadCenterPage() {
                   ) : null}
                 </div>
               </Form.Item>
-              <Card size="small" title="¿ÆÑĞ±êÇ©" style={{ marginBottom: 16 }}>
+              <Card size="small" title="ç§‘ç ”æ ‡ç­¾" style={{ marginBottom: 16 }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Form.Item
                     name="modality"
-                    label="Ó°ÏñÄ£Ì¬"
-                    rules={[{ required: true, message: 'ÇëÑ¡ÔñÓ°ÏñÄ£Ì¬' }]}
+                    label="å½±åƒæ¨¡æ€"
+                    rules={[{ required: true, message: 'è¯·é€‰æ‹©å½±åƒæ¨¡æ€' }]}
                   >
-                    <Select placeholder="Ñ¡ÔñÓ°ÏñÄ£Ì¬" options={MODALITY_OPTIONS} />
+                    <Select placeholder="é€‰æ‹©å½±åƒæ¨¡æ€" options={MODALITY_OPTIONS} />
                   </Form.Item>
                   <Form.Item
                     noStyle
@@ -1189,13 +1189,13 @@ export function UploadCenterPage() {
                     {({ getFieldValue }) =>
                       getFieldValue('modality') === 'Other' ? (
                         <Form.Item
-                          label="×Ô¶¨ÒåÓ°ÏñÄ£Ì¬"
+                          label="è‡ªå®šä¹‰å½±åƒæ¨¡æ€"
                           required
                           validateStatus={!modalityCustom ? 'error' : undefined}
-                          help={!modalityCustom ? 'ÇëÊäÈë×Ô¶¨ÒåÓ°ÏñÄ£Ì¬' : ''}
+                          help={!modalityCustom ? 'è¯·è¾“å…¥è‡ªå®šä¹‰å½±åƒæ¨¡æ€' : ''}
                         >
                           <Input
-                            placeholder="ÀıÈç£ºPET¡¢SPECT µÈ"
+                            placeholder="ä¾‹å¦‚ï¼šPETã€SPECT ç­‰"
                             value={modalityCustom}
                             onChange={(e) => setModalityCustom(e.target.value)}
                             maxLength={64}
@@ -1207,25 +1207,25 @@ export function UploadCenterPage() {
 
                   <Form.Item
                     name="bodyPart"
-                    label="¼ì²é²¿Î»"
-                    rules={[{ required: true, message: 'ÇëÑ¡Ôñ¼ì²é²¿Î»' }]}
+                    label="æ£€æŸ¥éƒ¨ä½"
+                    rules={[{ required: true, message: 'è¯·é€‰æ‹©æ£€æŸ¥éƒ¨ä½' }]}
                   >
-                    <Select placeholder="Ñ¡Ôñ¼ì²é²¿Î»" options={BODY_PART_OPTIONS} />
+                    <Select placeholder="é€‰æ‹©æ£€æŸ¥éƒ¨ä½" options={BODY_PART_OPTIONS} />
                   </Form.Item>
                   <Form.Item
                     noStyle
                     shouldUpdate={(prevValues, currentValues) => prevValues.bodyPart !== currentValues.bodyPart}
                   >
                     {({ getFieldValue }) =>
-                      getFieldValue('bodyPart') === 'ÆäËû' ? (
+                      getFieldValue('bodyPart') === 'å…¶ä»–' ? (
                         <Form.Item
-                          label="×Ô¶¨Òå¼ì²é²¿Î»"
+                          label="è‡ªå®šä¹‰æ£€æŸ¥éƒ¨ä½"
                           required
                           validateStatus={!bodyPartCustom ? 'error' : undefined}
-                          help={!bodyPartCustom ? 'ÇëÊäÈë×Ô¶¨Òå¼ì²é²¿Î»' : ''}
+                          help={!bodyPartCustom ? 'è¯·è¾“å…¥è‡ªå®šä¹‰æ£€æŸ¥éƒ¨ä½' : ''}
                         >
                           <Input
-                            placeholder="ÀıÈç£ºÁ³²¿¡¢¶ú¶ä µÈ"
+                            placeholder="ä¾‹å¦‚ï¼šè„¸éƒ¨ã€è€³æœµ ç­‰"
                             value={bodyPartCustom}
                             onChange={(e) => setBodyPartCustom(e.target.value)}
                             maxLength={64}
@@ -1235,26 +1235,26 @@ export function UploadCenterPage() {
                     }
                   </Form.Item>
 
-                  <Form.Item name="diagnosis" label="¼²²¡Õï¶Ï">
+                  <Form.Item name="diagnosis" label="ç–¾ç—…è¯Šæ–­">
                     <Select
                       mode="tags"
-                      placeholder="ÊäÈëÕï¶Ï±êÇ©£¬»Ø³µÉú³É"
+                      placeholder="è¾“å…¥è¯Šæ–­æ ‡ç­¾ï¼Œå›è½¦ç”Ÿæˆ"
                       maxCount={10}
                     />
                   </Form.Item>
-                  <Form.Item name="clinicalTags" label="ÁÙ´²½ğ±ê×¼£¨¿É¶àÑ¡£©">
+                  <Form.Item name="clinicalTags" label="ä¸´åºŠé‡‘æ ‡å‡†ï¼ˆå¯å¤šé€‰ï¼‰">
                     <Checkbox.Group options={CLINICAL_TAG_OPTIONS} />
                   </Form.Item>
-                  <Form.Item name="annotationStatus" label="±ê×¢×´Ì¬£¨µ¥Ñ¡£©">
+                  <Form.Item name="annotationStatus" label="æ ‡æ³¨çŠ¶æ€ï¼ˆå•é€‰ï¼‰">
                     <Radio.Group options={ANNOTATION_STATUS_OPTIONS} />
                   </Form.Item>
                 </Space>
               </Card>
-              <Form.Item name="remark" label="Åú´Î±¸×¢">
+              <Form.Item name="remark" label="æ‰¹æ¬¡å¤‡æ³¨">
                 <Input.TextArea
                   rows={4}
                   maxLength={255}
-                  placeholder="¼ÇÂ¼Êı¾İ·¶Î§¡¢²¹´«Ô­Òò¡¢Ô¼¶¨ÊÂÏîµÈ"
+                  placeholder="è®°å½•æ•°æ®èŒƒå›´ã€è¡¥ä¼ åŸå› ã€çº¦å®šäº‹é¡¹ç­‰"
                 />
               </Form.Item>
               <Space>
@@ -1264,8 +1264,8 @@ export function UploadCenterPage() {
                   loading={createBatchMutation.isPending}
                 >
                   {createBatchMutation.isPending
-                    ? `ÕıÔÚÉÏ´«${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`
-                    : 'ÉÏ´«'}
+                    ? `æ­£åœ¨ä¸Šä¼ ${uploadProgress ? ` ${uploadProgress.percent}%` : ''}`
+                    : 'ä¸Šä¼ '}
                 </Button>
                 <Button
                   disabled={createBatchMutation.isPending}
@@ -1277,7 +1277,7 @@ export function UploadCenterPage() {
                     setRetryContext(null);
                   }}
                 >
-                  Çå¿Õ
+                  æ¸…ç©º
                 </Button>
               </Space>
             </Form>
@@ -1285,8 +1285,8 @@ export function UploadCenterPage() {
         </Col>
 
         <Col xs={24} xl={14}>
-          <Card title="ÉÏ´«Åú´ÎÁĞ±í" extra={<Button onClick={() => void refetchBatches()}>Ë¢ĞÂ</Button>}>
-            {isBatchError ? <Alert type="error" showIcon message="Åú´ÎÁĞ±í¼ÓÔØÊ§°Ü" /> : null}
+          <Card title="ä¸Šä¼ æ‰¹æ¬¡åˆ—è¡¨" extra={<Button onClick={() => void refetchBatches()}>åˆ·æ–°</Button>}>
+            {isBatchError ? <Alert type="error" showIcon message="æ‰¹æ¬¡åˆ—è¡¨åŠ è½½å¤±è´¥" /> : null}
             <Table<DatasetBatchItem>
               rowKey="id"
               loading={isBatchLoading}
@@ -1295,7 +1295,7 @@ export function UploadCenterPage() {
                 expandedRowKeys: expandedBatchRowKeys,
                 onExpandedRowsChange: (expandedKeys) => setExpandedBatchRowKeys(expandedKeys.map((key) => String(key))),
                 rowExpandable: (record) =>
-                  record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('½âÎöÊ§°Ü') === true,
+                  record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('è§£æå¤±è´¥') === true,
                 expandedRowRender: (record) => (
                   <FailedFilesPanel
                     requirementId={requirementId}
@@ -1314,8 +1314,8 @@ export function UploadCenterPage() {
                         clinicalTags: record.clinicalTags || undefined,
                         annotationStatus: record.annotationStatus || undefined,
                         remark: failedFiles.length
-                          ? `ÖØ´«Åú´Î #${record.batchNo} Ê§°ÜÎÄ¼ş`
-                          : `ÖØĞÂÉÏ´«Åú´Î #${record.batchNo} Ô­Ê¼ÎÄ¼ş`,
+                          ? `é‡ä¼ æ‰¹æ¬¡ #${record.batchNo} å¤±è´¥æ–‡ä»¶`
+                          : `é‡æ–°ä¸Šä¼ æ‰¹æ¬¡ #${record.batchNo} åŸå§‹æ–‡ä»¶`,
                       });
                     }}
                   />
@@ -1332,21 +1332,21 @@ export function UploadCenterPage() {
               }}
               columns={[
                 {
-                  title: 'Åú´Î',
+                  title: 'æ‰¹æ¬¡',
                   width: 90,
                   render: (_: unknown, record: DatasetBatchItem) => <Typography.Text strong>#{record.batchNo}</Typography.Text>,
                 },
                 {
-                  title: 'ÉÏ´«ÀàĞÍ',
+                  title: 'ä¸Šä¼ ç±»å‹',
                   width: 110,
                   render: (_: unknown, record: DatasetBatchItem) => (
                     <Tag color={record.uploadType === 'initial' ? 'geekblue' : 'gold'}>
-                      {record.uploadType === 'initial' ? 'Ê×´ÎÉÏ´«' : '²¹³äÉÏ´«'}
+                      {record.uploadType === 'initial' ? 'é¦–æ¬¡ä¸Šä¼ ' : 'è¡¥å……ä¸Šä¼ '}
                     </Tag>
                   ),
                 },
                 {
-                  title: 'Êı¾İ±êÇ©',
+                  title: 'æ•°æ®æ ‡ç­¾',
                   width: 360,
                   render: (_: unknown, record: DatasetBatchItem) => (
                     <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -1374,26 +1374,26 @@ export function UploadCenterPage() {
                   ),
                 },
                 {
-                  title: 'ÎÄ¼şÊı',
+                  title: 'æ–‡ä»¶æ•°',
                   width: 120,
                   render: (_: unknown, record: DatasetBatchItem) => (
                     <Space direction="vertical" size={0}>
                       <Typography.Text>{record.fileCount}</Typography.Text>
                       {record.failedFileCount > 0 ? (
                         <Typography.Text type="danger" style={{ fontSize: 12 }}>
-                          Ê§°Ü {record.failedFileCount}
+                          å¤±è´¥ {record.failedFileCount}
                         </Typography.Text>
                       ) : null}
                     </Space>
                   ),
                 },
                 {
-                  title: '×´Ì¬',
+                  title: 'çŠ¶æ€',
                   width: 220,
                   render: (_: unknown, record: DatasetBatchItem) => (
                     <Space direction="vertical" size={4}>
                       <Tag color={record.requiresManualAnalysis ? 'cyan' : batchStatusColorMap[record.status]}>
-                        {record.requiresManualAnalysis ? '´ıÈË¹¤·ÖÎö' : batchStatusLabelMap[record.status]}
+                        {record.requiresManualAnalysis ? 'å¾…äººå·¥åˆ†æ' : batchStatusLabelMap[record.status]}
                       </Tag>
                       {record.requiresManualAnalysis && isManagementRole(user?.role) ? (
                         <Button
@@ -1407,14 +1407,14 @@ export function UploadCenterPage() {
                                 fileName: record.sourceName || `batch-${record.batchNo}.zip`,
                               });
                             } catch {
-                              message.error('Ô­Ê¼ ZIP ÏÂÔØÊ§°Ü');
+                              message.error('åŸå§‹ ZIP ä¸‹è½½å¤±è´¥');
                             }
                           }}
                         >
-                          ÏÂÔØÔ­Ê¼ ZIP
+                          ä¸‹è½½åŸå§‹ ZIP
                         </Button>
                       ) : null}
-                      {(record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('½âÎöÊ§°Ü')) ? (
+                      {(record.failedFileCount > 0 || record.status === 'failed' || record.remark?.includes('è§£æå¤±è´¥')) ? (
                         <Button
                           type="link"
                           size="small"
@@ -1427,26 +1427,26 @@ export function UploadCenterPage() {
                             )
                           }
                         >
-                          {expandedBatchRowKeys.includes(record.id) ? 'ÊÕÆğ´¦Àí' : 'Õ¹¿ª´¦Àí'}
+                          {expandedBatchRowKeys.includes(record.id) ? 'æ”¶èµ·å¤„ç†' : 'å±•å¼€å¤„ç†'}
                         </Button>
                       ) : null}
                     </Space>
                   ),
                 },
                 {
-                  title: 'ÉÏ´«ÈË',
+                  title: 'ä¸Šä¼ äºº',
                   width: 120,
                   render: (_: unknown, record: DatasetBatchItem) => record.uploader.username,
                   hidden: user?.role === 'user',
                 },
                 {
-                  title: 'ÉÏ´«Ê±¼ä',
+                  title: 'ä¸Šä¼ æ—¶é—´',
                   width: 168,
                   render: (_: unknown, record: DatasetBatchItem) => dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm'),
                 },
               ].filter((column) => !('hidden' in column) || !column.hidden)}
               locale={{
-                emptyText: <Empty description="µ±Ç°ĞèÇóµ¥»¹Ã»ÓĞÉÏ´«Åú´Î" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+                emptyText: <Empty description="å½“å‰éœ€æ±‚å•è¿˜æ²¡æœ‰ä¸Šä¼ æ‰¹æ¬¡" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
               }}
             />
           </Card>
@@ -1455,15 +1455,15 @@ export function UploadCenterPage() {
 
       {isManagementRole(user?.role) ? (
         <Card
-          title="OSS Ô­Ê¼ÎÄ¼ş"
-          extra={<Button onClick={() => void refetchOssFiles()}>Ë¢ĞÂ</Button>}
+          title="OSS åŸå§‹æ–‡ä»¶"
+          extra={<Button onClick={() => void refetchOssFiles()}>åˆ·æ–°</Button>}
         >
-        {isOssFilesError ? <Alert type="error" showIcon message="OSS ÎÄ¼şÁĞ±í¼ÓÔØÊ§°Ü" style={{ marginBottom: 16 }} /> : null}
+        {isOssFilesError ? <Alert type="error" showIcon message="OSS æ–‡ä»¶åˆ—è¡¨åŠ è½½å¤±è´¥" style={{ marginBottom: 16 }} /> : null}
         <Alert
           type="info"
           showIcon
-          message="ÒÑ½ûÖ¹¹ÜÀí²àÖ±½ÓÏÂÔØ OSS Ô­Ê¼ÎÄ¼ş"
-          description="Îª±ÜÃâÖØ¸´²úÉú OSS ³öÕ¾·ÑÓÃ£¬ÇëÊ¹ÓÃ¡°À­È¡ÏêÇéÊı¾İ¡±×÷ÎªÎ¨Ò» OSS ³öÕ¾Â·¾¶¡£"
+          message="å·²ç¦æ­¢ç®¡ç†ä¾§ç›´æ¥ä¸‹è½½ OSS åŸå§‹æ–‡ä»¶"
+          description="ä¸ºé¿å…é‡å¤äº§ç”Ÿ OSS å‡ºç«™è´¹ç”¨ï¼Œè¯·ä½¿ç”¨â€œæ‹‰å–è¯¦æƒ…æ•°æ®â€ä½œä¸ºå”¯ä¸€ OSS å‡ºç«™è·¯å¾„ã€‚"
           style={{ marginBottom: 16 }}
         />
         <Table<RequirementOssFileItem>
@@ -1472,11 +1472,11 @@ export function UploadCenterPage() {
           dataSource={ossFiles}
           pagination={{ pageSize: 5, hideOnSinglePage: true }}
           locale={{
-            emptyText: <Empty description="µ±Ç°»¹Ã»ÓĞ OSS Ô­Ê¼ÎÄ¼ş¼ÇÂ¼" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            emptyText: <Empty description="å½“å‰è¿˜æ²¡æœ‰ OSS åŸå§‹æ–‡ä»¶è®°å½•" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
           }}
           columns={[
             {
-              title: 'ÎÄ¼şÃû',
+              title: 'æ–‡ä»¶å',
               render: (_: unknown, record: RequirementOssFileItem) => (
                 <Space direction="vertical" size={2}>
                   <Typography.Text>{record.fileName}</Typography.Text>
@@ -1487,35 +1487,35 @@ export function UploadCenterPage() {
               ),
             },
             {
-              title: '´óĞ¡',
+              title: 'å¤§å°',
               width: 120,
               render: (_: unknown, record: RequirementOssFileItem) => formatFileSize(record.fileSize),
             },
             {
-              title: '×´Ì¬',
+              title: 'çŠ¶æ€',
               width: 140,
               render: (_: unknown, record: RequirementOssFileItem) => {
                 const statusMap: Record<RequirementOssFileItem['status'], { color: string; label: string }> = {
-                  pending_upload: { color: 'default', label: '´ıÉÏ´«' },
-                  uploaded: { color: 'blue', label: 'ÒÑÉÏ´«' },
-                  parsing: { color: 'processing', label: '½âÎöÖĞ' },
-                  parsed: { color: 'green', label: 'ÒÑ½âÎö' },
-                  failed: { color: 'red', label: 'Ê§°Ü' },
+                  pending_upload: { color: 'default', label: 'å¾…ä¸Šä¼ ' },
+                  uploaded: { color: 'blue', label: 'å·²ä¸Šä¼ ' },
+                  parsing: { color: 'processing', label: 'è§£æä¸­' },
+                  parsed: { color: 'green', label: 'å·²è§£æ' },
+                  failed: { color: 'red', label: 'å¤±è´¥' },
                 };
                 const status = statusMap[record.status];
                 if (record.ossDeletedAt) {
-                  return <Tag color="default">ÒÑ»ØÊÕ</Tag>;
+                  return <Tag color="default">å·²å›æ”¶</Tag>;
                 }
                 return <Tag color={status.color}>{status.label}</Tag>;
               },
             },
             {
-              title: 'ÉÏ´«Ê±¼ä',
+              title: 'ä¸Šä¼ æ—¶é—´',
               width: 168,
               render: (_: unknown, record: RequirementOssFileItem) => dayjs(record.createdAt).format('YYYY-MM-DD HH:mm'),
             },
             {
-              title: '²Ù×÷',
+              title: 'æ“ä½œ',
               width: 120,
               render: (_: unknown, record: RequirementOssFileItem) => (
                 <Button
@@ -1523,18 +1523,18 @@ export function UploadCenterPage() {
                   disabled
                   onClick={async () => {
                     try {
-                      throw new Error('ÒÑ½ûÖ¹¹ÜÀí²àÖ±½ÓÏÂÔØ OSS Ô­Ê¼ÎÄ¼ş£¬ÇëÊ¹ÓÃ¡°À­È¡ÏêÇéÊı¾İ¡±');
+                      throw new Error('å·²ç¦æ­¢ç®¡ç†ä¾§ç›´æ¥ä¸‹è½½ OSS åŸå§‹æ–‡ä»¶ï¼Œè¯·ä½¿ç”¨â€œæ‹‰å–è¯¦æƒ…æ•°æ®â€');
                     } catch (error) {
                       const errorMessage = axios.isAxiosError(error)
                         ? (error.response?.data as { message?: string } | undefined)?.message
                         : error instanceof Error
                           ? error.message
                           : undefined;
-                      message.error(errorMessage || 'OSS ÎÄ¼şÏÂÔØÊ§°Ü');
+                      message.error(errorMessage || 'OSS æ–‡ä»¶ä¸‹è½½å¤±è´¥');
                     }
                   }}
                 >
-                  ÏÂÔØ
+                  ä¸‹è½½
                 </Button>
               ),
             },

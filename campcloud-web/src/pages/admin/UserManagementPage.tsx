@@ -28,8 +28,8 @@ type UserFormValues = {
 };
 
 const adminUserRoleOptions: Array<{ label: string; value: ManageableRole }> = [
-  { label: 'ÆÕÍ¨ÓÃ»§', value: 'user' },
-  { label: 'ÆÕÍ¨¹ÜÀíÔ±', value: 'admin' },
+  { label: 'æ™®é€šç”¨æˆ·', value: 'user' },
+  { label: 'æ™®é€šç®¡ç†å‘˜', value: 'admin' },
 ];
 
 export function UserManagementPage() {
@@ -57,7 +57,7 @@ export function UserManagementPage() {
   const createMutation = useMutation({
     mutationFn: (payload: AdminUserUpsertPayload) => adminUsersApi.create(payload),
     onSuccess: async () => {
-      message.success('ÓÃ»§ÒÑ´´½¨');
+      message.success('ç”¨æˆ·å·²åˆ›å»º');
       setModalOpen(false);
       form.resetFields();
       await refreshUsers();
@@ -67,7 +67,7 @@ export function UserManagementPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: AdminUserUpsertPayload }) => adminUsersApi.update(id, payload),
     onSuccess: async () => {
-      message.success('ÓÃ»§ÒÑ¸üĞÂ');
+      message.success('ç”¨æˆ·å·²æ›´æ–°');
       setModalOpen(false);
       setEditingUser(null);
       form.resetFields();
@@ -78,7 +78,7 @@ export function UserManagementPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => adminUsersApi.remove(id),
     onSuccess: async () => {
-      message.success('ÓÃ»§ÒÑÉ¾³ı');
+      message.success('ç”¨æˆ·å·²åˆ é™¤');
       await refreshUsers();
     },
   });
@@ -132,7 +132,7 @@ export function UserManagementPage() {
     }
 
     if (!editingUser && !payload.password) {
-      form.setFields([{ name: 'password', errors: ['´´½¨ÓÃ»§Ê±±ØĞëÌîĞ´ÃÜÂë'] }]);
+      form.setFields([{ name: 'password', errors: ['åˆ›å»ºç”¨æˆ·æ—¶å¿…é¡»å¡«å†™å¯†ç '] }]);
       return;
     }
 
@@ -147,20 +147,20 @@ export function UserManagementPage() {
   const expandedRowRender = (record: AdminUserItem) => (
     <div style={{ padding: '8px 0' }}>
       <Descriptions size="small" bordered column={3} style={{ marginBottom: 12 }}>
-        <Descriptions.Item label="ÕæÊµĞÕÃû">{record.profile?.realName || '-'}</Descriptions.Item>
-        <Descriptions.Item label="ÓÊÏä">{record.profile?.email || '-'}</Descriptions.Item>
-        <Descriptions.Item label="µç»°">{record.profile?.phone || '-'}</Descriptions.Item>
-        <Descriptions.Item label="Î¢ĞÅ">{record.profile?.wechat || '-'}</Descriptions.Item>
-        <Descriptions.Item label="¿ÆÊÒ">{record.profile?.department || '-'}</Descriptions.Item>
-        <Descriptions.Item label="Ö°³Æ">{record.profile?.title || '-'}</Descriptions.Item>
-        <Descriptions.Item label="±¸×¢" span={3}>
+        <Descriptions.Item label="çœŸå®å§“å">{record.profile?.realName || '-'}</Descriptions.Item>
+        <Descriptions.Item label="é‚®ç®±">{record.profile?.email || '-'}</Descriptions.Item>
+        <Descriptions.Item label="ç”µè¯">{record.profile?.phone || '-'}</Descriptions.Item>
+        <Descriptions.Item label="å¾®ä¿¡">{record.profile?.wechat || '-'}</Descriptions.Item>
+        <Descriptions.Item label="ç§‘å®¤">{record.profile?.department || '-'}</Descriptions.Item>
+        <Descriptions.Item label="èŒç§°">{record.profile?.title || '-'}</Descriptions.Item>
+        <Descriptions.Item label="å¤‡æ³¨" span={3}>
           {record.profile?.remark || '-'}
         </Descriptions.Item>
       </Descriptions>
 
-      <Typography.Text strong>¹ØÁªĞèÇó</Typography.Text>
+      <Typography.Text strong>å…³è”éœ€æ±‚</Typography.Text>
       {record.requirements.length === 0 ? (
-        <Empty description="¸ÃÓÃ»§ÔİÎŞĞèÇó" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description="è¯¥ç”¨æˆ·æš‚æ— éœ€æ±‚" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Table
           size="small"
@@ -168,14 +168,14 @@ export function UserManagementPage() {
           pagination={false}
           dataSource={record.requirements}
           columns={[
-            { title: 'ĞèÇó±êÌâ', dataIndex: 'title' },
-            { title: '×´Ì¬', render: (_, item) => renderRequirementStatus(item.status as never) },
-            { title: '´´½¨Ê±¼ä', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
+            { title: 'éœ€æ±‚æ ‡é¢˜', dataIndex: 'title' },
+            { title: 'çŠ¶æ€', render: (_, item) => renderRequirementStatus(item.status as never) },
+            { title: 'åˆ›å»ºæ—¶é—´', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
             {
-              title: '²Ù×÷',
+              title: 'æ“ä½œ',
               render: (_, item) => (
                 <Link to={`/admin/requirements/${item.id}`}>
-                  <Button type="link" size="small">²é¿´ĞèÇó</Button>
+                  <Button type="link" size="small">æŸ¥çœ‹éœ€æ±‚</Button>
                 </Link>
               ),
             },
@@ -189,7 +189,7 @@ export function UserManagementPage() {
     () => (
       <Space>
         <Input
-          placeholder="ËÑË÷ÕËºÅ¡¢Ò½Ôº¡¢ÕæÊµĞÕÃû"
+          placeholder="æœç´¢è´¦å·ã€åŒ»é™¢ã€çœŸå®å§“å"
           value={keywordInput}
           onChange={(event) => setKeywordInput(event.target.value)}
           allowClear
@@ -202,7 +202,7 @@ export function UserManagementPage() {
             setKeyword(keywordInput.trim());
           }}
         >
-          ²éÑ¯
+          æŸ¥è¯¢
         </Button>
         <Button
           onClick={() => {
@@ -212,10 +212,10 @@ export function UserManagementPage() {
             setPageSize(10);
           }}
         >
-          ÖØÖÃ
+          é‡ç½®
         </Button>
         <Button type="primary" onClick={openCreateModal}>
-          ĞÂ½¨ÓÃ»§
+          æ–°å»ºç”¨æˆ·
         </Button>
       </Space>
     ),
@@ -227,10 +227,10 @@ export function UserManagementPage() {
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <div>
           <Typography.Title level={3} style={{ marginBottom: 0 }}>
-            ÓÃ»§¹ÜÀí
+            ç”¨æˆ·ç®¡ç†
           </Typography.Title>
           <Typography.Text type="secondary">
-            {canManageAdmins ? '³¬¼¶¹ÜÀíÔ±¿É¹ÜÀíÆÕÍ¨ÓÃ»§ºÍÆÕÍ¨¹ÜÀíÔ±ÕËºÅ' : 'ÆÕÍ¨¹ÜÀíÔ±½ö¿É¹ÜÀíÆÕÍ¨ÓÃ»§ÕËºÅ'}
+            {canManageAdmins ? 'è¶…çº§ç®¡ç†å‘˜å¯ç®¡ç†æ™®é€šç”¨æˆ·å’Œæ™®é€šç®¡ç†å‘˜è´¦å·' : 'æ™®é€šç®¡ç†å‘˜ä»…å¯ç®¡ç†æ™®é€šç”¨æˆ·è´¦å·'}
           </Typography.Text>
         </div>
 
@@ -248,36 +248,36 @@ export function UserManagementPage() {
               showSizeChanger: true,
               showQuickJumper: true,
               pageSizeOptions: ['10', '20', '50'],
-              showTotal: (total) => `¹² ${total} Ìõ`,
+              showTotal: (total) => `å…± ${total} æ¡`,
               onChange: (nextPage, nextPageSize) => {
                 setPage(nextPage);
                 setPageSize(nextPageSize);
               },
             }}
             columns={[
-              { title: 'ÕËºÅ', dataIndex: 'username', width: 160 },
-              { title: 'Ò½Ôº', dataIndex: 'hospitalName', width: 180 },
+              { title: 'è´¦å·', dataIndex: 'username', width: 160 },
+              { title: 'åŒ»é™¢', dataIndex: 'hospitalName', width: 180 },
               {
-                title: '½ÇÉ«',
+                title: 'è§’è‰²',
                 width: 120,
                 render: (_, record) => {
                   const color = record.role === 'admin' ? 'purple' : 'blue';
-                  const label = record.role === 'admin' ? 'ÆÕÍ¨¹ÜÀíÔ±' : 'ÆÕÍ¨ÓÃ»§';
+                  const label = record.role === 'admin' ? 'æ™®é€šç®¡ç†å‘˜' : 'æ™®é€šç”¨æˆ·';
                   return <Tag color={color}>{label}</Tag>;
                 },
               },
               {
-                title: '×´Ì¬',
+                title: 'çŠ¶æ€',
                 width: 100,
                 render: (_, record) => <Tag color={record.status === 'active' ? 'green' : 'red'}>{record.status}</Tag>,
               },
               {
-                title: 'ÓÊÏä',
+                title: 'é‚®ç®±',
                 width: 220,
                 render: (_, record) => record.profile?.email || '-',
               },
               {
-                title: 'ÓÃ»§×ÊÁÏ',
+                title: 'ç”¨æˆ·èµ„æ–™',
                 width: 140,
                 render: (_, record) => (
                   <Space direction="vertical" size={2}>
@@ -287,39 +287,39 @@ export function UserManagementPage() {
                 ),
               },
               {
-                title: '¹ØÁªĞèÇó',
+                title: 'å…³è”éœ€æ±‚',
                 width: 150,
                 render: (_, record) => (
                   <Space size={6}>
                     <Typography.Text>{record.requirements.length}</Typography.Text>
                     <Button type="link" size="small" onClick={() => setRequirementDetailUser(record)}>
-                      ÏêÇé
+                      è¯¦æƒ…
                     </Button>
                   </Space>
                 ),
               },
               {
-                title: '×î½üµÇÂ¼',
+                title: 'æœ€è¿‘ç™»å½•',
                 width: 160,
                 render: (_, record) => (record.lastLoginAt ? dayjs(record.lastLoginAt).format('YYYY-MM-DD HH:mm') : '-'),
               },
               {
-                title: '²Ù×÷',
+                title: 'æ“ä½œ',
                 width: 160,
                 render: (_, record) => (
                   <Space size={4}>
                     <Button type="link" size="small" onClick={() => openEditModal(record)}>
-                      ±à¼­
+                      ç¼–è¾‘
                     </Button>
                     <Popconfirm
-                      title="É¾³ıÓÃ»§"
-                      description="É¾³ıºó»áÒ»²¢É¾³ı¸ÃÓÃ»§¹ØÁªµÄĞèÇóºÍ×ÊÁÏ¡£"
-                      okText="È·¶¨"
-                      cancelText="È¡Ïû"
+                      title="åˆ é™¤ç”¨æˆ·"
+                      description="åˆ é™¤åä¼šä¸€å¹¶åˆ é™¤è¯¥ç”¨æˆ·å…³è”çš„éœ€æ±‚å’Œèµ„æ–™ã€‚"
+                      okText="ç¡®å®š"
+                      cancelText="å–æ¶ˆ"
                       onConfirm={() => deleteMutation.mutate(record.id)}
                     >
                       <Button type="link" size="small" danger loading={deleteMutation.isPending && deleteMutation.variables === record.id}>
-                        É¾³ı
+                        åˆ é™¤
                       </Button>
                     </Popconfirm>
                   </Space>
@@ -332,7 +332,7 @@ export function UserManagementPage() {
 
       <Modal
         open={Boolean(requirementDetailUser)}
-        title={requirementDetailUser ? `${requirementDetailUser.username} µÄ¹ØÁªĞèÇó` : '¹ØÁªĞèÇó'}
+        title={requirementDetailUser ? `${requirementDetailUser.username} çš„å…³è”éœ€æ±‚` : 'å…³è”éœ€æ±‚'}
         footer={null}
         onCancel={() => setRequirementDetailUser(null)}
         width={760}
@@ -345,29 +345,29 @@ export function UserManagementPage() {
             pagination={false}
             dataSource={requirementDetailUser.requirements}
             columns={[
-              { title: 'ĞèÇó±êÌâ', dataIndex: 'title' },
-              { title: '×´Ì¬', render: (_, item) => renderRequirementStatus(item.status as never) },
-              { title: '´´½¨Ê±¼ä', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
+              { title: 'éœ€æ±‚æ ‡é¢˜', dataIndex: 'title' },
+              { title: 'çŠ¶æ€', render: (_, item) => renderRequirementStatus(item.status as never) },
+              { title: 'åˆ›å»ºæ—¶é—´', render: (_, item) => dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') },
               {
-                title: '²Ù×÷',
+                title: 'æ“ä½œ',
                 render: (_, item) => (
                   <Link to={`/admin/requirements/${item.id}`}>
-                    <Button type="link" size="small">²é¿´ĞèÇó</Button>
+                    <Button type="link" size="small">æŸ¥çœ‹éœ€æ±‚</Button>
                   </Link>
                 ),
               },
             ]}
           />
         ) : (
-          <Empty description="¸ÃÓÃ»§ÔİÎŞĞèÇó" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="è¯¥ç”¨æˆ·æš‚æ— éœ€æ±‚" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         )}
       </Modal>
 
       <Modal
         open={modalOpen}
-        title={editingUser ? '±à¼­ÓÃ»§' : 'ĞÂ½¨ÓÃ»§'}
-        okText={editingUser ? '±£´æ' : '´´½¨'}
-        cancelText="È¡Ïû"
+        title={editingUser ? 'ç¼–è¾‘ç”¨æˆ·' : 'æ–°å»ºç”¨æˆ·'}
+        okText={editingUser ? 'ä¿å­˜' : 'åˆ›å»º'}
+        cancelText="å–æ¶ˆ"
         onCancel={() => {
           setModalOpen(false);
           setEditingUser(null);
@@ -380,56 +380,56 @@ export function UserManagementPage() {
       >
         <Form form={form} layout="vertical" onFinish={(values) => void handleSubmit(values)}>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="ÕËºÅ" name="username" rules={[{ required: true, message: 'ÇëÊäÈëÕËºÅ' }]}>
+            <Form.Item label="è´¦å·" name="username" rules={[{ required: true, message: 'è¯·è¾“å…¥è´¦å·' }]}>
               <Input />
             </Form.Item>
             <Form.Item
-              label={editingUser ? 'ÖØÖÃÃÜÂë' : 'ÃÜÂë'}
+              label={editingUser ? 'é‡ç½®å¯†ç ' : 'å¯†ç '}
               name="password"
-              rules={editingUser ? [{ min: 6, message: 'ÃÜÂëÖÁÉÙ 6 Î»' }] : [{ required: true, message: 'ÇëÊäÈëÃÜÂë' }, { min: 6, message: 'ÃÜÂëÖÁÉÙ 6 Î»' }]}
+              rules={editingUser ? [{ min: 6, message: 'å¯†ç è‡³å°‘ 6 ä½' }] : [{ required: true, message: 'è¯·è¾“å…¥å¯†ç ' }, { min: 6, message: 'å¯†ç è‡³å°‘ 6 ä½' }]}
             >
-              <Input.Password placeholder={editingUser ? 'Áô¿ÕÔò²»ĞŞ¸Ä' : ''} />
+              <Input.Password placeholder={editingUser ? 'ç•™ç©ºåˆ™ä¸ä¿®æ”¹' : ''} />
             </Form.Item>
-            <Form.Item label="Ò½Ôº" name="hospitalName" rules={[{ required: true, message: 'ÇëÊäÈëÒ½Ôº' }]}>
+            <Form.Item label="åŒ»é™¢" name="hospitalName" rules={[{ required: true, message: 'è¯·è¾“å…¥åŒ»é™¢' }]}>
               <Input />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="½ÇÉ«" name="role" rules={[{ required: true, message: 'ÇëÑ¡Ôñ½ÇÉ«' }]}>
+            <Form.Item label="è§’è‰²" name="role" rules={[{ required: true, message: 'è¯·é€‰æ‹©è§’è‰²' }]}>
               <Select style={{ width: 180 }} options={roleOptions} disabled={!canManageAdmins} />
             </Form.Item>
-            <Form.Item label="×´Ì¬" name="status" rules={[{ required: true, message: 'ÇëÑ¡Ôñ×´Ì¬' }]}>
-              <Select style={{ width: 160 }} options={[{ label: 'ÆôÓÃ', value: 'active' }, { label: '½ûÓÃ', value: 'disabled' }]} />
+            <Form.Item label="çŠ¶æ€" name="status" rules={[{ required: true, message: 'è¯·é€‰æ‹©çŠ¶æ€' }]}>
+              <Select style={{ width: 160 }} options={[{ label: 'å¯ç”¨', value: 'active' }, { label: 'ç¦ç”¨', value: 'disabled' }]} />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="ÕæÊµĞÕÃû" name="realName">
+            <Form.Item label="çœŸå®å§“å" name="realName">
               <Input />
             </Form.Item>
             <Form.Item
-              label="ÓÊÏä"
+              label="é‚®ç®±"
               name="email"
-              rules={[{ type: 'email', message: 'ÇëÊäÈëÕıÈ·µÄÓÊÏä¸ñÊ½' }]}
-              extra="¹ÜÀíÔ±Í¨ÖªÓÊ¼ş»á·¢ËÍµ½Õâ¸öÓÊÏä"
+              rules={[{ type: 'email', message: 'è¯·è¾“å…¥æ­£ç¡®çš„é‚®ç®±æ ¼å¼' }]}
+              extra="ç®¡ç†å‘˜é€šçŸ¥é‚®ä»¶ä¼šå‘é€åˆ°è¿™ä¸ªé‚®ç®±"
             >
-              <Input placeholder="ÇëÊäÈëÓÊÏäµØÖ·" />
+              <Input placeholder="è¯·è¾“å…¥é‚®ç®±åœ°å€" />
             </Form.Item>
-            <Form.Item label="µç»°" name="phone">
+            <Form.Item label="ç”µè¯" name="phone">
               <Input />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
-            <Form.Item label="Î¢ĞÅ" name="wechat">
+            <Form.Item label="å¾®ä¿¡" name="wechat">
               <Input />
             </Form.Item>
-            <Form.Item label="¿ÆÊÒ" name="department">
+            <Form.Item label="ç§‘å®¤" name="department">
               <Input />
             </Form.Item>
-            <Form.Item label="Ö°³Æ" name="title">
+            <Form.Item label="èŒç§°" name="title">
               <Input />
             </Form.Item>
           </Space>
-          <Form.Item label="±¸×¢" name="remark">
+          <Form.Item label="å¤‡æ³¨" name="remark">
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
