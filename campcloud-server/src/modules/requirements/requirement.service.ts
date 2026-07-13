@@ -329,11 +329,11 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!requirement) {
-      throw new NotFoundException('ĞèÇóµ¥²»´æÔÚ');
+      throw new NotFoundException('éœ€æ±‚å•ä¸å­˜åœ¨');
     }
 
     if (!isManagementRole(role) && requirement.userId !== userId) {
-      throw new ForbiddenException('ÎŞÈ¨·ÃÎÊ¸ÃĞèÇóµ¥');
+      throw new ForbiddenException('æ— æƒè®¿é—®è¯¥éœ€æ±‚å•');
     }
 
     return requirement;
@@ -354,19 +354,19 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     if (normalized.length <= maxLength) {
       return normalized;
     }
-    return `${normalized.slice(0, Math.max(0, maxLength - 1))}¡­`;
+    return `${normalized.slice(0, Math.max(0, maxLength - 1))}â€¦`;
   }
 
   private renderRequirementStatusLabel(status: RequirementStatus) {
     switch (status) {
       case RequirementStatus.pending:
-        return '´ıÏìÓ¦';
+        return 'å¾…å“åº”';
       case RequirementStatus.processing:
-        return 'ÊÜÀíÖĞ£¨ĞèµÈ´ı£©';
+        return 'å—ç†ä¸­ï¼ˆéœ€ç­‰å¾…ï¼‰';
       case RequirementStatus.waiting_user:
-        return 'ÊÜÀíÖĞ£¨Ğè²¹³äÊı¾İ£©';
+        return 'å—ç†ä¸­ï¼ˆéœ€è¡¥å……æ•°æ®ï¼‰';
       case RequirementStatus.completed:
-        return 'ÒÑÍê³É';
+        return 'å·²å®Œæˆ';
       default:
         return status;
     }
@@ -605,7 +605,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
   private ensureOssConfigured() {
     if (!this.ossBucket || !this.ossEndpoint || !this.ossAccessKeyId || !this.ossAccessKeySecret) {
-      throw new BadRequestException('OSS ÅäÖÃ²»ÍêÕû£¬ÇëÏÈÉèÖÃ OSS_BUCKET¡¢OSS_ENDPOINT¡¢OSS_ACCESS_KEY_ID¡¢OSS_ACCESS_KEY_SECRET');
+      throw new BadRequestException('OSS é…ç½®ä¸å®Œæ•´ï¼Œè¯·å…ˆè®¾ç½® OSS_BUCKETã€OSS_ENDPOINTã€OSS_ACCESS_KEY_IDã€OSS_ACCESS_KEY_SECRET');
     }
 
     return {
@@ -834,7 +834,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     return new Promise<Buffer>((resolvePromise, reject) => {
       const request = httpsRequest(url, { method: 'GET' }, (response) => {
         if (!response.statusCode || response.statusCode >= 400) {
-          reject(new Error(`OSS GET Ê§°Ü£¬×´Ì¬Âë ${response.statusCode ?? 'unknown'}`));
+          reject(new Error(`OSS GET å¤±è´¥ï¼ŒçŠ¶æ€ç  ${response.statusCode ?? 'unknown'}`));
           response.resume();
           return;
         }
@@ -859,7 +859,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         },
       }, (response) => {
         if (!response.statusCode || response.statusCode >= 400) {
-          reject(new Error(`OSS PUT Ê§°Ü£¬×´Ì¬Âë ${response.statusCode ?? 'unknown'}`));
+          reject(new Error(`OSS PUT å¤±è´¥ï¼ŒçŠ¶æ€ç  ${response.statusCode ?? 'unknown'}`));
           response.resume();
           return;
         }
@@ -888,7 +888,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         },
         (response) => {
           if (!response.statusCode || response.statusCode >= 400) {
-            reject(new Error(`OSS PUT Ê§°Ü£¬×´Ì¬Âë ${response.statusCode ?? 'unknown'}`));
+            reject(new Error(`OSS PUT å¤±è´¥ï¼ŒçŠ¶æ€ç  ${response.statusCode ?? 'unknown'}`));
             response.resume();
             return;
           }
@@ -914,7 +914,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         },
         (response) => {
           if (!response.statusCode || response.statusCode >= 400) {
-            reject(new Error(`OSS DELETE Ê§°Ü£¬×´Ì¬Âë ${response.statusCode ?? 'unknown'}`));
+            reject(new Error(`OSS DELETE å¤±è´¥ï¼ŒçŠ¶æ€ç  ${response.statusCode ?? 'unknown'}`));
             response.resume();
             return;
           }
@@ -1094,8 +1094,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private buildManualAnalysisRemark(remark: string | null | undefined) {
-    const notice = '³¬10GB ZIP ÒÑ±£´æÔ­Ê¼ÎÄ¼ş£¬Î´×Ô¶¯½âÎö';
-    return [remark?.trim(), notice].filter(Boolean).join('£»');
+    const notice = 'è¶…10GB ZIP å·²ä¿å­˜åŸå§‹æ–‡ä»¶ï¼Œæœªè‡ªåŠ¨è§£æ';
+    return [remark?.trim(), notice].filter(Boolean).join('ï¼›');
   }
 
   private ensureSafePathInRoots(storagePath: string, roots: string[]) {
@@ -1107,7 +1107,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         return resolvedPath;
       }
     }
-    throw new BadRequestException('·Ç·¨ÎÄ¼şÂ·¾¶');
+    throw new BadRequestException('éæ³•æ–‡ä»¶è·¯å¾„');
   }
 
   private ensureSafeStoragePath(storagePath: string) {
@@ -1519,7 +1519,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      throw new Error('DICOMÎÄ¼şÎª¿Õ');
+      throw new Error('DICOMæ–‡ä»¶ä¸ºç©º');
     } finally {
       await fileHandle.close();
     }
@@ -1750,7 +1750,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
   private async ensureUploadSessionQuota(userId: bigint, requirementId: bigint, nextFileSize: number) {
     if (nextFileSize > this.uploadSessionFileMaxBytes) {
-      throw new BadRequestException(`µ¥¸öÉÏ´«ÎÄ¼ş²»ÄÜ³¬¹ı ${Math.floor(this.uploadSessionFileMaxBytes / 1024 / 1024)} MB`);
+      throw new BadRequestException(`å•ä¸ªä¸Šä¼ æ–‡ä»¶ä¸èƒ½è¶…è¿‡ ${Math.floor(this.uploadSessionFileMaxBytes / 1024 / 1024)} MB`);
     }
 
     const reserved = await this.prisma.uploadSession.aggregate({
@@ -1768,14 +1768,14 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     const reservedBytes = Number(reserved._sum.fileSize ?? 0n);
     if (reservedBytes + nextFileSize > this.uploadSessionQuotaBytes) {
       throw new BadRequestException(
-        `µ±Ç°ĞèÇóµ¥µÄÔİ´æÉÏ´«×ÜÁ¿²»ÄÜ³¬¹ı ${Math.floor(this.uploadSessionQuotaBytes / 1024 / 1024 / 1024)} GB`,
+        `å½“å‰éœ€æ±‚å•çš„æš‚å­˜ä¸Šä¼ æ€»é‡ä¸èƒ½è¶…è¿‡ ${Math.floor(this.uploadSessionQuotaBytes / 1024 / 1024 / 1024)} GB`,
       );
     }
   }
 
   private async readUploadedBinaryFile(file?: UploadedBinaryFile) {
     if (!file?.path) {
-      throw new ForbiddenException('ÇëÉÏ´«ÓĞĞ§µÄÎÄ¼ş');
+      throw new ForbiddenException('è¯·ä¸Šä¼ æœ‰æ•ˆçš„æ–‡ä»¶');
     }
 
     try {
@@ -1791,7 +1791,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     const normalizedRelativePath = dto.relativePath.replace(/\\/g, '/').trim() || dto.fileName.trim();
     if (this.shouldIgnoreUploadedFile(normalizedRelativePath)) {
-      throw new BadRequestException('Òş²ØÎÄ¼ş²»»á±»ÉÏ´«');
+      throw new BadRequestException('éšè—æ–‡ä»¶ä¸ä¼šè¢«ä¸Šä¼ ');
     }
 
     const fingerprint = this.buildUploadFingerprint(normalizedRelativePath, dto.fileSize, dto.lastModified);
@@ -1809,7 +1809,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       const uploadedSize = Number(existing.uploadedSize);
       const fileSize = Number(existing.fileSize);
       if (fileSize !== dto.fileSize || existing.relativePath !== normalizedRelativePath) {
-        throw new ConflictException('·¢ÏÖÍ¬Ö¸ÎÆµ«ÔªÊı¾İ²»Ò»ÖÂµÄÉÏ´«¼ÇÂ¼£¬Çë¸ü»»ÎÄ¼şºóÖØÊÔ');
+        throw new ConflictException('å‘ç°åŒæŒ‡çº¹ä½†å…ƒæ•°æ®ä¸ä¸€è‡´çš„ä¸Šä¼ è®°å½•ï¼Œè¯·æ›´æ¢æ–‡ä»¶åé‡è¯•');
       }
 
       return {
@@ -1864,7 +1864,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!session) {
-      throw new NotFoundException('ÉÏ´«»á»°²»´æÔÚ');
+      throw new NotFoundException('ä¸Šä¼ ä¼šè¯ä¸å­˜åœ¨');
     }
 
     return {
@@ -1896,10 +1896,10 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!session) {
-      throw new NotFoundException('ÉÏ´«»á»°²»´æÔÚ');
+      throw new NotFoundException('ä¸Šä¼ ä¼šè¯ä¸å­˜åœ¨');
     }
     if (session.status === 'consumed') {
-      throw new BadRequestException('¸ÃÉÏ´«»á»°ÒÑÌá½»µ½Åú´Î£¬²»ÄÜ¼ÌĞøÉÏ´«');
+      throw new BadRequestException('è¯¥ä¸Šä¼ ä¼šè¯å·²æäº¤åˆ°æ‰¹æ¬¡ï¼Œä¸èƒ½ç»§ç»­ä¸Šä¼ ');
     }
 
     const currentSize = session.storagePath
@@ -1915,7 +1915,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       });
     }
     if (currentSize !== startByte) {
-      throw new ConflictException(`Ğø´«Æ«ÒÆ²»Ò»ÖÂ£¬ÆÚÍû´Ó ${currentSize} ¿ªÊ¼`);
+      throw new ConflictException(`ç»­ä¼ åç§»ä¸ä¸€è‡´ï¼ŒæœŸæœ›ä» ${currentSize} å¼€å§‹`);
     }
 
     const storagePath = session.storagePath || this.getUploadSessionFilePath(requirementId, session.id, session.relativePath);
@@ -1923,7 +1923,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     const nextSize = await stat(storagePath).then((value) => Number(value.size));
     if (nextSize > Number(session.fileSize)) {
-      throw new BadRequestException('ÉÏ´«ÄÚÈİ³¬¹ıÎÄ¼şÉùÃ÷´óĞ¡');
+      throw new BadRequestException('ä¸Šä¼ å†…å®¹è¶…è¿‡æ–‡ä»¶å£°æ˜å¤§å°');
     }
 
     const nextStatus = nextSize === Number(session.fileSize) ? 'uploaded' : 'uploading';
@@ -1953,7 +1953,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   ) {
     await this.ensureRequirementAccess(userId, requirementId, role);
     if (dto.kind === RequirementOssFileKindDto.dicom && dto.fileSize > RequirementsService.MAX_SINGLE_DICOM_FILE_BYTES) {
-      throw new BadRequestException('µ¥¸ö DICOM ÎÄ¼ş²»ÄÜ³¬¹ı 10GB');
+      throw new BadRequestException('å•ä¸ª DICOM æ–‡ä»¶ä¸èƒ½è¶…è¿‡ 10GB');
     }
     const { bucket } = this.ensureOssConfigured();
     const objectKey = this.buildRequirementOssObjectKey(requirementId, dto);
@@ -2253,11 +2253,11 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!file) {
-      throw new NotFoundException('OSS ÎÄ¼ş¼ÇÂ¼²»´æÔÚ');
+      throw new NotFoundException('OSS æ–‡ä»¶è®°å½•ä¸å­˜åœ¨');
     }
 
     if (dto.fileSize && dto.fileSize !== Number(file.fileSize)) {
-      throw new ConflictException('ÉÏ´«Íê³ÉÈ·ÈÏµÄÎÄ¼ş´óĞ¡ÓëÉêÇëÉÏ´«Ê±²»Ò»ÖÂ');
+      throw new ConflictException('ä¸Šä¼ å®Œæˆç¡®è®¤çš„æ–‡ä»¶å¤§å°ä¸ç”³è¯·ä¸Šä¼ æ—¶ä¸ä¸€è‡´');
     }
 
     const nextStatus =
@@ -2283,7 +2283,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
   async authorizeRequirementOssFileDownload(userId: bigint, requirementId: bigint, fileId: bigint, role: UserRole) {
     await this.ensureRequirementAccess(userId, requirementId, role);
-    throw new ForbiddenException('ÒÑ½ûÖ¹Ö±½ÓÏÂÔØ OSS Ô­Ê¼ÎÄ¼ş£¬ÇëÊ¹ÓÃ¡°À­È¡ÏêÇéÊı¾İ¡±×÷ÎªÎ¨Ò» OSS ³öÕ¾Â·¾¶');
+    throw new ForbiddenException('å·²ç¦æ­¢ç›´æ¥ä¸‹è½½ OSS åŸå§‹æ–‡ä»¶ï¼Œè¯·ä½¿ç”¨â€œæ‹‰å–è¯¦æƒ…æ•°æ®â€ä½œä¸ºå”¯ä¸€ OSS å‡ºç«™è·¯å¾„');
   }
 
   private async buildStagedFilesFromRequirementOssFiles(
@@ -2359,7 +2359,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           },
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message.slice(0, 255) : 'É¾³ı OSS Ô­Ê¼ÎÄ¼şÊ§°Ü';
+        const message = error instanceof Error ? error.message.slice(0, 255) : 'åˆ é™¤ OSS åŸå§‹æ–‡ä»¶å¤±è´¥';
         await this.prisma.requirementOssFile.update({
           where: { id: file.id },
           data: {
@@ -2394,7 +2394,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message.slice(0, 255) : 'É¾³ı OSS Ô­Ê¼ÎÄ¼şÊ§°Ü';
+      const message = error instanceof Error ? error.message.slice(0, 255) : 'åˆ é™¤ OSS åŸå§‹æ–‡ä»¶å¤±è´¥';
       await this.prisma.requirementOssFile.update({
         where: { id: fileId },
         data: {
@@ -2474,7 +2474,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message.slice(0, 255) : 'DICOM ½âÎöÊ§°Ü';
+      const message = error instanceof Error ? error.message.slice(0, 255) : 'DICOM è§£æå¤±è´¥';
       await this.prisma.requirementOssFile.update({
         where: { id: file.id },
         data: {
@@ -2871,7 +2871,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   async create(userId: bigint, dto: CreateRequirementDto) {
     const expectedGoal = this.normalizeText(dto.expectedGoal);
     if (!expectedGoal) {
-      throw new BadRequestException('ÆÚÍûÄ¿±ê²»ÄÜÎª¿Õ');
+      throw new BadRequestException('æœŸæœ›ç›®æ ‡ä¸èƒ½ä¸ºç©º');
     }
 
     const requirement = await this.prisma.$transaction(async (tx) => {
@@ -2913,17 +2913,17 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         admins.map((item) => item.id),
         created.id,
         'new_requirement',
-        'ÊÕµ½ĞÂµÄÓÃ»§ĞèÇó£¬ÇëÔÚ¹ÜÀí²à²é¿´',
-        `ĞÂĞèÇó¡¸${created.title}¡¹ÒÑÌá½»£¬Çë¼°Ê±´¦Àí¡£`,
+        'æ”¶åˆ°æ–°çš„ç”¨æˆ·éœ€æ±‚ï¼Œè¯·åœ¨ç®¡ç†ä¾§æŸ¥çœ‹',
+        `æ–°éœ€æ±‚ã€Œ${created.title}ã€å·²æäº¤ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
       );
 
       await this.mailService.queueRequirementAdminNotifications(tx, {
         requirementId: created.id,
         type: 'new_requirement',
-        subject: '¡¾AICampCloud¡¿ÊÕµ½ĞÂµÄÓÃ»§ĞèÇó',
+        subject: 'ã€AICampCloudã€‘æ”¶åˆ°æ–°çš„ç”¨æˆ·éœ€æ±‚',
         requirementTitle: created.title,
-        actionLabel: 'ĞÂĞèÇóÌá½»',
-        summary: `ĞÂĞèÇó¡¶${created.title}¡·ÒÑÌá½»£¬Çë¼°Ê±´¦Àí¡£`,
+        actionLabel: 'æ–°éœ€æ±‚æäº¤',
+        summary: `æ–°éœ€æ±‚ã€Š${created.title}ã€‹å·²æäº¤ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         excludeUserIds: [userId],
       });
 
@@ -3150,7 +3150,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       createdAt: item.createdAt,
       sender: {
         id: item.sender.id.toString(),
-        username: isManagementRole(item.sender.role) ? 'Ó°¶¯' : item.sender.username,
+        username: isManagementRole(item.sender.role) ? 'å½±åŠ¨' : item.sender.username,
         role: item.sender.role,
         hospitalName: item.sender.hospitalName,
       },
@@ -3190,7 +3190,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       createdAt: item.createdAt,
       uploader: {
         id: item.uploader.id.toString(),
-        username: isManagementRole(item.uploader.role) ? 'Ó°¶¯' : item.uploader.username,
+        username: isManagementRole(item.uploader.role) ? 'å½±åŠ¨' : item.uploader.username,
         role: item.uploader.role,
       },
     }));
@@ -3211,21 +3211,21 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     if (!isManagementRole(role)) {
       await cleanupTempFile();
-      throw new ForbiddenException('½ö¹ÜÀíÔ±¿ÉÉÏ´«½»¸¶');
+      throw new ForbiddenException('ä»…ç®¡ç†å‘˜å¯ä¸Šä¼ äº¤ä»˜');
     }
 
     const title = dto.title.trim();
     if (!title) {
       await cleanupTempFile();
-      throw new BadRequestException('½»¸¶±êÌâ²»ÄÜÎª¿Õ');
+      throw new BadRequestException('äº¤ä»˜æ ‡é¢˜ä¸èƒ½ä¸ºç©º');
     }
     if (!file?.path || !file.originalname) {
       await cleanupTempFile();
-      throw new BadRequestException('ÇëÉÏ´«½»¸¶ÎÄ¼ş');
+      throw new BadRequestException('è¯·ä¸Šä¼ äº¤ä»˜æ–‡ä»¶');
     }
     if (extname(file.originalname).toLowerCase() !== '.pth') {
       await cleanupTempFile();
-      throw new BadRequestException('½öÖ§³ÖÉÏ´« .pth ¸ñÊ½Ëã·¨ÎÄ¼ş');
+      throw new BadRequestException('ä»…æ”¯æŒä¸Šä¼  .pth æ ¼å¼ç®—æ³•æ–‡ä»¶');
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -3246,7 +3246,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (!requirement) {
-          throw new NotFoundException('ĞèÇóµ¥²»´æÔÚ');
+          throw new NotFoundException('éœ€æ±‚å•ä¸å­˜åœ¨');
         }
 
         const description = this.normalizeText(dto.description);
@@ -3316,22 +3316,22 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
                 toStatus: nextStatus,
                 changedBy: userId,
                 changedRole: role,
-                reason: '¹ÜÀíÔ±ÒÑÉÏ´«×îÖÕ½»¸¶£¬ĞèÇó×Ô¶¯Íê³É',
+                reason: 'ç®¡ç†å‘˜å·²ä¸Šä¼ æœ€ç»ˆäº¤ä»˜ï¼Œéœ€æ±‚è‡ªåŠ¨å®Œæˆ',
               },
             });
           }
 
-          const notificationTitle = isFinal ? 'ÄúµÄĞèÇóÒÑÍê³É×îÖÕ½»¸¶£¬ÇëÔÚÏêÇéÒ³²é¿´' : 'ÄúµÄĞèÇóÓĞĞÂµÄ½»¸¶£¬ÇëÔÚÏêÇéÒ³²é¿´';
+          const notificationTitle = isFinal ? 'æ‚¨çš„éœ€æ±‚å·²å®Œæˆæœ€ç»ˆäº¤ä»˜ï¼Œè¯·åœ¨è¯¦æƒ…é¡µæŸ¥çœ‹' : 'æ‚¨çš„éœ€æ±‚æœ‰æ–°çš„äº¤ä»˜ï¼Œè¯·åœ¨è¯¦æƒ…é¡µæŸ¥çœ‹';
           const notificationContent = isFinal
-            ? `ĞèÇó¡¸${requirement.title}¡¹ÒÑÊÕµ½×îÖÕ½»¸¶£º${title}`
-            : `ĞèÇó¡¸${requirement.title}¡¹ÒÑÊÕµ½ĞÂµÄ½»¸¶£º${title}`;
+            ? `éœ€æ±‚ã€Œ${requirement.title}ã€å·²æ”¶åˆ°æœ€ç»ˆäº¤ä»˜ï¼š${title}`
+            : `éœ€æ±‚ã€Œ${requirement.title}ã€å·²æ”¶åˆ°æ–°çš„äº¤ä»˜ï¼š${title}`;
           await this.createNotifications(tx, [requirement.userId], requirementId, 'delivery', notificationTitle, notificationContent);
           await this.mailService.queueRequirementUserNotification(tx, {
             requirementId,
             type: 'delivery',
-            subject: isFinal ? '¡¾AICampCloud¡¿ÄúµÄĞèÇóÒÑÊÕµ½×îÖÕ½»¸¶' : '¡¾AICampCloud¡¿ÄúµÄĞèÇóÓĞĞÂ½»¸¶',
+            subject: isFinal ? 'ã€AICampCloudã€‘æ‚¨çš„éœ€æ±‚å·²æ”¶åˆ°æœ€ç»ˆäº¤ä»˜' : 'ã€AICampCloudã€‘æ‚¨çš„éœ€æ±‚æœ‰æ–°äº¤ä»˜',
             requirementTitle: requirement.title,
-            actionLabel: isFinal ? '×îÖÕ½»¸¶' : 'ĞÂÔö½»¸¶',
+            actionLabel: isFinal ? 'æœ€ç»ˆäº¤ä»˜' : 'æ–°å¢äº¤ä»˜',
             summary: notificationContent,
           });
           return {
@@ -3368,7 +3368,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   async createMessage(userId: bigint, requirementId: bigint, role: UserRole, dto: CreateMessageDto) {
     const content = dto.content.trim();
     if (!content) {
-      throw new BadRequestException('ÁôÑÔÄÚÈİ²»ÄÜÎª¿Õ');
+      throw new BadRequestException('ç•™è¨€å†…å®¹ä¸èƒ½ä¸ºç©º');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -3378,11 +3378,11 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!requirement) {
-        throw new NotFoundException('ĞèÇóµ¥²»´æÔÚ');
+        throw new NotFoundException('éœ€æ±‚å•ä¸å­˜åœ¨');
       }
 
       if (!isManagementRole(role) && requirement.userId !== userId) {
-        throw new ForbiddenException('ÎŞÈ¨·ÃÎÊ¸ÃĞèÇóµ¥');
+        throw new ForbiddenException('æ— æƒè®¿é—®è¯¥éœ€æ±‚å•');
       }
 
       const created = await tx.message.create({
@@ -3425,26 +3425,26 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
             toStatus: nextRequirementStatus,
             changedBy: userId,
             changedRole: role,
-            reason: 'ÓÃ»§ÒÑ²¹³äËùĞèÊı¾İ£¬ĞèÇó¼ÌĞø´¦ÀíÖĞ',
+            reason: 'ç”¨æˆ·å·²è¡¥å……æ‰€éœ€æ•°æ®ï¼Œéœ€æ±‚ç»§ç»­å¤„ç†ä¸­',
           },
         });
       }
 
       const notificationTitle =
-        isManagementRole(role) ? 'ÄúµÄĞèÇóÓĞ»Ø¸´ÁË£¬ÇëÔÚÏûÏ¢Í¨ÖªÀ¸Ä¿²é¿´' : 'ÊÕµ½ĞÂµÄĞèÇó²¹³ä£¬Çë¾¡¿ì´¦Àí';
+        isManagementRole(role) ? 'æ‚¨çš„éœ€æ±‚æœ‰å›å¤äº†ï¼Œè¯·åœ¨æ¶ˆæ¯é€šçŸ¥æ ç›®æŸ¥çœ‹' : 'æ”¶åˆ°æ–°çš„éœ€æ±‚è¡¥å……ï¼Œè¯·å°½å¿«å¤„ç†';
       const notificationContent =
         isManagementRole(role)
-          ? `ĞèÇó¡¸${requirement.title}¡¹ÊÕµ½Ó°¶¯»Ø¸´£º${this.summarizeNotificationContent(content)}`
-          : `${created.sender.username} ²¹³äÁËĞèÇóÁôÑÔ£º${this.summarizeNotificationContent(content)}`;
+          ? `éœ€æ±‚ã€Œ${requirement.title}ã€æ”¶åˆ°å½±åŠ¨å›å¤ï¼š${this.summarizeNotificationContent(content)}`
+          : `${created.sender.username} è¡¥å……äº†éœ€æ±‚ç•™è¨€ï¼š${this.summarizeNotificationContent(content)}`;
 
       if (isManagementRole(role)) {
         await this.createNotifications(tx, [requirement.userId], requirementId, 'message_reply', notificationTitle, notificationContent);
         await this.mailService.queueRequirementUserNotification(tx, {
           requirementId,
           type: 'message_reply',
-          subject: '¡¾AICampCloud¡¿ÄúµÄĞèÇóÓĞĞÂÁôÑÔ',
+          subject: 'ã€AICampCloudã€‘æ‚¨çš„éœ€æ±‚æœ‰æ–°ç•™è¨€',
           requirementTitle: requirement.title,
-          actionLabel: '¹ÜÀíÔ±ÁôÑÔ',
+          actionLabel: 'ç®¡ç†å‘˜ç•™è¨€',
           summary: notificationContent,
         });
       } else {
@@ -3463,9 +3463,9 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         await this.mailService.queueRequirementAdminNotifications(tx, {
           requirementId,
           type: 'message_reply',
-          subject: '¡¾AICampCloud¡¿ÊÕµ½ĞÂµÄĞèÇó²¹³äÏûÏ¢',
+          subject: 'ã€AICampCloudã€‘æ”¶åˆ°æ–°çš„éœ€æ±‚è¡¥å……æ¶ˆæ¯',
           requirementTitle: requirement.title,
-          actionLabel: 'ÓÃ»§²¹³äÏûÏ¢',
+          actionLabel: 'ç”¨æˆ·è¡¥å……æ¶ˆæ¯',
           summary: notificationContent,
         });
       }
@@ -3487,10 +3487,10 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
   async updateStatus(userId: bigint, requirementId: bigint, role: UserRole, dto: UpdateRequirementStatusDto) {
     if (!isManagementRole(role)) {
-      throw new ForbiddenException('½ö¹ÜÀíÔ±¿É¸üĞÂĞèÇó×´Ì¬');
+      throw new ForbiddenException('ä»…ç®¡ç†å‘˜å¯æ›´æ–°éœ€æ±‚çŠ¶æ€');
     }
     if (dto.status === RequirementStatus.pending) {
-      throw new BadRequestException('¹ÜÀí²à²»Ö§³Ö½«ĞèÇó×´Ì¬¸üĞÂÎª´ıÎÒÏìÓ¦');
+      throw new BadRequestException('ç®¡ç†ä¾§ä¸æ”¯æŒå°†éœ€æ±‚çŠ¶æ€æ›´æ–°ä¸ºå¾…æˆ‘å“åº”');
     }
 
     const reason = this.normalizeText(dto.reason);
@@ -3507,7 +3507,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!requirement) {
-        throw new NotFoundException('ĞèÇóµ¥²»´æÔÚ');
+        throw new NotFoundException('éœ€æ±‚å•ä¸å­˜åœ¨');
       }
 
       const updated = await tx.requirement.update({
@@ -3527,22 +3527,22 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       });
 
       const content = reason
-        ? `ĞèÇó¡¸${requirement.title}¡¹×´Ì¬ÒÑ¸üĞÂÎª ${this.renderRequirementStatusLabel(dto.status)}£¬ËµÃ÷£º${reason}`
-        : `ĞèÇó¡¸${requirement.title}¡¹×´Ì¬ÒÑ¸üĞÂÎª ${this.renderRequirementStatusLabel(dto.status)}`;
+        ? `éœ€æ±‚ã€Œ${requirement.title}ã€çŠ¶æ€å·²æ›´æ–°ä¸º ${this.renderRequirementStatusLabel(dto.status)}ï¼Œè¯´æ˜ï¼š${reason}`
+        : `éœ€æ±‚ã€Œ${requirement.title}ã€çŠ¶æ€å·²æ›´æ–°ä¸º ${this.renderRequirementStatusLabel(dto.status)}`;
       await this.createNotifications(
         tx,
         [requirement.userId],
         requirementId,
         'status_update',
-        'ÄúµÄĞèÇó×´Ì¬ÓĞ¸üĞÂ£¬ÇëÔÚÏûÏ¢Í¨ÖªÀ¸Ä¿²é¿´',
+        'æ‚¨çš„éœ€æ±‚çŠ¶æ€æœ‰æ›´æ–°ï¼Œè¯·åœ¨æ¶ˆæ¯é€šçŸ¥æ ç›®æŸ¥çœ‹',
         content,
       );
       await this.mailService.queueRequirementUserNotification(tx, {
         requirementId,
         type: 'status_update',
-        subject: '¡¾AICampCloud¡¿ÄúµÄĞèÇó×´Ì¬ÒÑ¸üĞÂ',
+        subject: 'ã€AICampCloudã€‘æ‚¨çš„éœ€æ±‚çŠ¶æ€å·²æ›´æ–°',
         requirementTitle: requirement.title,
-        actionLabel: '×´Ì¬¸üĞÂ',
+        actionLabel: 'çŠ¶æ€æ›´æ–°',
         summary: content,
       });
 
@@ -3888,12 +3888,12 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     if (isManagementRole(role)) {
       return {
         success: true,
-        message: '¹ÜÀíÔ±ÏÂÔØ²»ĞèÒª license Ğ£Ñé',
+        message: 'ç®¡ç†å‘˜ä¸‹è½½ä¸éœ€è¦ license æ ¡éªŒ',
       };
     }
 
     if (!licenseFile?.path) {
-      throw new ForbiddenException('ÇëÉÏ´«ÓĞĞ§µÄ license ÎÄ¼ş');
+      throw new ForbiddenException('è¯·ä¸Šä¼ æœ‰æ•ˆçš„ license æ–‡ä»¶');
     }
 
     const delivery = await this.prisma.delivery.findFirst({
@@ -3907,12 +3907,12 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!delivery?.fileUrl) {
-      throw new NotFoundException('½»¸¶ÎÄ¼ş²»´æÔÚ');
+      throw new NotFoundException('äº¤ä»˜æ–‡ä»¶ä¸å­˜åœ¨');
     }
 
     const metadata = await this.readEncryptedModelMetadataFromOss(delivery.fileUrl).catch(() => null);
     if (!metadata) {
-      throw new NotFoundException('¼ÓÃÜÄ£ĞÍÔªÊı¾İ²»´æÔÚ');
+      throw new NotFoundException('åŠ å¯†æ¨¡å‹å…ƒæ•°æ®ä¸å­˜åœ¨');
     }
 
     const licenseBuffer = await this.readUploadedBinaryFile(licenseFile);
@@ -3920,24 +3920,24 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     return {
       success: true,
-      message: 'license ÑéÖ¤³É¹¦£¬¿ÉÒÔÏÂÔØ¼ÓÃÜÄ£ĞÍ',
+      message: 'license éªŒè¯æˆåŠŸï¼Œå¯ä»¥ä¸‹è½½åŠ å¯†æ¨¡å‹',
     };
   }
 
   async verifyUserLicense(userId: bigint, licenseFile?: UploadedBinaryFile) {
     if (!licenseFile?.path) {
-      throw new ForbiddenException('ÇëÉÏ´«ÓĞĞ§µÄ license ÎÄ¼ş');
+      throw new ForbiddenException('è¯·ä¸Šä¼ æœ‰æ•ˆçš„ license æ–‡ä»¶');
     }
 
     const configuredLicenseKey = await getConfiguredLicenseKeyForUser(userId);
     const uploadedLicenseKey = normalizeLicenseKeyBase64((await this.readUploadedBinaryFile(licenseFile)).toString('utf8'));
     if (configuredLicenseKey !== uploadedLicenseKey) {
-      throw new ForbiddenException('µ±Ç°ÓÃ»§²»ÊÇ¸Ã license µÄÊÚÈ¨ÓÃ»§');
+      throw new ForbiddenException('å½“å‰ç”¨æˆ·ä¸æ˜¯è¯¥ license çš„æˆæƒç”¨æˆ·');
     }
 
     return {
       success: true,
-      message: 'license ÑéÖ¤³É¹¦£¬µ±Ç°ÕË»§¿ÉÏÂÔØ¼ÓÃÜÄ£ĞÍ',
+      message: 'license éªŒè¯æˆåŠŸï¼Œå½“å‰è´¦æˆ·å¯ä¸‹è½½åŠ å¯†æ¨¡å‹',
     };
   }
 
@@ -3998,7 +3998,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!notification) {
-      throw new NotFoundException('Í¨Öª²»´æÔÚ');
+      throw new NotFoundException('é€šçŸ¥ä¸å­˜åœ¨');
     }
 
     if (notification.isRead) {
@@ -4177,7 +4177,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     ];
 
     if (orderedSeries.length === 0) {
-      throw new NotFoundException('Î´ÕÒµ½¿É·ÃÎÊµÄĞòÁĞ');
+      throw new NotFoundException('æœªæ‰¾åˆ°å¯è®¿é—®çš„åºåˆ—');
     }
 
     return Promise.all(orderedSeries.map((series) => this.listSeriesFileEntries(series)));
@@ -4201,7 +4201,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (orderedSeries.length > this.pacsTagInfoMaxSeries) {
-      throw new BadRequestException(`µ¥´Î×î¶àÖ»Ö§³Ö¶ÁÈ¡ ${this.pacsTagInfoMaxSeries} ¸öĞòÁĞ±êÇ©`);
+      throw new BadRequestException(`å•æ¬¡æœ€å¤šåªæ”¯æŒè¯»å– ${this.pacsTagInfoMaxSeries} ä¸ªåºåˆ—æ ‡ç­¾`);
     }
 
     return this.mapWithConcurrency(
@@ -4225,11 +4225,11 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     const seriesList = await this.findAccessibleSeries(userId, role, seriesIds, seriesUids);
 
     if (seriesList.length === 0) {
-      throw new NotFoundException('Î´ÕÒµ½¿ÉÏÂÔØµÄĞòÁĞ');
+      throw new NotFoundException('æœªæ‰¾åˆ°å¯ä¸‹è½½çš„åºåˆ—');
     }
 
     if (seriesList.length > this.pacsDownloadMaxSeries) {
-      throw new BadRequestException(`µ¥´Î×î¶àÖ»Ö§³Ö´ò°üÏÂÔØ ${this.pacsDownloadMaxSeries} ¸öĞòÁĞ`);
+      throw new BadRequestException(`å•æ¬¡æœ€å¤šåªæ”¯æŒæ‰“åŒ…ä¸‹è½½ ${this.pacsDownloadMaxSeries} ä¸ªåºåˆ—`);
     }
 
     const tempDir = await mkdtemp(join(tmpdir(), 'campcloud-pacs-'));
@@ -4239,14 +4239,14 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       .filter((dir): dir is string => Boolean(dir));
 
     if (targetDirs.length === 0) {
-      throw new NotFoundException('ĞòÁĞÎÄ¼ş²»´æÔÚ');
+      throw new NotFoundException('åºåˆ—æ–‡ä»¶ä¸å­˜åœ¨');
     }
 
     const uniqueTargetDirs = [...new Set(targetDirs)];
     const fileCounts = await Promise.all(uniqueTargetDirs.map(async (dir) => (await readdir(dir)).length));
     const totalFiles = fileCounts.reduce((sum, count) => sum + count, 0);
     if (totalFiles > this.pacsDownloadMaxFiles) {
-      throw new BadRequestException(`µ¥´Î×î¶àÖ»Ö§³Ö´ò°ü ${this.pacsDownloadMaxFiles} ¸öÎÄ¼ş`);
+      throw new BadRequestException(`å•æ¬¡æœ€å¤šåªæ”¯æŒæ‰“åŒ… ${this.pacsDownloadMaxFiles} ä¸ªæ–‡ä»¶`);
     }
 
     await execFileAsync('zip', ['-r', zipPath, ...uniqueTargetDirs], { cwd: '/' });
@@ -4266,7 +4266,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     try {
       parsedSeriesId = BigInt(seriesId);
     } catch {
-      throw new NotFoundException('ĞòÁĞ²»´æÔÚ');
+      throw new NotFoundException('åºåˆ—ä¸å­˜åœ¨');
     }
 
     const series = await this.prisma.series.findUnique({
@@ -4275,7 +4275,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!series?.storagePath) {
-      throw new NotFoundException('ÎÄ¼ş²»´æÔÚ');
+      throw new NotFoundException('æ–‡ä»¶ä¸å­˜åœ¨');
     }
 
     const safeStoragePath = this.ensureSafeStoragePath(series.storagePath);
@@ -4284,7 +4284,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     try {
       await stat(filePath);
     } catch {
-      throw new NotFoundException('ÎÄ¼ş²»´æÔÚ');
+      throw new NotFoundException('æ–‡ä»¶ä¸å­˜åœ¨');
     }
 
     return filePath;
@@ -4324,7 +4324,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!study) {
-      throw new NotFoundException('¼ì²é²»´æÔÚ');
+      throw new NotFoundException('æ£€æŸ¥ä¸å­˜åœ¨');
     }
 
     return {
@@ -4380,7 +4380,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!series) {
-      throw new NotFoundException('ĞòÁĞ²»´æÔÚ');
+      throw new NotFoundException('åºåˆ—ä¸å­˜åœ¨');
     }
 
     return {
@@ -4422,7 +4422,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!series?.storagePath) {
-      throw new NotFoundException('ĞòÁĞÎÄ¼ş²»´æÔÚ');
+      throw new NotFoundException('åºåˆ—æ–‡ä»¶ä¸å­˜åœ¨');
     }
 
     const safeStoragePath = this.ensureSafeStoragePath(series.storagePath);
@@ -4432,7 +4432,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     try {
       await stat(safeFilePath);
     } catch {
-      throw new NotFoundException('ÎÄ¼ş²»´æÔÚ');
+      throw new NotFoundException('æ–‡ä»¶ä¸å­˜åœ¨');
     }
 
     return {
@@ -4497,7 +4497,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!study) {
-        throw new NotFoundException('¼ì²é²»´æÔÚ');
+        throw new NotFoundException('æ£€æŸ¥ä¸å­˜åœ¨');
       }
 
       const imageCount = study.series.reduce((sum, item) => sum + item.imageCount, 0);
@@ -4562,7 +4562,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!series) {
-        throw new NotFoundException('ĞòÁĞ²»´æÔÚ');
+        throw new NotFoundException('åºåˆ—ä¸å­˜åœ¨');
       }
 
       await tx.series.delete({
@@ -4628,13 +4628,13 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     const validFiles = files.filter((file) => !this.shouldIgnoreUploadedFile(file.originalname));
     const fileCount = validFiles.length;
     if (!dto.modality?.trim()) {
-      throw new BadRequestException('ÇëÑ¡ÔñÓ°ÏñÄ£Ì¬');
+      throw new BadRequestException('è¯·é€‰æ‹©å½±åƒæ¨¡æ€');
     }
     if (!dto.bodyPart?.trim()) {
-      throw new BadRequestException('ÇëÑ¡Ôñ¼ì²é²¿Î»');
+      throw new BadRequestException('è¯·é€‰æ‹©æ£€æŸ¥éƒ¨ä½');
     }
     if (fileCount === 0) {
-      throw new BadRequestException('ÇëÉÏ´«ÓĞĞ§ÎÄ¼ş£¬ÏµÍ³»á×Ô¶¯ºöÂÔ .DS_Store ºÍÆäËûÒş²ØÎÄ¼ş');
+      throw new BadRequestException('è¯·ä¸Šä¼ æœ‰æ•ˆæ–‡ä»¶ï¼Œç³»ç»Ÿä¼šè‡ªåŠ¨å¿½ç•¥ .DS_Store å’Œå…¶ä»–éšè—æ–‡ä»¶');
     }
 
     const trimmedSourceName = dto.sourceName?.trim() || null;
@@ -4669,7 +4669,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (!existingBatch) {
-          throw new NotFoundException('ÖØ´«Åú´Î²»´æÔÚ');
+          throw new NotFoundException('é‡ä¼ æ‰¹æ¬¡ä¸å­˜åœ¨');
         }
 
         createdOrUpdated = await tx.datasetBatch.update({
@@ -4745,7 +4745,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
               toStatus: RequirementStatus.processing,
               changedBy: userId,
               changedRole: role,
-              reason: 'ÓÃ»§ÒÑ²¹³äÉÏ´«Êı¾İ£¬ĞèÇó¼ÌĞø´¦ÀíÖĞ',
+              reason: 'ç”¨æˆ·å·²è¡¥å……ä¸Šä¼ æ•°æ®ï¼Œéœ€æ±‚ç»§ç»­å¤„ç†ä¸­',
             },
           });
         }
@@ -4759,16 +4759,16 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           admins.map((item) => item.id),
           requirementId,
           'data_upload',
-          'ÊÕµ½ĞÂµÄÓÃ»§Êı¾İÉÏ´«£¬ÇëÔÚ¹ÜÀí²à²é¿´',
-          `ĞèÇó¡¸${requirement?.title || requirementId.toString()}¡¹ÓĞ${retryBatchId ? 'Åú´ÎÖØ´«' : 'ĞÂµÄÊı¾İÉÏ´«'}£¬Çë¼°Ê±´¦Àí¡£`,
+          'æ”¶åˆ°æ–°çš„ç”¨æˆ·æ•°æ®ä¸Šä¼ ï¼Œè¯·åœ¨ç®¡ç†ä¾§æŸ¥çœ‹',
+          `éœ€æ±‚ã€Œ${requirement?.title || requirementId.toString()}ã€æœ‰${retryBatchId ? 'æ‰¹æ¬¡é‡ä¼ ' : 'æ–°çš„æ•°æ®ä¸Šä¼ '}ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         );
         await this.mailService.queueRequirementAdminNotifications(tx, {
           requirementId,
           type: 'data_upload',
-          subject: '¡¾AICampCloud¡¿ÊÕµ½ĞÂµÄÓÃ»§Êı¾İÉÏ´«',
+          subject: 'ã€AICampCloudã€‘æ”¶åˆ°æ–°çš„ç”¨æˆ·æ•°æ®ä¸Šä¼ ',
           requirementTitle: requirement?.title || requirementId.toString(),
-          actionLabel: retryBatchId ? 'ÓÃ»§Åú´ÎÖØ´«' : 'ÓÃ»§Êı¾İÉÏ´«',
-          summary: `ĞèÇó¡¶${requirement?.title || requirementId.toString()}¡·ÓĞ${retryBatchId ? 'Åú´ÎÖØ´«' : 'ĞÂµÄÊı¾İÉÏ´«'}£¬Çë¼°Ê±´¦Àí¡£`,
+          actionLabel: retryBatchId ? 'ç”¨æˆ·æ‰¹æ¬¡é‡ä¼ ' : 'ç”¨æˆ·æ•°æ®ä¸Šä¼ ',
+          summary: `éœ€æ±‚ã€Š${requirement?.title || requirementId.toString()}ã€‹æœ‰${retryBatchId ? 'æ‰¹æ¬¡é‡ä¼ ' : 'æ–°çš„æ•°æ®ä¸Šä¼ '}ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         });
       }
 
@@ -4780,7 +4780,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         where: { id: batch.id },
         data: {
           status: 'failed',
-          remark: trimmedRemark ? `${trimmedRemark}£»ºóÌ¨½âÎöÊ§°Ü` : 'ºóÌ¨½âÎöÊ§°Ü',
+          remark: trimmedRemark ? `${trimmedRemark}ï¼›åå°è§£æå¤±è´¥` : 'åå°è§£æå¤±è´¥',
         },
       });
     });
@@ -4809,13 +4809,13 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     const sessionIds = Array.from(new Set(dto.sessionIds.map((item) => item.trim()).filter(Boolean)));
     if (sessionIds.length === 0) {
-      throw new BadRequestException('ÇëÏÈÉÏ´«ÖÁÉÙÒ»¸öÎÄ¼ş');
+      throw new BadRequestException('è¯·å…ˆä¸Šä¼ è‡³å°‘ä¸€ä¸ªæ–‡ä»¶');
     }
     if (!dto.modality?.trim()) {
-      throw new BadRequestException('ÇëÑ¡ÔñÓ°ÏñÄ£Ì¬');
+      throw new BadRequestException('è¯·é€‰æ‹©å½±åƒæ¨¡æ€');
     }
     if (!dto.bodyPart?.trim()) {
-      throw new BadRequestException('ÇëÑ¡Ôñ¼ì²é²¿Î»');
+      throw new BadRequestException('è¯·é€‰æ‹©æ£€æŸ¥éƒ¨ä½');
     }
 
     const sessions = await this.prisma.uploadSession.findMany({
@@ -4828,18 +4828,18 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (sessions.length !== sessionIds.length) {
-      throw new BadRequestException('´æÔÚÎŞĞ§µÄÉÏ´«»á»°');
+      throw new BadRequestException('å­˜åœ¨æ— æ•ˆçš„ä¸Šä¼ ä¼šè¯');
     }
     if (sessions.some((session) => session.status !== 'uploaded')) {
-      throw new BadRequestException('´æÔÚÉĞÎ´ÉÏ´«Íê³ÉµÄÎÄ¼ş£¬ÇëÍê³ÉºóÔÙÌá½»Åú´Î');
+      throw new BadRequestException('å­˜åœ¨å°šæœªä¸Šä¼ å®Œæˆçš„æ–‡ä»¶ï¼Œè¯·å®Œæˆåå†æäº¤æ‰¹æ¬¡');
     }
 
     const uploadSummary = this.summarizeUploadSessions(sessions);
     if (uploadSummary.totalBytes > RequirementsService.LARGE_ZIP_UPLOAD_THRESHOLD_BYTES && !uploadSummary.requiresManualAnalysis) {
-      throw new BadRequestException('³¬¹ı10GBµÄÊı¾İ½öÖ§³ÖÉÏ´«µ¥¸ö ZIP Ñ¹Ëõ°ü£¬ÇÒÏµÍ³²»»á×Ô¶¯½âÎö');
+      throw new BadRequestException('è¶…è¿‡10GBçš„æ•°æ®ä»…æ”¯æŒä¸Šä¼ å•ä¸ª ZIP å‹ç¼©åŒ…ï¼Œä¸”ç³»ç»Ÿä¸ä¼šè‡ªåŠ¨è§£æ');
     }
     if (sessions.some((session) => this.isZipFileName(session.fileName) || this.isZipFileName(session.relativePath)) && !uploadSummary.requiresManualAnalysis) {
-      throw new BadRequestException('ZIP ÉÏ´«½öÖ§³Ö³¬¹ı10GBµÄµ¥¸öÑ¹Ëõ°ü£¬ÇëÖ±½ÓÉÏ´«ÎÄ¼ş¼Ğ');
+      throw new BadRequestException('ZIP ä¸Šä¼ ä»…æ”¯æŒè¶…è¿‡10GBçš„å•ä¸ªå‹ç¼©åŒ…ï¼Œè¯·ç›´æ¥ä¸Šä¼ æ–‡ä»¶å¤¹');
     }
 
     const trimmedSourceName = dto.sourceName?.trim() || null;
@@ -4872,7 +4872,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (!existingBatch) {
-          throw new NotFoundException('ÖØ´«Åú´Î²»´æÔÚ');
+          throw new NotFoundException('é‡ä¼ æ‰¹æ¬¡ä¸å­˜åœ¨');
         }
 
         createdOrUpdated = await tx.datasetBatch.update({
@@ -4956,7 +4956,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
               toStatus: RequirementStatus.processing,
               changedBy: userId,
               changedRole: role,
-              reason: 'ÓÃ»§ÒÑ²¹³äÉÏ´«Êı¾İ£¬ĞèÇó¼ÌĞø´¦ÀíÖĞ',
+              reason: 'ç”¨æˆ·å·²è¡¥å……ä¸Šä¼ æ•°æ®ï¼Œéœ€æ±‚ç»§ç»­å¤„ç†ä¸­',
             },
           });
         }
@@ -4970,16 +4970,16 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           admins.map((item) => item.id),
           requirementId,
           'data_upload',
-          'ÊÕµ½ĞÂµÄÓÃ»§Êı¾İÉÏ´«£¬ÇëÔÚ¹ÜÀí²à²é¿´',
-          `ĞèÇó¡¸${requirement?.title || requirementId.toString()}¡¹ÓĞ${retryBatchId ? 'Åú´ÎÖØ´«' : 'ĞÂµÄÊı¾İÉÏ´«'}£¬Çë¼°Ê±´¦Àí¡£`,
+          'æ”¶åˆ°æ–°çš„ç”¨æˆ·æ•°æ®ä¸Šä¼ ï¼Œè¯·åœ¨ç®¡ç†ä¾§æŸ¥çœ‹',
+          `éœ€æ±‚ã€Œ${requirement?.title || requirementId.toString()}ã€æœ‰${retryBatchId ? 'æ‰¹æ¬¡é‡ä¼ ' : 'æ–°çš„æ•°æ®ä¸Šä¼ '}ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         );
         await this.mailService.queueRequirementAdminNotifications(tx, {
           requirementId,
           type: 'data_upload',
-          subject: '¡¾AICampCloud¡¿ÊÕµ½ĞÂµÄÓÃ»§Êı¾İÉÏ´«',
+          subject: 'ã€AICampCloudã€‘æ”¶åˆ°æ–°çš„ç”¨æˆ·æ•°æ®ä¸Šä¼ ',
           requirementTitle: requirement?.title || requirementId.toString(),
-          actionLabel: retryBatchId ? 'ÓÃ»§Åú´ÎÖØ´«' : 'ÓÃ»§Êı¾İÉÏ´«',
-          summary: `ĞèÇó¡¶${requirement?.title || requirementId.toString()}¡·ÓĞ${retryBatchId ? 'Åú´ÎÖØ´«' : 'ĞÂµÄÊı¾İÉÏ´«'}£¬Çë¼°Ê±´¦Àí¡£`,
+          actionLabel: retryBatchId ? 'ç”¨æˆ·æ‰¹æ¬¡é‡ä¼ ' : 'ç”¨æˆ·æ•°æ®ä¸Šä¼ ',
+          summary: `éœ€æ±‚ã€Š${requirement?.title || requirementId.toString()}ã€‹æœ‰${retryBatchId ? 'æ‰¹æ¬¡é‡ä¼ ' : 'æ–°çš„æ•°æ®ä¸Šä¼ '}ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         });
       }
 
@@ -4992,7 +4992,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           where: { id: batch.id },
           data: {
             status: 'failed',
-            remark: trimmedRemark ? `${trimmedRemark}£»³¬10GB ZIP ±£´æÊ§°Ü` : '³¬10GB ZIP ±£´æÊ§°Ü',
+            remark: trimmedRemark ? `${trimmedRemark}ï¼›è¶…10GB ZIP ä¿å­˜å¤±è´¥` : 'è¶…10GB ZIP ä¿å­˜å¤±è´¥',
           },
         });
       });
@@ -5007,7 +5007,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           where: { id: batch.id },
           data: {
             status: 'failed',
-            remark: trimmedRemark ? `${trimmedRemark}£»ºóÌ¨½âÎöÊ§°Ü` : 'ºóÌ¨½âÎöÊ§°Ü',
+            remark: trimmedRemark ? `${trimmedRemark}ï¼›åå°è§£æå¤±è´¥` : 'åå°è§£æå¤±è´¥',
           },
         });
       });
@@ -5045,13 +5045,13 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
 
     const fileIds = Array.from(new Set(dto.fileIds.map((item) => item.trim()).filter(Boolean)));
     if (fileIds.length === 0) {
-      throw new BadRequestException('ÇëÏÈÉÏ´«ÖÁÉÙÒ»¸ö OSS ÎÄ¼ş');
+      throw new BadRequestException('è¯·å…ˆä¸Šä¼ è‡³å°‘ä¸€ä¸ª OSS æ–‡ä»¶');
     }
     if (!dto.modality?.trim()) {
-      throw new BadRequestException('ÇëÑ¡ÔñÓ°ÏñÄ£Ì¬');
+      throw new BadRequestException('è¯·é€‰æ‹©å½±åƒæ¨¡æ€');
     }
     if (!dto.bodyPart?.trim()) {
-      throw new BadRequestException('ÇëÑ¡Ôñ¼ì²é²¿Î»');
+      throw new BadRequestException('è¯·é€‰æ‹©æ£€æŸ¥éƒ¨ä½');
     }
 
     const files = await this.prisma.requirementOssFile.findMany({
@@ -5065,21 +5065,21 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (files.length !== fileIds.length) {
-      throw new BadRequestException('´æÔÚÎŞĞ§µÄ OSS ÎÄ¼ş¼ÇÂ¼');
+      throw new BadRequestException('å­˜åœ¨æ— æ•ˆçš„ OSS æ–‡ä»¶è®°å½•');
     }
     if (files.some((file) => file.datasetBatchId)) {
-      throw new BadRequestException('´æÔÚÒÑ¾­Ìá½»¹ıÅú´ÎµÄ OSS ÎÄ¼ş£¬ÇëË¢ĞÂºóÖØÊÔ');
+      throw new BadRequestException('å­˜åœ¨å·²ç»æäº¤è¿‡æ‰¹æ¬¡çš„ OSS æ–‡ä»¶ï¼Œè¯·åˆ·æ–°åé‡è¯•');
     }
     if (files.some((file) => file.status !== RequirementOssFileStatus.uploaded && file.status !== RequirementOssFileStatus.parsed)) {
-      throw new BadRequestException('´æÔÚÉĞÎ´ÉÏ´«Íê³ÉµÄ OSS ÎÄ¼ş£¬ÇëÉÔºóÖØÊÔ');
+      throw new BadRequestException('å­˜åœ¨å°šæœªä¸Šä¼ å®Œæˆçš„ OSS æ–‡ä»¶ï¼Œè¯·ç¨åé‡è¯•');
     }
 
     const uploadSummary = this.summarizeRequirementOssFiles(files);
     if (uploadSummary.totalBytes > RequirementsService.LARGE_ZIP_UPLOAD_THRESHOLD_BYTES && !uploadSummary.requiresManualAnalysis) {
-      throw new BadRequestException('³¬¹ı 10GB µÄÊı¾İ½öÖ§³ÖÉÏ´«µ¥¸ö ZIP Ñ¹Ëõ°ü£¬ÇÒÏµÍ³²»»á×Ô¶¯½âÎö');
+      throw new BadRequestException('è¶…è¿‡ 10GB çš„æ•°æ®ä»…æ”¯æŒä¸Šä¼ å•ä¸ª ZIP å‹ç¼©åŒ…ï¼Œä¸”ç³»ç»Ÿä¸ä¼šè‡ªåŠ¨è§£æ');
     }
     if (files.some((file) => this.isZipFileName(file.originalFileName)) && !uploadSummary.requiresManualAnalysis) {
-      throw new BadRequestException('ZIP ÉÏ´«½öÖ§³Ö³¬¹ı 10GB µÄµ¥¸öÑ¹Ëõ°ü£¬ÇëÖ±½ÓÉÏ´«ÎÄ¼ş¼Ğ');
+      throw new BadRequestException('ZIP ä¸Šä¼ ä»…æ”¯æŒè¶…è¿‡ 10GB çš„å•ä¸ªå‹ç¼©åŒ…ï¼Œè¯·ç›´æ¥ä¸Šä¼ æ–‡ä»¶å¤¹');
     }
 
     const trimmedSourceName = dto.sourceName?.trim() || null;
@@ -5112,7 +5112,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (!existingBatch) {
-          throw new NotFoundException('ÖØ´«Åú´Î²»´æÔÚ');
+          throw new NotFoundException('é‡ä¼ æ‰¹æ¬¡ä¸å­˜åœ¨');
         }
 
         createdOrUpdated = await tx.datasetBatch.update({
@@ -5214,7 +5214,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
               toStatus: RequirementStatus.processing,
               changedBy: userId,
               changedRole: role,
-              reason: 'ÓÃ»§ÒÑ²¹³äÉÏ´«Êı¾İ£¬ĞèÇó¼ÌĞø´¦ÀíÖĞ',
+              reason: 'ç”¨æˆ·å·²è¡¥å……ä¸Šä¼ æ•°æ®ï¼Œéœ€æ±‚ç»§ç»­å¤„ç†ä¸­',
             },
           });
         }
@@ -5228,16 +5228,16 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           admins.map((item) => item.id),
           requirementId,
           'data_upload',
-          'ÊÕµ½ĞÂµÄÓÃ»§Êı¾İÉÏ´«£¬ÇëÔÚ¹ÜÀí²àÈ·ÈÏÊÇ·ñÀ­È¡ÏêÇéÊı¾İ',
-          `ĞèÇó¡¸${requirement?.title || requirementId.toString()}¡¹ÓĞ${retryBatchId ? 'Åú´ÎÖØ´«' : 'ĞÂµÄÊı¾İÉÏ´«'}£¬Çë¼°Ê±´¦Àí¡£`,
+          'æ”¶åˆ°æ–°çš„ç”¨æˆ·æ•°æ®ä¸Šä¼ ï¼Œè¯·åœ¨ç®¡ç†ä¾§ç¡®è®¤æ˜¯å¦æ‹‰å–è¯¦æƒ…æ•°æ®',
+          `éœ€æ±‚ã€Œ${requirement?.title || requirementId.toString()}ã€æœ‰${retryBatchId ? 'æ‰¹æ¬¡é‡ä¼ ' : 'æ–°çš„æ•°æ®ä¸Šä¼ '}ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         );
         await this.mailService.queueRequirementAdminNotifications(tx, {
           requirementId,
           type: 'data_upload',
-          subject: '¡¾AICampCloud¡¿ÊÕµ½ĞÂµÄÓÃ»§Êı¾İÉÏ´«',
+          subject: 'ã€AICampCloudã€‘æ”¶åˆ°æ–°çš„ç”¨æˆ·æ•°æ®ä¸Šä¼ ',
           requirementTitle: requirement?.title || requirementId.toString(),
-          actionLabel: retryBatchId ? 'ÓÃ»§Åú´ÎÖØ´«' : 'ÓÃ»§Êı¾İÉÏ´«',
-          summary: `ĞèÇó¡¶${requirement?.title || requirementId.toString()}¡·ÓĞ${retryBatchId ? 'Åú´ÎÖØ´«' : 'ĞÂµÄÊı¾İÉÏ´«'}£¬Çë¼°Ê±´¦Àí¡£`,
+          actionLabel: retryBatchId ? 'ç”¨æˆ·æ‰¹æ¬¡é‡ä¼ ' : 'ç”¨æˆ·æ•°æ®ä¸Šä¼ ',
+          summary: `éœ€æ±‚ã€Š${requirement?.title || requirementId.toString()}ã€‹æœ‰${retryBatchId ? 'æ‰¹æ¬¡é‡ä¼ ' : 'æ–°çš„æ•°æ®ä¸Šä¼ '}ï¼Œè¯·åŠæ—¶å¤„ç†ã€‚`,
         });
       }
 
@@ -5849,7 +5849,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
           uploadedAt: item.uploadedAt,
           uploader: {
             id: item.uploader.id.toString(),
-            username: isManagementRole(item.uploader.role) ? 'Ó°¶¯' : item.uploader.username,
+            username: isManagementRole(item.uploader.role) ? 'å½±åŠ¨' : item.uploader.username,
           },
         };
       }),
@@ -5866,7 +5866,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
   async downloadDatasetBatchRawFile(userId: bigint, requirementId: bigint, batchId: bigint, role: UserRole) {
     await this.ensureRequirementAccess(userId, requirementId, role);
     if (!isManagementRole(role)) {
-      throw new ForbiddenException('½ö¹ÜÀíÔ±¿ÉÏÂÔØÔ­Ê¼Åú´ÎÎÄ¼ş');
+      throw new ForbiddenException('ä»…ç®¡ç†å‘˜å¯ä¸‹è½½åŸå§‹æ‰¹æ¬¡æ–‡ä»¶');
     }
 
     const batch = await this.prisma.datasetBatch.findFirst({
@@ -5891,12 +5891,12 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!batch) {
-      throw new NotFoundException('Åú´Î²»´æÔÚ');
+      throw new NotFoundException('æ‰¹æ¬¡ä¸å­˜åœ¨');
     }
 
     const uploadSummary = this.summarizeUploadSessions(batch.uploadSessions);
     if (!uploadSummary.requiresManualAnalysis || batch.uploadSessions.length !== 1) {
-      throw new BadRequestException('µ±Ç°½öÖ§³ÖÏÂÔØ³¬10GB ZIP Ô­Ê¼Åú´Î');
+      throw new BadRequestException('å½“å‰ä»…æ”¯æŒä¸‹è½½è¶…10GB ZIP åŸå§‹æ‰¹æ¬¡');
     }
 
     const session = batch.uploadSessions[0];
@@ -5928,7 +5928,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!batch) {
-      throw new NotFoundException('Åú´Î²»´æÔÚ');
+      throw new NotFoundException('æ‰¹æ¬¡ä¸å­˜åœ¨');
     }
 
     const files = await this.readFailedDatasetFilesManifest(requirementId, batch.batchNo);
@@ -5941,6 +5941,3 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 }
-
-
-
