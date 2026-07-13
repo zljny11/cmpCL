@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, App, Button, Card, Descriptions, Empty, Form, Input, List, Progress, Result, Select, Space, Tag, Typography } from 'antd';
+import { Alert, Anchor, App, Button, Card, Descriptions, Empty, Form, Input, List, Progress, Result, Select, Space, Tag, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -16,6 +16,15 @@ const statusOptions: Array<{ label: string; value: RequirementStatus }> = [
   { label: '处理中（待补充数据）', value: 'waiting_user' },
   { label: '已完成', value: 'completed' },
 ];
+
+const detailAnchorItems = [
+  { key: 'overview', href: '#admin-requirement-overview', title: '管理侧需求详情' },
+  { key: 'data', href: '#admin-requirement-data', title: '需求数据详情' },
+  { key: 'messages', href: '#admin-requirement-messages', title: '留言沟通' },
+  { key: 'status', href: '#admin-requirement-status', title: '更新状态' },
+  { key: 'delivery', href: '#admin-requirement-delivery', title: '交付窗口' },
+];
+
 
 function formatFileSize(size: number) {
   if (size >= 1024 * 1024 * 1024) {
@@ -182,6 +191,22 @@ export function AdminRequirementDetailPage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Card
+        size="small"
+        style={{
+          position: 'fixed',
+          left: 16,
+          top: 328,
+          width: 208,
+          zIndex: 20,
+          borderRadius: 8,
+          boxShadow: '0 10px 30px rgba(17, 39, 56, 0.08)',
+        }}
+        styles={{ body: { padding: '8px 10px' } }}
+      >
+        <Anchor affix={false} targetOffset={96} items={detailAnchorItems} />
+      </Card>
+
       <div>
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
           管理侧需求详情
@@ -190,7 +215,7 @@ export function AdminRequirementDetailPage() {
 
       {data ? (
         <>
-          <Card loading={detailQuery.isLoading}>
+          <Card id="admin-requirement-overview" loading={detailQuery.isLoading}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Space wrap>
                 {renderRequirementStatus(data.status)}
@@ -312,6 +337,7 @@ export function AdminRequirementDetailPage() {
           ) : null}
 
           <Card
+            id="admin-requirement-data"
             title={
               <Space size={12} wrap>
                 <span>需求数据详情</span>
@@ -328,7 +354,7 @@ export function AdminRequirementDetailPage() {
             )}
           </Card>
 
-          <Card title="留言沟通" loading={messagesQuery.isLoading}>
+          <Card id="admin-requirement-messages" title="留言沟通" loading={messagesQuery.isLoading}>
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               {messagesQuery.data && messagesQuery.data.length > 0 ? (
                 <List
@@ -371,7 +397,7 @@ export function AdminRequirementDetailPage() {
             </Space>
           </Card>
 
-          <Card title="更新状态">
+          <Card id="admin-requirement-status" title="更新状态">
             <Form form={statusForm} layout="vertical" onFinish={(values) => updateStatusMutation.mutate(values)}>
               <Form.Item label="目标状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
                 <Select options={statusOptions} placeholder="请选择要更新到的状态" />
@@ -385,7 +411,9 @@ export function AdminRequirementDetailPage() {
             </Form>
           </Card>
 
-          <RequirementDeliveryPanel requirementId={id} canUpload />
+          <div id="admin-requirement-delivery">
+            <RequirementDeliveryPanel requirementId={id} canUpload />
+          </div>
         </>
       ) : null}
     </Space>
