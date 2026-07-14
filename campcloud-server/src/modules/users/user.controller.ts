@@ -22,7 +22,7 @@ export class UserController {
 
   @Get()
   listUsers(@CurrentUser() user: AuthUser, @Query() query: ListUsersDto) {
-    return this.userService.listUsers(BigInt(user.id), user.role, query);
+    return this.userService.listUsers(user.role, query);
   }
 
   @Post()
@@ -52,7 +52,7 @@ export class UserController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAdminUserDto,
   ) {
-    const updated = await this.userService.updateUser(BigInt(id), BigInt(user.id), user.role, dto);
+    const updated = await this.userService.updateUser(BigInt(id), user.role, dto);
     await this.adminLogsService.createLog({
       actor: user,
       category: AdminOperationLogCategory.user,

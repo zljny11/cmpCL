@@ -10,13 +10,13 @@ import { AdminUserItem, AdminUserUpsertPayload } from '../../types/admin-users';
 import { AppRole, isSuperAdmin } from '../../types/roles';
 import { renderRequirementStatus } from '../requirements/list/helpers';
 
-type ManageableRole = Exclude<AppRole, 'super_admin'>;
+type EditableRole = AppRole;
 
 type UserFormValues = {
   username: string;
   password?: string;
   hospitalName: string;
-  role: ManageableRole;
+  role: EditableRole;
   status: 'active' | 'disabled';
   realName?: string;
   email?: string;
@@ -27,10 +27,12 @@ type UserFormValues = {
   remark?: string;
 };
 
-const adminUserRoleOptions: Array<{ label: string; value: ManageableRole }> = [
+const adminUserRoleOptions: Array<{ label: string; value: EditableRole }> = [
   { label: '普通用户', value: 'user' },
   { label: '普通管理员', value: 'admin' },
 ];
+
+const superAdminRoleOption: { label: string; value: EditableRole } = { label: '超级管理员', value: 'super_admin' };
 
 export function UserManagementPage() {
   const { message } = App.useApp();
@@ -84,7 +86,11 @@ export function UserManagementPage() {
   });
 
   const items = usersQuery.data?.list ?? [];
-  const roleOptions = canManageAdmins ? adminUserRoleOptions : adminUserRoleOptions.filter((item) => item.value === 'user');
+  const roleOptions = editingUser?.role === 'super_admin'
+    ? [...adminUserRoleOptions, superAdminRoleOption]
+    : canManageAdmins
+      ? adminUserRoleOptions
+      : adminUserRoleOptions.filter((item) => item.value === 'user');
 
   const openCreateModal = () => {
     setEditingUser(null);
@@ -99,7 +105,7 @@ export function UserManagementPage() {
       username: targetUser.username,
       password: '',
       hospitalName: targetUser.hospitalName,
-      role: targetUser.role === 'super_admin' ? 'admin' : targetUser.role,
+      role: targetUser.role,
       status: targetUser.status,
       realName: targetUser.profile?.realName || '',
       email: targetUser.profile?.email || '',
@@ -116,7 +122,7 @@ export function UserManagementPage() {
     const payload: AdminUserUpsertPayload = {
       username: values.username.trim(),
       hospitalName: values.hospitalName.trim(),
-      role: canManageAdmins ? values.role : 'user',
+      role: editingUser?.role === 'super_admin' ? 'super_admin' : canManageAdmins ? values.role : 'user',
       status: values.status,
       email: values.email?.trim() || undefined,
       realName: values.realName?.trim() || undefined,
@@ -261,9 +267,12 @@ export function UserManagementPage() {
                 title: '角色',
                 width: 120,
                 render: (_, record) => {
-                  const color = record.role === 'admin' ? 'purple' : 'blue';
-                  const label = record.role === 'admin' ? '普通管理员' : '普通用户';
-                  return <Tag color={color}>{label}</Tag>;
+                  const roleMeta = {
+                    super_admin: { color: 'red', label: '超级管理员' },
+                    admin: { color: 'purple', label: '普通管理员' },
+                    user: { color: 'blue', label: '普通用户' },
+                  }[record.role];
+                  return <Tag color={roleMeta.color}>{roleMeta.label}</Tag>;
                 },
               },
               {
@@ -311,7 +320,8 @@ export function UserManagementPage() {
                     <Button type="link" size="small" onClick={() => openEditModal(record)}>
                       编辑
                     </Button>
-                    <Popconfirm
+                    {record.role !== 'super_admin' ? (
+                      <Popconfirm
                       title="删除用户"
                       description="删除后会一并删除该用户关联的需求和资料。"
                       okText="确定"
@@ -321,7 +331,8 @@ export function UserManagementPage() {
                       <Button type="link" size="small" danger loading={deleteMutation.isPending && deleteMutation.variables === record.id}>
                         删除
                       </Button>
-                    </Popconfirm>
+                      </Popconfirm>
+                    ) : null}
                   </Space>
                 ),
               },
@@ -396,10 +407,10 @@ export function UserManagementPage() {
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">
             <Form.Item label="角色" name="role" rules={[{ required: true, message: '请选择角色' }]}>
-              <Select style={{ width: 180 }} options={roleOptions} disabled={!canManageAdmins} />
+              <Select style={{ width: 180 }} options={roleOptions} disabled={!canManageAdmins || editingUser?.role === 'super_admin'} />
             </Form.Item>
             <Form.Item label="状态" name="status" rules={[{ required: true, message: '请选择状态' }]}>
-              <Select style={{ width: 160 }} options={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]} />
+              <Select style={{ width: 160 }} options={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]} disabled={editingUser?.role === 'super_admin'} />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size={16} align="start">

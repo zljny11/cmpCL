@@ -2,7 +2,6 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { UserRole, UserStatus } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { isSuperAdmin } from '../../common/utils/roles';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
@@ -66,7 +65,9 @@ export class UserService {
   }
 
   private getVisibleRoles(actorRole: UserRole) {
-    return actorRole === UserRole.super_admin ? [UserRole.user, UserRole.admin] : [UserRole.user];
+    return actorRole === UserRole.super_admin
+      ? [UserRole.user, UserRole.admin, UserRole.super_admin]
+      : [UserRole.user];
   }
 
   private assertRequestedRoleAllowed(actorRole: UserRole, requestedRole: UserRole | undefined) {
@@ -84,7 +85,7 @@ export class UserService {
   }
 
   private assertCanManageExistingUser(actorRole: UserRole, targetRole: UserRole) {
-    if (targetRole === UserRole.super_admin) {
+    if (targetRole === UserRole.super_admin && actorRole !== UserRole.super_admin) {
       throw new ForbiddenException('Super admin accounts are not manageable from this endpoint.');
     }
 
@@ -107,7 +108,7 @@ export class UserService {
     });
   }
 
-  async listUsers(currentUserId: bigint, actorRole: UserRole, query: ListUsersDto) {
+  async listUsers(actorRole: UserRole, query: ListUsersDto) {
     this.assertRequestedRoleAllowed(actorRole, query.role);
 
     const page = query.page ?? 1;
@@ -117,7 +118,6 @@ export class UserService {
 
     const where = {
       role: { in: visibleRoles },
-      ...(actorRole === UserRole.super_admin ? { NOT: { id: currentUserId } } : {}),
       ...(keyword
         ? {
             OR: [
@@ -211,7 +211,7 @@ export class UserService {
     return this.serializeUser(created);
   }
 
-  async updateUser(id: bigint, currentUserId: bigint, actorRole: UserRole, dto: UpdateAdminUserDto) {
+  async updateUser(id: bigint, actorRole: UserRole, dto: UpdateAdminUserDto) {
     const existing = await this.prisma.user.findUnique({
       where: { id },
       include: { profile: true },
@@ -223,16 +223,16 @@ export class UserService {
 
     this.assertCanManageExistingUser(actorRole, existing.role);
 
-    if (id === currentUserId) {
-      if (isSuperAdmin(actorRole) && dto.role && dto.role !== UserRole.super_admin) {
-        throw new BadRequestException('The only super admin cannot be downgraded.');
+    if (existing.role === UserRole.super_admin) {
+      if (dto.role && dto.role !== UserRole.super_admin) {
+        throw new BadRequestException('Super admin accounts cannot be downgraded.');
       }
-      if (isSuperAdmin(actorRole) && dto.status === UserStatus.disabled) {
-        throw new BadRequestException('The only super admin cannot be disabled.');
+      if (dto.status === UserStatus.disabled) {
+        throw new BadRequestException('Super admin accounts cannot be disabled.');
       }
     }
 
-    if (dto.role) {
+    if (dto.role && !(existing.role === UserRole.super_admin && dto.role === UserRole.super_admin)) {
       this.assertRequestedRoleAllowed(actorRole, dto.role);
     }
 
@@ -308,6 +308,10 @@ export class UserService {
 
     this.assertCanManageExistingUser(actorRole, existing.role);
 
+    if (existing.role === UserRole.super_admin) {
+      throw new BadRequestException('Super admin accounts cannot be deleted.');
+    }
+
     await this.prisma.user.delete({ where: { id } });
     return {
       id: existing.id.toString(),
@@ -317,3 +321,4 @@ export class UserService {
     };
   }
 }
+
