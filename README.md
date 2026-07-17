@@ -17,6 +17,16 @@ DEPLOY_INTRANET.md  内网 Docker 部署说明
 DEPLOY_PUBLIC.md    公网入口、frp、Nginx、OSS 部署说明
 ```
 
+## CodeUp代码库：
+
+AICampCloud dev/server分支
+
+## Notebook本地项目位置：
+
+```bash
+C:\tmp\campcloud-test-next
+```
+
 ## 服务器项目位置
 
 Linux 服务器上的 CampCloud 正式项目目录：
@@ -89,7 +99,7 @@ docker compose --env-file .env.server -p campcloud exec campcloud-server npm run
 
 默认初始化账号：
 
-- `admin1 / 123456`
+- `admin1 / 123456`(超级管理员)
 - `admin2 / 123456`
 - `demo / 123456`
 - `demo2 / 123456`
@@ -145,7 +155,8 @@ docker compose --env-file .env.server -p campcloud exec campcloud-server npm run
 
 ## 文档索引
 
-- [DEPLOY_INTRANET.md](DEPLOY_INTRANET.md): 内网或单机 Docker 部署
+- [技术交接文档.md](技术交接文档.md):完整数据流，故障排查和组件信息
+- [DEPLOY_INTRANET.md](DEPLOY_INTRANET.md): 内网或单机 Docker 部署方案
 - [DEPLOY_PUBLIC.md](DEPLOY_PUBLIC.md): 公网入口、frp、Nginx、OSS 方案
 
 ## 加密模型解密说明
